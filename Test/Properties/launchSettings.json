@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "test": {
+      "commandName": "Project",
+      "remoteDebugEnabled": true,
+      "authenticationMode": "Windows",
+      "remoteDebugMachine": "192.168.1.69:4026"
+    }
+  }
+}
