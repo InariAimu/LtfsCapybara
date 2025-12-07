@@ -69,10 +69,37 @@ public partial class Ltfs
         return FindInDir(index.Directory, parts, 0);
     }
 
+    public void AddDirectoryToLtfs(string srcDirectory, string targetPath, bool recrusive = true)
+    {
+        if (!Directory.Exists(srcDirectory))
+            return;
+
+        var dirInfo = new DirectoryInfo(srcDirectory);
+        var entries = dirInfo.GetFileSystemInfos();
+
+        foreach (var entry in entries)
+        {
+            string relativePath = Path.Combine(targetPath, entry.Name);
+            if (entry is FileInfo fileInfo)
+            {
+                AddFileToLtfs(fileInfo.FullName, relativePath);
+            }
+            else if (entry is DirectoryInfo subDirInfo)
+            {
+                if (recrusive)
+                {
+                    AddDirectoryToLtfs(subDirInfo.FullName, relativePath, recrusive);
+                }
+            }
+        }
+    }
+
     public void AddFileToLtfs(string fileName, string targetPath)
     {
         if (!File.Exists(fileName))
             return;
+
+        targetPath = targetPath.Replace('\\', '/');
 
         FileInfo fileInfo = new FileInfo(fileName);
 

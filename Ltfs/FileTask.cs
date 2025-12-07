@@ -18,5 +18,6 @@ public class FileTask
 
     public required LtfsFile LtfsPath { get; set; }
 
-    public bool isTaskDone { get; set; } = false;
+    public bool IsTaskDone { get; set; } = false;
+    public bool IsTaskError { get; set; } = false;
 }

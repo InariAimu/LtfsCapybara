@@ -31,6 +31,8 @@ public partial class Ltfs
 
     public VCI VCI = new();
 
+    public string Barcode { get; private set; } = string.Empty;
+
 
     private LTOTapeDrive? _tapeDrive = null;
 
@@ -107,7 +109,8 @@ public partial class Ltfs
         LtfsMAMAttributes.UserMediumTextLabel.SetTextString("");
         LtfsMAMAttributes.TextLocalizationIdentifier.SetBinary([0x81]);
 
-        LtfsMAMAttributes.Barcode.SetAsciiString(formatParam.Barcode.ToUpperInvariant());
+        Barcode = formatParam.Barcode.ToUpperInvariant();
+        LtfsMAMAttributes.Barcode.SetAsciiString(Barcode);
 
         LtfsMAMAttributes.ApplicationFormatVersion.SetAsciiString(Version);
         //LtfsMAMAttributes.MediaPool.SetTextString("");
@@ -128,7 +131,7 @@ public partial class Ltfs
         _tapeDrive.SetEncryption(formatParam.EncryptionKey);
 
         // write vol1 label b
-        Vol1B = new Vol1Label(formatParam.Barcode.ToUpperInvariant(), "LTFScapybara");
+        Vol1B = new Vol1Label(Barcode, "LTFScapybara");
         _tapeDrive.Write(Vol1Label.ToByteArray(Vol1B), (int)blocksize);
         _tapeDrive.WriteFileMark();
 
@@ -190,7 +193,7 @@ public partial class Ltfs
         pos = _tapeDrive.ReadPosition();
 
         // write vol1 label a
-        Vol1A = new Vol1Label(formatParam.Barcode.ToUpperInvariant(), "mao");
+        Vol1A = new Vol1Label(volumeIdentifier: Barcode, ownerIdentifier: "capybara");
         _tapeDrive.Write(Vol1Label.ToByteArray(Vol1A), (int)blocksize);
         _tapeDrive.WriteFileMark();
 
@@ -292,6 +295,7 @@ public partial class Ltfs
             _tapeDrive!.Rewind();
 
 
+
         var modeData = _tapeDrive.ModeSense(0x11);
         if (modeData.Length >= 4)
             ExtraPartitionCount = modeData[3];
@@ -386,6 +390,17 @@ public partial class Ltfs
 
         LtfsIndexB = tmpIndex;
 
+        try
+        {
+            File.WriteAllText($"{Barcode}_P1_G{LtfsIndexB.GenerationNumber}_L{LtfsIndexB.Location.StartBlock}_T{DateTime.Now.Ticks}.xml",
+                LtfsIndex.ToXml(LtfsIndexB));
+        }
+        catch
+        {
+            // ignore file write error
+            Console.WriteLine("Warning: Failed to write index XML 1 to local file.");
+        }
+
         _tapeDrive.Write(LtfsIndex.ToByteArray(tmpIndex), LtfsLabelA.Blocksize);
         _tapeDrive.WriteFileMark();
         _tapeDrive.Flush();
@@ -419,6 +434,17 @@ public partial class Ltfs
         };
 
         LtfsIndexA = tmpIndex;
+
+        try
+        {
+            File.WriteAllText($"{Barcode}_P0_G{LtfsIndexA.GenerationNumber}_L{LtfsIndexA.Location.StartBlock}_T{DateTime.Now.Ticks}.xml",
+                LtfsIndex.ToXml(LtfsIndexA));
+        }
+        catch
+        {
+            // ignore file write error
+            Console.WriteLine("Warning: Failed to write index XML 0 to local file.");
+        }
 
         _tapeDrive.Write(LtfsIndex.ToByteArray(tmpIndex), LtfsLabelA.Blocksize);
         _tapeDrive.WriteFileMark();
