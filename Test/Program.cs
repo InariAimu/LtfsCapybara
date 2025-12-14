@@ -1,7 +1,12 @@
 ﻿
+using Ltfs;
+
 Ltfs.Ltfs lt = new();
 
-Console.WriteLine("Loading LTFS from tape...");
+// Initialize the test console logger. Adjust level as desired.
+Log.SetLogger(new ConsoleLogger { Level = LogLevel.Info });
+
+Logger.Info("Loading LTFS from tape...");
 lt.LoadTape();
 
 //lt.Format(new LtfsFormatParam()
@@ -11,21 +16,21 @@ lt.LoadTape();
 //    BlockSize = 524288,
 //});
 
-Console.WriteLine("Reading LTFS Index...");
+Logger.Info("Reading LTFS Index...");
 lt.ReadLtfs();
 
 var srcFile = "";
 var ltfsFile = "";
 
-lt.AddFileToLtfs(srcFile, ltfsFile);
+lt.AddFile(srcFile, ltfsFile);
 
-Console.WriteLine("Writing files to tape...");
-lt.WriteAll();
+Logger.Info("Writing files to tape...");
+await lt.PerformWriteTasks();
 
-Console.WriteLine("Writing LTFS Index...");
+Logger.Info("Writing LTFS Index...");
 lt.WriteLtfsIndex();
 
-Console.WriteLine("Done.");
+Logger.Info("Done.");
 lt.TapeDrive?.Dispose();
 
 Console.ReadKey();

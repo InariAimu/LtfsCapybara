@@ -36,7 +36,7 @@ public class LtfsMAMTest
             //ltfsMAMAttributes.MediumGloballyUniqueIdentifier.SetAsciiString("");
             //ltfsMAMAttributes.MediaPoolGloballyUniqueIdentifier.SetAsciiString("");
 
-            Console.WriteLine("set MAM");
+            Logger.Debug("set MAM");
         }
         catch (Exception ex)
         {

@@ -65,7 +65,7 @@ public class LtfsTest
 
         file.Name = "test.txt";
 
-        ltfs.AddFile(index.Directory, file);
+        ltfs.CreateFile(index.Directory, file);
 
         Assert.True(index.Directory.Contents.Length == 1);
         Assert.True(((LtfsFile)index.Directory.Contents[0]).Name.Value == "test.txt");

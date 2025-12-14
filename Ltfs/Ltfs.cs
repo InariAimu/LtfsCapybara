@@ -34,9 +34,11 @@ public partial class Ltfs
     public string Barcode { get; private set; } = string.Empty;
 
 
-    private LTOTapeDrive? _tapeDrive = null;
+    // Backing field is created/managed internally; use null-forgiving to satisfy the
+    // compiler while keeping the public view nullable for callers.
+    private TapeDriveBase _tapeDrive = default!;
 
-    public LTOTapeDrive? TapeDrive => _tapeDrive;
+    public TapeDriveBase? TapeDrive => _tapeDrive;
 
 
     public int ExtraPartitionCount { get; set; } = 1;
@@ -62,7 +64,7 @@ public partial class Ltfs
         {
             _tapeDrive.Unload();
             _tapeDrive.Dispose();
-            _tapeDrive = null;
+            _tapeDrive = default!;
         }
         return true;
     }
@@ -73,6 +75,14 @@ public partial class Ltfs
             return false;
 
         return true;
+    }
+
+    /// <summary>
+    /// Allow tests to inject a fake or mock TapeDrive implementation.
+    /// </summary>
+    public void SetTapeDrive(TapeDriveBase drive)
+    {
+        _tapeDrive = drive ?? throw new ArgumentNullException(nameof(drive));
     }
 
     public bool Format(FormatParam formatParam)
@@ -253,21 +263,29 @@ public partial class Ltfs
 
     public bool ReadLtfs()
     {
-        ReadLtfsInfo();
-        ReadNewestIndexFromIndexPartition();
-        //ReadNewestIndexFromDataPartition();
+        try
+        {
+            ReadLtfsInfo();
+            ReadNewestIndexFromIndexPartition();
+            //ReadNewestIndexFromDataPartition();
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"Error reading LTFS: {ex.Message}");
+            return false;
+        }
         return true;
     }
 
     public bool WriteLtfsIndex()
     {
-        Console.WriteLine("Writing LTFS Index to Data Partition...");
+        Logger.Info("Writing LTFS Index to Data Partition...");
         WriteIndexToDataPartition();
 
-        Console.WriteLine("Writing LTFS Index to Index Partition...");
+        Logger.Info("Writing LTFS Index to Index Partition...");
         WriteIndexToIndexPartition();
 
-        Console.WriteLine("Writing MAM Attribute (VCI)");
+        Logger.Info("Writing MAM Attribute (VCI)");
         var vcia = _tapeDrive.GetMAMAttribute(0x0009, 0);
 
         VCI.vciA = vcia.RawData[^4..];
@@ -294,7 +312,7 @@ public partial class Ltfs
         else
             _tapeDrive!.Rewind();
 
-
+        Logger.Info("Reading LTFS Info...");
 
         var modeData = _tapeDrive.ModeSense(0x11);
         if (modeData.Length >= 4)
@@ -303,8 +321,12 @@ public partial class Ltfs
         if (ExtraPartitionCount == 0)
             throw new Exception("No extra partition found. Is this tape LTFS formatted?");
 
+        Barcode = _tapeDrive.ReadBarCode();
+        Logger.Info($"Tape Barcode: {Barcode}");
+
         _tapeDrive.GlobalBlockSizeLimit = (uint)_tapeDrive.ReadBlockLimit().MaxBlockLength;
 
+        Logger.Info("Reading Vol1 and LTFS Label from Index Partition...");
         _tapeDrive.Locate(0, INDEX_PARTITION, LocateType.Block);
 
         byte[] vol1data = _tapeDrive.ReadBlock();
@@ -316,7 +338,7 @@ public partial class Ltfs
         byte[] ltfsLabelData = _tapeDrive.ReadToFileMark();
         LtfsLabelA = LtfsLabel.FromByteArray(ltfsLabelData);
         if (LtfsLabelA is null)
-            return false;
+            throw new Exception("Failed to read LTFS Label A");
 
         return true;
     }
@@ -398,12 +420,11 @@ public partial class Ltfs
         catch
         {
             // ignore file write error
-            Console.WriteLine("Warning: Failed to write index XML 1 to local file.");
+            Logger.Warn("Warning: Failed to write index XML 1 to local file.");
         }
 
         _tapeDrive.Write(LtfsIndex.ToByteArray(tmpIndex), LtfsLabelA.Blocksize);
         _tapeDrive.WriteFileMark();
-        _tapeDrive.Flush();
 
         return true;
     }
@@ -443,7 +464,7 @@ public partial class Ltfs
         catch
         {
             // ignore file write error
-            Console.WriteLine("Warning: Failed to write index XML 0 to local file.");
+            Logger.Warn("Warning: Failed to write index XML 0 to local file.");
         }
 
         _tapeDrive.Write(LtfsIndex.ToByteArray(tmpIndex), LtfsLabelA.Blocksize);

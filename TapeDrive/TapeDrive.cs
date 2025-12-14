@@ -8,7 +8,7 @@ using System.Linq;
 
 namespace TapeDrive;
 
-public partial class LTOTapeDrive : IDisposable
+public partial class LTOTapeDrive : TapeDriveBase, IDisposable
 {
     private SafeFileHandle? _handle;
     private readonly string _devicePath;
@@ -32,7 +32,7 @@ public partial class LTOTapeDrive : IDisposable
         }
     }
 
-    public void Dispose()
+    public override void Dispose()
     {
         Close();
     }
@@ -59,7 +59,7 @@ public partial class LTOTapeDrive : IDisposable
         }
     }
 
-    public bool GetInquiry()
+    public override bool GetInquiry()
     {
         byte[] data = ScsiRead([0x12, 0x01, 0x80, 0, 0x04, 0], 4);
         var pageLen = data[3] + 4;
@@ -77,21 +77,21 @@ public partial class LTOTapeDrive : IDisposable
         return true;
     }
 
-    public bool TestUnitReady()
+    public override bool TestUnitReady()
     {
         ScsiCommand([0, 0, 0, 0, 0, 0], SCSI_IOCTL_DATA_IN);
         return Sense[0] == 0;
     }
 
-    public void Load() => ScsiCommand([0x1b, 0, 0, 0, 0x01, 0]);
+    public override void Load() => ScsiCommand([0x1b, 0, 0, 0, 0x01, 0]);
 
-    public void Unload() => ScsiCommand([0x1b, 0, 0, 0, 0x00, 0]);
+    public override void Unload() => ScsiCommand([0x1b, 0, 0, 0, 0x00, 0]);
 
-    public bool Rewind() => ScsiCommand([0x01, 0, 0, 0, 0, 0], SCSI_IOCTL_DATA_IN);
+    public override bool Rewind() => ScsiCommand([0x01, 0, 0, 0, 0, 0], SCSI_IOCTL_DATA_IN);
 
-    public bool Unthread() => ScsiCommand([0x1b, 0, 0, 0, 0x0a, 0], SCSI_IOCTL_DATA_IN);
+    public override bool Unthread() => ScsiCommand([0x1b, 0, 0, 0, 0x0a, 0], SCSI_IOCTL_DATA_IN);
 
-    public byte[] ReadBuffer(byte bufferID, byte mode = 2)
+    public override byte[] ReadBuffer(byte bufferID, byte mode = 2)
     {
         byte[] lendata = ScsiRead([0x3c, 3, bufferID, 0, 0, 0, 0, 0, 4, 0], 4);
 
@@ -108,7 +108,7 @@ public partial class LTOTapeDrive : IDisposable
         return dumpdata;
     }
 
-    public byte[] ReadDiagCM(int len10h = 0)
+    public override byte[] ReadDiagCM(int len10h = 0)
     {
         ScsiWrite(
             [0x1d, 0x11, 0, 0, 0x14, 0],
@@ -159,30 +159,30 @@ public partial class LTOTapeDrive : IDisposable
 
 
 
-    public string ReadBarCode() =>
+    public override string ReadBarCode() =>
         GetMAMAttribute(0x0806).DataAsString.TrimEnd();
 
-    public string ReadAppInfo()
+    public override string ReadAppInfo()
     {
         return GetMAMAttribute(0x0800).DataAsString.TrimEnd() + " " +
             GetMAMAttribute(0x0801).DataAsString.TrimEnd() + " " +
             GetMAMAttribute(0x0802).DataAsString.TrimEnd();
     }
 
-    public ulong ReadRemainingCapacity() => GetMAMAttribute(0x0000).AsUInt64;
+    public override ulong ReadRemainingCapacity() => GetMAMAttribute(0x0000).AsUInt64;
 
-    public byte ReadDensityCode()
+    public override byte ReadDensityCode()
     {
         var result = ScsiRead([0x1a, 0, 0, 0, 0x0c, 0], 12);
         return result[4];
     }
 
-    public bool SetBarcode(string barcode)
+    public override bool SetBarcode(string barcode)
     {
         return SetMAMAttribute(0x0806, barcode.ToUpperInvariant(), 32);
     }
 
-    public bool SetBlockSize(ulong blockSize)
+    public override bool SetBlockSize(ulong blockSize)
     {
         byte densityCode = ReadDensityCode();
         blockSize = Math.Min(blockSize, GlobalBlockSizeLimit);
@@ -203,28 +203,28 @@ public partial class LTOTapeDrive : IDisposable
         return ScsiWrite(cdb, data);
     }
 
-    public bool WriteFileMarks(uint number) => ScsiWrite([0x10, (byte)Math.Min(number, 1), (byte)((number >> 16) & 0xff), (byte)((number >> 8) & 0xff), (byte)(number & 0xff), 0], []);
+    public override bool WriteFileMarks(uint number) => ScsiWrite([0x10, (byte)Math.Min(number, 1), (byte)((number >> 16) & 0xff), (byte)((number >> 8) & 0xff), (byte)(number & 0xff), 0], []);
 
-    public bool WriteFileMark() => WriteFileMarks(1);
+    public override bool WriteFileMark() => WriteFileMarks(1);
 
-    public bool Flush() => WriteFileMarks(0);
+    public override bool Flush() => WriteFileMarks(0);
 
-    public bool PreventMediaRemoval() => ScsiCommand([0x1e, 0, 0, 0, 1, 0], SCSI_IOCTL_DATA_IN);
+    public override bool PreventMediaRemoval() => ScsiCommand([0x1e, 0, 0, 0, 1, 0], SCSI_IOCTL_DATA_IN);
 
-    public bool AllowMediaRemoval() => ScsiCommand([0x1e, 0, 0, 0, 0, 0], SCSI_IOCTL_DATA_IN);
+    public override bool AllowMediaRemoval() => ScsiCommand([0x1e, 0, 0, 0, 0, 0], SCSI_IOCTL_DATA_IN);
 
-    public bool ReleaseUnit() => ScsiCommand([0x17, 0, 0, 0, 0, 0], SCSI_IOCTL_DATA_IN);
+    public override bool ReleaseUnit() => ScsiCommand([0x17, 0, 0, 0, 0, 0], SCSI_IOCTL_DATA_IN);
 
-    public bool ReserveUnit() => ScsiCommand([0x16, 0, 0, 0, 0, 0], SCSI_IOCTL_DATA_IN);
+    public override bool ReserveUnit() => ScsiCommand([0x16, 0, 0, 0, 0, 0], SCSI_IOCTL_DATA_IN);
 
-    public bool SetCapacity(ushort capacity)
+    public override bool SetCapacity(ushort capacity)
     {
         return ScsiCommand([0x0b, 0, 0, (byte)((capacity >> 8) & 0xff), (byte)(capacity & 0xff), 0]);
     }
 
-    public bool InitTape() => ScsiCommand([0x04, 0, 0, 0, 0, 0], SCSI_IOCTL_DATA_IN);
+    public override bool InitTape() => ScsiCommand([0x04, 0, 0, 0, 0, 0], SCSI_IOCTL_DATA_IN);
 
-    public bool SelectPartitionMode(byte[] modeData, byte maxPartitions, ushort p0size, ushort p1size)
+    public override bool SelectPartitionMode(byte[] modeData, byte maxPartitions, ushort p0size, ushort p1size)
     {
         byte[] cdb = [0x15, 0x10, 0, 0, 0x10, 0];
         byte[] data = [
@@ -236,7 +236,7 @@ public partial class LTOTapeDrive : IDisposable
         return ScsiWrite(cdb, data);
     }
     
-    public byte[] ModeSense(byte pageID, bool skipHeader = true)
+    public override byte[] ModeSense(byte pageID, bool skipHeader = true)
     {
         byte[] header = ScsiRead([0x1a, 0, pageID, 0, 4, 0], 4);
         if (header.Length == 0)
@@ -255,7 +255,7 @@ public partial class LTOTapeDrive : IDisposable
     }
 
 
-    public BlockLimit ReadBlockLimit()
+    public override BlockLimit ReadBlockLimit()
     {
         byte[] data = ScsiRead([5, 0, 0, 0, 0, 0], 6);
         return new BlockLimit
@@ -266,7 +266,7 @@ public partial class LTOTapeDrive : IDisposable
     }
 
 
-    public bool SetEncryption(byte[]? encryptionKey = null)
+    public override bool SetEncryption(byte[]? encryptionKey = null)
     {
         var param = Array.Empty<byte>();
         byte[] cdb = [0xb5, 0x20, 0, 0x10, 0, 0, 0, 0, 0, 0x34, 0, 0];

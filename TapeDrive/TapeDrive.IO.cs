@@ -10,10 +10,10 @@ using LtoTape;
 namespace TapeDrive;
 public partial class LTOTapeDrive
 {
-    public uint GlobalBlockSizeLimit { get; set; } = 0x00080000;
+    public override uint GlobalBlockSizeLimit { get; set; } = 0x00080000;
 
 
-    public ushort Locate(UInt64 blockAddress, byte partitionNumber, LocateType locateType)
+    public override ushort Locate(ulong blockAddress, byte partitionNumber, LocateType locateType)
     {
         if (AllowPartition || locateType != 0)
         {
@@ -86,7 +86,7 @@ public partial class LTOTapeDrive
         return addCode;
     }
 
-    public byte[] ReadBlock(uint blockSizeLimit = 0x080000, bool truncate = false)
+    public override byte[] ReadBlock(uint blockSizeLimit = 0x080000, bool truncate = false)
     {
         blockSizeLimit = Math.Min(blockSizeLimit, GlobalBlockSizeLimit);
 
@@ -117,7 +117,7 @@ public partial class LTOTapeDrive
         return rawData;
     }
 
-    public ushort Space6(int count, LocateType code)
+    public override ushort Space6(int count, LocateType code)
     {
         byte[] c = BigEndianBitConverter.GetBytes(count);
         ScsiRead([0x11, (byte)code, c[1], c[2], c[3], 0], 64);
@@ -125,7 +125,7 @@ public partial class LTOTapeDrive
         return addCode;
     }
 
-    public PositionData ReadPosition()
+    public override PositionData ReadPosition()
     {
         byte[] param;
         PositionData result = new();
@@ -157,7 +157,7 @@ public partial class LTOTapeDrive
         return result;
     }
 
-    public void ReadToFileMarkToLocalFile(string filename, int blockSizeLimit = 0x080000)
+    public override void ReadToFileMarkToLocalFile(string filename, int blockSizeLimit = 0x080000)
     {
         byte[] param = ScsiRead([0x34, 0, 0, 0, 0, 0, 0, 0, 0, 0], 20);
         blockSizeLimit = (int)Math.Min(blockSizeLimit, GlobalBlockSizeLimit);
@@ -177,7 +177,7 @@ public partial class LTOTapeDrive
         }
     }
 
-    public byte[] ReadToFileMark(int blockSizeLimit = 0x080000)
+    public override byte[] ReadToFileMark(int blockSizeLimit = 0x080000)
     {
         byte[] param = ScsiRead([0x34, 0, 0, 0, 0, 0, 0, 0, 0, 0], 20);
         blockSizeLimit = (int)Math.Min(blockSizeLimit, GlobalBlockSizeLimit);
@@ -199,7 +199,7 @@ public partial class LTOTapeDrive
         return fs.ToArray();
     }
 
-    public bool ReadFileMark()
+    public override bool ReadFileMark()
     {
         byte[] data = ReadBlock();
         if (data.Length == 0)
@@ -222,7 +222,7 @@ public partial class LTOTapeDrive
     /// </summary>
     /// <param name="data"></param>
     /// <returns></returns>
-    public bool Write(byte[] data)
+    public override bool Write(byte[] data)
     {
         int len = data.Length;
         byte[] lenb = BigEndianBitConverter.GetBytes(len);
@@ -232,7 +232,7 @@ public partial class LTOTapeDrive
 
     IntPtr writeBufferPtr = IntPtr.Zero;
 
-    public bool PreAllocWriteBuffer(int blockSize)
+    public override bool PreAllocWriteBuffer(int blockSize)
     {
         if (writeBufferPtr != IntPtr.Zero)
         {
@@ -242,7 +242,7 @@ public partial class LTOTapeDrive
         return writeBufferPtr != IntPtr.Zero;
     }
 
-    public void ReleaseWriteBuffer()
+    public override void ReleaseWriteBuffer()
     {
         if (writeBufferPtr != IntPtr.Zero)
         {
@@ -251,7 +251,7 @@ public partial class LTOTapeDrive
         }
     }
 
-    public bool Write(byte[] data, int blockSize)
+    public override bool Write(byte[] data, int blockSize)
     {
         if (data.Length <= blockSize)
         {
@@ -285,7 +285,7 @@ public partial class LTOTapeDrive
     }
 
 
-    public bool WriteMao(ReadOnlyMemory<byte> data, int blockSize)
+    public override bool BufferedWrite(ReadOnlyMemory<byte> data, int blockSize)
     {
         if (data.Length <= blockSize)
         {

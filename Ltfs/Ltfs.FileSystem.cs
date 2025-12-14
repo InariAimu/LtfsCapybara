@@ -6,23 +6,7 @@ namespace Ltfs;
 
 public partial class Ltfs
 {
-    protected List<FileTask> fileTasks = new();
-
-    public void AddFile(LtfsDirectory directory, LtfsFile file)
-    {
-        // check for existing file with same name in the directory
-        bool exists = directory.Contents
-            .OfType<LtfsFile>()
-            .Any(f => f.Name.GetName() == file.Name.GetName());
-        if (exists)
-        {
-            // can choose to throw an exception or simply return
-            
-            throw new InvalidOperationException($"File with the same name already exists in the directory: {file.Name.GetName()}");
-            // return; // Uncomment this line if you prefer not to throw an exception
-        }
-        directory.Contents = directory.Contents.Append(file).ToArray();
-    }
+    protected List<WriteTask> writeTasks = new();
 
     public LtfsFile? FindFile(string path)
     {
@@ -31,7 +15,6 @@ public partial class Ltfs
             return null;
 
         // Remove leading slash and split path
-        // 
         var parts = path.Trim('/').Split('/');
 
         LtfsFile? FindInDir(object dirObj, string[] segments, int depth)
@@ -69,7 +52,7 @@ public partial class Ltfs
         return FindInDir(index.Directory, parts, 0);
     }
 
-    public void AddDirectoryToLtfs(string srcDirectory, string targetPath, bool recrusive = true)
+    public void AddDirectory(string srcDirectory, string targetPath, bool recrusive = true)
     {
         if (!Directory.Exists(srcDirectory))
             return;
@@ -82,19 +65,24 @@ public partial class Ltfs
             string relativePath = Path.Combine(targetPath, entry.Name);
             if (entry is FileInfo fileInfo)
             {
-                AddFileToLtfs(fileInfo.FullName, relativePath);
+                AddFile(fileInfo.FullName, relativePath);
             }
             else if (entry is DirectoryInfo subDirInfo)
             {
                 if (recrusive)
                 {
-                    AddDirectoryToLtfs(subDirInfo.FullName, relativePath, recrusive);
+                    AddDirectory(subDirInfo.FullName, relativePath, recrusive);
                 }
             }
         }
     }
 
-    public void AddFileToLtfs(string fileName, string targetPath)
+    public void CreateFile(LtfsDirectory directory, LtfsFile file)
+    {
+        directory.Contents = directory.Contents.Append(file).ToArray();
+    }
+
+    public void AddFile(string fileName, string targetPath)
     {
         if (!File.Exists(fileName))
             return;
@@ -112,7 +100,7 @@ public partial class Ltfs
         ltfsFile.ReadOnly = fileInfo.IsReadOnly;
         ltfsFile.FileUID = 0; // will be assigned when updating index
 
-        FileTask task = new FileTask
+        WriteTask task = new WriteTask
         {
             TaskType = FileTaskType.Write,
             LocalPath = fileName,
@@ -125,10 +113,10 @@ public partial class Ltfs
             task.TaskType = FileTaskType.Replace;
         }
 
-        fileTasks.Add(task);
+        writeTasks.Add(task);
     }
 
-    public void UpdateIndexByTask(LtfsIndex index, FileTask task)
+    public void UpdateIndexByTask(LtfsIndex index, WriteTask task)
     {
         // when a task is finished, update the ltfs index accordingly
         if (index == null || task == null)

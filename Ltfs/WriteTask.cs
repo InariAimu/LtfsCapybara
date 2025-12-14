@@ -9,7 +9,7 @@ public enum FileTaskType
     Delete
 }
 
-public class FileTask
+public class WriteTask
 {
     public required FileTaskType TaskType { get; set; }
 

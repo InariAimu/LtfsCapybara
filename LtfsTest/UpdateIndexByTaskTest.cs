@@ -22,7 +22,7 @@ namespace LtfsTest
             file.Name = "file1.txt";
             file.Length = 123;
 
-            var writeTask = new FileTask
+            var writeTask = new WriteTask
             {
                 TaskType = FileTaskType.Write,
                 LocalPath = "C:\\tmp\\file1.txt",
@@ -45,7 +45,7 @@ namespace LtfsTest
             var newFile = LtfsFile.Default();
             newFile.Name = "file1.txt";
             newFile.Length = 456;
-            var replaceTask = new FileTask
+            var replaceTask = new WriteTask
             {
                 TaskType = FileTaskType.Replace,
                 LocalPath = "C:\\tmp\\file1_v2.txt",
@@ -59,7 +59,7 @@ namespace LtfsTest
             Assert.Equal((ulong)456, replaced!.Length);
 
             // act - delete
-            var deleteTask = new FileTask
+            var deleteTask = new WriteTask
             {
                 TaskType = FileTaskType.Delete,
                 LocalPath = string.Empty,

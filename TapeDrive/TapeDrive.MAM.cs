@@ -11,7 +11,7 @@ namespace TapeDrive;
 
 public partial class LTOTapeDrive
 {
-    public byte[] GetMAMAttributeBytes(ushort pageCode, byte PartitionNumber = 0)
+    public override byte[] GetMAMAttributeBytes(ushort pageCode, byte PartitionNumber = 0)
     {
         byte PageCodeH = (byte)((pageCode >> 8) & 0xff);
         byte PageCodeL = (byte)(pageCode & 0xff);
@@ -61,7 +61,7 @@ public partial class LTOTapeDrive
     }
 
 
-    public MAMAttribute GetMAMAttribute(ushort PageCode, byte PartitionNumber = 0)
+    public override MAMAttribute GetMAMAttribute(ushort PageCode, byte PartitionNumber = 0)
     {
         byte[] result = GetMAMAttributeBytes(PageCode, PartitionNumber);
 
@@ -74,7 +74,7 @@ public partial class LTOTapeDrive
     }
 
 
-    public bool SetMAMAttribute(ushort pageID, byte[] data, AttributeFormat format = AttributeFormat.Binary, byte partition = 0)
+    public override bool SetMAMAttribute(ushort pageID, byte[] data, AttributeFormat format = AttributeFormat.Binary, byte partition = 0)
     {
         int len = data.Length + 9;
         byte[] paramLen = BigEndianBitConverter.GetBytes(len);
@@ -92,7 +92,7 @@ public partial class LTOTapeDrive
     }
 
 
-    public bool SetMAMAttribute(ushort pageID, string text, int textMaxLength, byte partition = 0)
+    public override bool SetMAMAttribute(ushort pageID, string text, int textMaxLength, byte partition = 0)
     {
         byte[] data = Encoding.ASCII.GetBytes(text.PadRight(textMaxLength)[..textMaxLength]);
         return SetMAMAttribute(pageID, data, AttributeFormat.Ascii, partition);
