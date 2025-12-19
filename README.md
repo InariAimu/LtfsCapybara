@@ -19,7 +19,7 @@ LtfsCapybara is a LTFS implementation designed for managing and accessing data s
 - Zero copy pipeline for high performance data transfer, optimized for samba transfer. 160 MB/s continuous write speed tested on LTO-6 tape drive with 10GbE network.
 - Multi-threaded read/write operations.
 
-## Instrction
+## Instruction
 
 Please use `Test` project for implementation reference.
 
