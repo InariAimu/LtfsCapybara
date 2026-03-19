@@ -1,0 +1,6 @@
+﻿dist
+node_modules
+src-tauri/target
+public
+**/*.lock
+*.log
