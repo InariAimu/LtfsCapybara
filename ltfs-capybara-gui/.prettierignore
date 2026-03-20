@@ -4,3 +4,6 @@ src-tauri/target
 public
 **/*.lock
 *.log
+.vscode
+.idea
+.DS_Store
