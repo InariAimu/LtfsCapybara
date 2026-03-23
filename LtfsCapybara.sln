@@ -3,8 +3,6 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.11.35327.3
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "LtfsCapybaraGui", "LtfsCapybaraGui\LtfsCapybaraGui.csproj", "{C2816C99-5063-445B-A1DA-8E6962F7DA71}"
-EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Ltfs", "Ltfs\Ltfs.csproj", "{6B824086-46F2-4055-97D7-4FC11B7FD05B}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Test", "Test\Test.csproj", "{4C467A26-E342-46F8-87A8-BA81DFBEA613}"
@@ -13,9 +11,11 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "LtfsTest", "LtfsTest\LtfsTe
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "LtoTape", "LtoTape\LtoTape.csproj", "{1F0AE637-F53E-4957-8F9A-FC94BF00350D}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TapeDrive", "TapeDrive\TapeDrive.csproj", "{8F07BEEC-BB95-4ED8-8161-3AC8A3C9E6D9}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TapeDrive", "TapeDrive\TapeDrive.csproj", "{8F07BEEC-BB95-4ED8-8161-3AC8A3C9E6D9}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestLocal", "TestLocal\TestLocal.csproj", "{E918FF8A-9286-4194-BAAD-AAE1B722D44B}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TestLocal", "TestLocal\TestLocal.csproj", "{E918FF8A-9286-4194-BAAD-AAE1B722D44B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LtfsServer", "LtfsServer\LtfsServer.csproj", "{B399C791-FB8B-46E6-9697-9390B4C00EC8}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -23,10 +23,6 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{C2816C99-5063-445B-A1DA-8E6962F7DA71}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{C2816C99-5063-445B-A1DA-8E6962F7DA71}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{C2816C99-5063-445B-A1DA-8E6962F7DA71}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{C2816C99-5063-445B-A1DA-8E6962F7DA71}.Release|Any CPU.Build.0 = Release|Any CPU
 		{6B824086-46F2-4055-97D7-4FC11B7FD05B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{6B824086-46F2-4055-97D7-4FC11B7FD05B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{6B824086-46F2-4055-97D7-4FC11B7FD05B}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -51,6 +47,10 @@ Global
 		{E918FF8A-9286-4194-BAAD-AAE1B722D44B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E918FF8A-9286-4194-BAAD-AAE1B722D44B}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{E918FF8A-9286-4194-BAAD-AAE1B722D44B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B399C791-FB8B-46E6-9697-9390B4C00EC8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B399C791-FB8B-46E6-9697-9390B4C00EC8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B399C791-FB8B-46E6-9697-9390B4C00EC8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B399C791-FB8B-46E6-9697-9390B4C00EC8}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
