@@ -14,6 +14,7 @@ import { invoke } from '@tauri-apps/api/core';
 
 import LeftPanel from './LeftPanel.vue';
 import FileList from './FileList.vue';
+import FileTreeList from './FileTreeList.vue';
 
 const greetMsg = ref('');
 
@@ -38,10 +39,12 @@ async function greet() {
                 </n-button-group>
             </n-layout-header>
             <n-layout has-sider position="static">
-                <n-layout-sider bordered content-style="padding: 10px;">
-                    <file-list />
+                <n-layout-sider bordered content-style="padding: 5px 10px 0 10px;">
+                    <file-tree-list />
                 </n-layout-sider>
-                <n-layout content-style="padding: 24px;"> Cat </n-layout>
+                <n-layout>
+                    <file-list />
+                </n-layout>
             </n-layout>
             <n-layout-footer bordered position="absolute" style="height: 32px; padding: 5px">
                 Cat

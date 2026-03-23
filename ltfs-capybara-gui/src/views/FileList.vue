@@ -1,56 +1,86 @@
 <script setup lang="ts">
-import { onMounted } from 'vue';
-import { useFiles } from '@/composables/useFiles';
-import { useFileStore } from '@/stores/fileStore';
+import type { DataTableBaseColumn, DataTableColumns, DataTableFilterState } from 'naive-ui';
+import { NDataTable } from 'naive-ui';
+import { reactive } from 'vue';
 
-//const { fetchFiles, deleteFile } = useFiles();
-const store = useFileStore();
+interface Row {
+    key: number;
+    name: string;
+    size: number;
+    index: number;
+    crc64: string;
+    createTime: string;
+    modifyTime: string;
+    updateTime: string;
+}
 
-import { NButton, NTree, NIcon } from 'naive-ui';
-import { FileTraySharp } from '@vicons/ionicons5';
-import { h, ref } from 'vue';
+const columns = reactive<DataTableColumns<Row>>([
+    {
+        type: 'selection',
+    },
+    {
+        title: 'Name',
+        key: 'name',
+        width: 150,
+        fixed: 'left',
+        resizable: true,
+    },
+    {
+        title: 'Size',
+        key: 'size',
+        width: 100,
+    },
+    {
+        title: 'Index',
+        key: 'index',
+        width: 60,
+    },
+    {
+        title: 'CRC64',
+        key: 'crc64',
+        width: 150,
+    },
+    {
+        title: 'Create Time',
+        key: 'createTime',
+        width: 150,
+    },
+    {
+        title: 'Modify Time',
+        key: 'modifyTime',
+        width: 150,
+    },
+    {
+        title: 'Update Time',
+        key: 'updateTime',
+        width: 150,
+    },
+]);
 
 const data = [
     {
-        label: 'LTFS01L6',
-        key: '0',
-        prefix: () =>
-            h(NIcon, null, {
-                default: () => h(FileTraySharp),
-            }),
-        suffix: () =>
-            h(NButton, { text: true, type: 'primary' }, { default: () => '2.2TB / 2.5TB' }),
-        children: [
-            {
-                label: 'Directory1',
-                key: '00',
-                children: [
-                    {
-                        label: 'SubDirectory1',
-                        key: '000',
-                    },
-                    {
-                        label: 'SubDirectory2',
-                        key: '001',
-                    },
-                ],
-            },
-            {
-                label: 'Directory2',
-                key: '01',
-            },
-        ],
+        key: 1,
+        name: 'file1.txt',
+        size: 1024,
+        index: 0,
+        crc64: '1234567890abcdef',
+        createTime: '2024-01-01 12:00:00',
+        modifyTime: '2024-01-02 12:00:00',
+        updateTime: '2024-01-03 12:00:00',
+    },
+    {
+        key: 2,
+        name: 'file2.txt',
+        size: 2048,
+        index: 1,
+        crc64: 'abcdef1234567890',
+        createTime: '2024-01-04 12:00:00',
+        modifyTime: '2024-01-05 12:00:00',
+        updateTime: '2024-01-06 12:00:00',
     },
 ];
 </script>
 
 <template>
-    <n-tree
-        block-line
-        :show-line="true"
-        expand-on-click
-        :indent="12"
-        :data="data"
-        :selectable="true"
-    />
+    <n-data-table :size="'medium'" :columns="columns" :data="data" />
 </template>
