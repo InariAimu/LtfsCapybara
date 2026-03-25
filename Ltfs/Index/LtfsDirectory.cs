@@ -59,9 +59,28 @@ public partial class LtfsDirectory
 
     private List<object> _contents = new();
 
+    [XmlIgnore]
     public int Count => _contents.Count;
 
-    public override string ToString() => Name;
+    public override string ToString() => $"[{_contents.Count}] {Name}";
+
+    
+    [XmlIgnore]
+    public UInt64 TotalSize
+    {
+        get
+        {
+            UInt64 total = 0;
+            foreach (var item in _contents)
+            {
+                if (item is LtfsFile file)
+                    total += file.Length;
+                else if (item is LtfsDirectory dir)
+                    total += dir.TotalSize;
+            }
+            return total;
+        }
+    }
 
 
     public static LtfsDirectory Default()

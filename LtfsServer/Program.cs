@@ -4,20 +4,32 @@ using LtfsServer.API;
 using LtfsServer.Services;
 
 using TapeDrive;
+using System.IO;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Read API host/port from configuration (appsettings, env vars, or CLI args)
-var apiHost = builder.Configuration["Api:Host"] ?? "localhost";
-var apiPort = builder.Configuration["Api:Port"] ?? Environment.GetEnvironmentVariable("PORT") ?? "5003";
-var apiScheme = builder.Configuration["Api:Scheme"] ?? "http";
+// Centralize startup configuration (URLs, data path, DI registrations)
+StartupConfig.Configure(builder);
 
-builder.WebHost.UseUrls($"{apiScheme}://{apiHost}:{apiPort}");
+// Allow Vite dev server to call the API during development
+builder.Services.AddCors(options =>
+{
+	options.AddPolicy("AllowVite", p => p
+		.WithOrigins("http://localhost:1420")
+		.AllowAnyHeader()
+		.AllowAnyMethod()
+		.AllowCredentials());
+});
 
 // Register tape drive registry as app-wide singleton
 builder.Services.AddSingleton<ITapeDriveRegistry, TapeDriveRegistry>();
+// Register local tape registry (scans AppData.Path/local)
+builder.Services.AddSingleton<ILocalTapeRegistry, LocalTapeRegistry>();
 
 var app = builder.Build();
+
+// Apply CORS policy so the Vite dev server can access the API
+app.UseCors("AllowVite");
 
 if (app.Environment.IsDevelopment())
 {
@@ -27,7 +39,7 @@ if (app.Environment.IsDevelopment())
     registry.TryAdd("fake-1", new FakeTapeDrive());
 }
 
-app.MapGet("/", () => Results.Ok(new { message = "LtfsServer running", env = app.Environment.EnvironmentName, url = $"{apiScheme}://{apiHost}:{apiPort}" }));
+app.MapGet("/", () => Results.Ok(new { message = "LtfsServer running", env = app.Environment.EnvironmentName, url = $"{builder.WebHost}" }));
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "OK", timestamp = DateTime.UtcNow }))
    .WithName("Health");
@@ -46,5 +58,24 @@ app.MapGet("/api/example/files", () =>
 
 // Register TapeDrive API endpoints
 app.MapTapeDriveApi();
+
+// Register LocalTapes API endpoints
+app.MapLocalTapesApi();
+// Register LocalIndex API endpoints (load and return LTFS index contents)
+app.MapLocalIndexApi();
+
+// Initialize local tape registry from AppData.Path/local before starting
+var localRegistry = app.Services.GetRequiredService<ILocalTapeRegistry>();
+var appData = app.Services.GetRequiredService<AppData>();
+try
+{
+	var localPath = Path.Combine(appData.Path, "local");
+	await localRegistry.InitializeAsync(localPath);
+}
+catch (Exception ex)
+{
+	var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("LocalTapeInit");
+	logger.LogWarning(ex, "Failed to initialize LocalTapeRegistry; continuing with empty list.");
+}
 
 app.Run();

@@ -4,39 +4,38 @@ using System.Collections.Generic;
 using System.Linq;
 using TapeDrive;
 
-namespace LtfsServer.Services
+namespace LtfsServer.Services;
+
+public class TapeDriveRegistry : ITapeDriveRegistry, IDisposable
 {
-    public class TapeDriveRegistry : ITapeDriveRegistry, IDisposable
+    private readonly ConcurrentDictionary<string, TapeDriveBase> _drives = new();
+
+    public bool TryAdd(string id, TapeDriveBase drive) => _drives.TryAdd(id, drive);
+
+    public bool TryRemove(string id, out TapeDriveBase? drive)
     {
-        private readonly ConcurrentDictionary<string, TapeDriveBase> _drives = new();
+        var removed = _drives.TryRemove(id, out drive);
+        if (removed && drive is IDisposable d)
+            d.Dispose();
+        return removed;
+    }
 
-        public bool TryAdd(string id, TapeDriveBase drive) => _drives.TryAdd(id, drive);
+    public bool TryGet(string id, out TapeDriveBase? drive) => _drives.TryGetValue(id, out drive);
 
-        public bool TryRemove(string id, out TapeDriveBase? drive)
+    public IReadOnlyCollection<TapeDriveBase> GetAll() => _drives.Values.ToArray();
+
+    public int Count => _drives.Count;
+
+    public void Dispose()
+    {
+        foreach (var kv in _drives)
         {
-            var removed = _drives.TryRemove(id, out drive);
-            if (removed && drive is IDisposable d)
-                d.Dispose();
-            return removed;
-        }
-
-        public bool TryGet(string id, out TapeDriveBase? drive) => _drives.TryGetValue(id, out drive);
-
-        public IReadOnlyCollection<TapeDriveBase> GetAll() => _drives.Values.ToArray();
-
-        public int Count => _drives.Count;
-
-        public void Dispose()
-        {
-            foreach (var kv in _drives)
+            try
             {
-                try
-                {
-                    (kv.Value as IDisposable)?.Dispose();
-                }
-                catch { }
+                (kv.Value as IDisposable)?.Dispose();
             }
-            _drives.Clear();
+            catch { }
         }
+        _drives.Clear();
     }
 }

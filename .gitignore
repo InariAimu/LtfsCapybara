@@ -61,3 +61,5 @@ Tools/test/
 Tools/barcodegen/venv/
 Tools/barcodegen/*.txt
 Tools/barcodegen/*.png
+
+TestResources/

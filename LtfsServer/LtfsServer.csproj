@@ -8,6 +8,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Ltfs\Ltfs.csproj" />
+    <ProjectReference Include="..\LtoTape\LtoTape.csproj" />
     <ProjectReference Include="..\TapeDrive\TapeDrive.csproj" />
   </ItemGroup>
 

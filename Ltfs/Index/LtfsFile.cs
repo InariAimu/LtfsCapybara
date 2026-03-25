@@ -70,7 +70,11 @@ public partial class LtfsFile
     public bool ShouldSerializeSymlink() => Symlink is not null;
 
 
-    public override string ToString() => Name;
+    public override string ToString() => $"[{FileSize.FormatSize(Length)}] {Name}";
+
+
+    [XmlIgnore]
+    public string FileSizeString => FileSize.FormatSize(Length);
 
 
     public static LtfsFile Default()

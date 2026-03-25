@@ -38,12 +38,12 @@ async function greet() {
                     <n-button @click="greet"> Bear </n-button>
                 </n-button-group>
             </n-layout-header>
-            <n-layout has-sider position="static">
+            <n-layout has-sider position="absolute" style="top: 36px; bottom: 32px">
                 <n-layout-sider bordered content-style="padding: 5px 10px 0 10px;">
                     <file-tree-list />
                 </n-layout-sider>
                 <n-layout>
-                    <file-list />
+                    <file-list style="height: 100%" />
                 </n-layout>
             </n-layout>
             <n-layout-footer bordered position="absolute" style="height: 32px; padding: 5px">

@@ -3,6 +3,7 @@ using System.Xml.Schema;
 using System.Xml;
 using System.Text;
 using Ltfs.Utils;
+using Ltfs.Label;
 
 namespace Ltfs.Index;
 
@@ -120,6 +121,17 @@ public partial class LtfsIndex : ICloneable
         LtfsIndex? label = (LtfsIndex?)serializer.Deserialize(reader);
 
         return label;
+    }
+
+    public static LtfsIndex? FromXmlFile(string path)
+    {
+        if (!File.Exists(path))
+            return null;
+
+        string xml = File.ReadAllText(path);
+        LtfsIndex? index = FromXml(xml);
+
+        return index;
     }
 
     public static LtfsIndex? FromByteArray(byte[] data)

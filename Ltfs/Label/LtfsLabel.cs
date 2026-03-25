@@ -4,7 +4,6 @@ using System.Xml.Serialization;
 using System.Xml.Schema;
 using System.Xml;
 using System.Text;
-using static System.Net.Mime.MediaTypeNames;
 using Ltfs.Index;
 using Ltfs.Utils;
 
@@ -71,6 +70,17 @@ public class LtfsLabel : ICloneable
         using StringReader reader = new(xml);
         LtfsLabel? label = (LtfsLabel?)serializer.Deserialize(reader);
 
+        return label;
+    }
+
+    public static LtfsLabel? FromXmlFile(string path)
+    {
+        if (!File.Exists(path))
+            return null;
+
+        string xml = File.ReadAllText(path);
+        LtfsLabel? label = FromXml(xml);
+        
         return label;
     }
 
