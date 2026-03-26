@@ -6,18 +6,34 @@ import {
     FileTrayFullSharp,
     FileTraySharp,
     FileTrayStackedSharp,
-    DocumentTextOutline,
+    SwapVerticalOutline,
+    DocumentTextSharp,
 } from '@vicons/ionicons5';
 import { NIcon, NMenu, NLayoutSider } from 'naive-ui';
-import { h, ref } from 'vue';
+import { h, ref, computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 
 function renderIcon(icon: Component) {
     return () => h(NIcon, null, { default: () => h(icon) });
 }
 
-const menuOptions: MenuOption[] = [
+interface Props {
+    selectedKey?: string;
+}
+
+const props = withDefaults(defineProps<Props>(), {
+    selectedKey: 'localindex',
+});
+
+const emit = defineEmits<{
+    select: [key: string];
+}>();
+
+const { t } = useI18n();
+
+const menuOptions = computed<MenuOption[]>(() => [
     {
-        label: 'Tape Machine',
+        label: t('menu.tapeMachine'),
         key: 'tape-machine-operations',
         icon: renderIcon(FileTrayFullSharp),
         children: [
@@ -28,13 +44,12 @@ const menuOptions: MenuOption[] = [
         ],
     },
     {
-        label: 'Tape Library',
+        label: t('menu.tapeLibrary'),
         key: 'tape-library',
-        disabled: true,
         icon: renderIcon(FileTrayStackedSharp),
     },
     {
-        label: 'LTFS',
+        label: t('menu.ltfs'),
         key: 'ltfs',
         icon: renderIcon(FileTraySharp),
         children: [
@@ -49,28 +64,27 @@ const menuOptions: MenuOption[] = [
         ],
     },
     {
-        label: 'Local Index',
-        key: 'local-index',
-        icon: renderIcon(DocumentTextOutline),
-        children: [
-            {
-                label: 'LTFS01L6',
-                key: 'ltfs01l6',
-            },
-            {
-                label: 'LTFS01L7',
-                key: 'ltfs01l7',
-            },
-        ],
+        label: t('menu.localIndex'),
+        key: 'localindex',
+        icon: renderIcon(DocumentTextSharp),
     },
     {
-        label: 'Settings',
+        label: t('menu.task'),
+        key: 'task',
+        icon: renderIcon(SwapVerticalOutline),
+    },
+    {
+        label: t('menu.settings'),
         key: 'settings',
         icon: renderIcon(SettingsOutline),
     },
-];
+]);
 
 const inverted = ref(true);
+
+function handleMenuSelect(key: string) {
+    emit('select', key);
+}
 </script>
 
 <template>
@@ -81,6 +95,8 @@ const inverted = ref(true);
             :collapsed-width="64"
             :collapsed-icon-size="22"
             :options="menuOptions"
+            :value="props.selectedKey"
+            @update:value="handleMenuSelect"
         />
     </n-layout-sider>
 </template>

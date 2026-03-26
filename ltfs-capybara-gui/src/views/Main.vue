@@ -1,24 +1,49 @@
 <script setup lang="ts">
-import { ref } from 'vue';
-import {
-    NButton,
-    NButtonGroup,
-    NLayout,
-    NLayoutHeader,
-    NLayoutSider,
-    NLayoutFooter,
-    useMessage,
-} from 'naive-ui';
+import { computed, ref } from 'vue';
+import { NButton, NButtonGroup, NLayout, NLayoutHeader, NLayoutFooter, useMessage } from 'naive-ui';
+import { useI18n } from 'vue-i18n';
 
 import { invoke } from '@tauri-apps/api/core';
 
 import LeftPanel from './LeftPanel.vue';
-import FileList from './FileList.vue';
-import FileTreeList from './FileTreeList.vue';
+import Settings from './Settings.vue';
+import LocalIndex from './LocalIndex.vue';
+import TapeMachine from './TapeMachine.vue';
+import TapeLibrary from './TapeLibrary.vue';
+import Ltfs from './Ltfs.vue';
+import Task from './Task.vue';
 
 const greetMsg = ref('');
+const { t } = useI18n();
+const selectedMenuKey = ref<string>('localindex');
 
 const message = useMessage();
+
+function handleMenuSelect(key: string) {
+    selectedMenuKey.value = key;
+}
+
+const currentPageComponent = computed(() => {
+    switch (selectedMenuKey.value) {
+        case 'settings':
+            return Settings;
+        case 'localindex':
+            return LocalIndex;
+        case 'task':
+            return Task;
+        case 'tape-machine-operations':
+        case 'tape0':
+            return TapeMachine;
+        case 'tape-library':
+            return TapeLibrary;
+        case 'ltfs':
+        case 'ltfs01l6':
+        case 'ltfs01l7':
+            return Ltfs;
+        default:
+            return LocalIndex;
+    }
+});
 
 async function greet() {
     // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -29,25 +54,22 @@ async function greet() {
 
 <template>
     <n-layout has-sider position="absolute">
-        <left-panel />
+        <left-panel :selected-key="selectedMenuKey" @select="handleMenuSelect" />
         <n-layout>
             <n-layout-header style="padding: 0px" bordered>
                 <n-button-group>
-                    <n-button @click="greet"> Cat </n-button>
-                    <n-button @click="greet"> Dog </n-button>
-                    <n-button @click="greet"> Bear </n-button>
+                    <n-button @click="greet"> {{ t('app.actions.cat') }} </n-button>
+                    <n-button @click="greet"> {{ t('app.actions.dog') }} </n-button>
+                    <n-button @click="greet"> {{ t('app.actions.bear') }} </n-button>
                 </n-button-group>
             </n-layout-header>
-            <n-layout has-sider position="absolute" style="top: 36px; bottom: 32px">
-                <n-layout-sider bordered content-style="padding: 5px 10px 0 10px;">
-                    <file-tree-list />
-                </n-layout-sider>
-                <n-layout>
-                    <file-list style="height: 100%" />
-                </n-layout>
+            <n-layout position="absolute" style="top: 36px; bottom: 32px">
+                <keep-alive include="LocalIndex">
+                    <component :is="currentPageComponent" />
+                </keep-alive>
             </n-layout>
             <n-layout-footer bordered position="absolute" style="height: 32px; padding: 5px">
-                Cat
+                {{ t('app.footer') }}
             </n-layout-footer>
         </n-layout>
     </n-layout>
