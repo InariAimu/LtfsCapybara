@@ -3,7 +3,14 @@ using Ltfs;
 using Ltfs.Index;
 using Ltfs.Label;
 
+using LtoTape;
+using LtoTape.CM;
+
 using TapeDrive;
+
+
+LtoTape.CartridgeMemory cm = new();
+cm.FromLcgCmFile("E:\\github\\LtfsCapybara\\TestResources\\schema\\MCC398L5\\LTFSIndex_Autosave_MCC398L5_GEN24_Pa_B5_20260305_015542.1560956.cm");
 
 Ltfs.Ltfs lt = new();
 lt.SetTapeDrive(new FakeTapeDrive());

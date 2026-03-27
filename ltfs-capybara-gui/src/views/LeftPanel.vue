@@ -8,6 +8,7 @@ import {
     FileTrayStackedSharp,
     SwapVerticalOutline,
     DocumentTextSharp,
+    FishSharp,
 } from '@vicons/ionicons5';
 import { NIcon, NMenu, NLayoutSider } from 'naive-ui';
 import { h, ref, computed } from 'vue';
