@@ -8,6 +8,8 @@ using Microsoft.VisualStudio.TestPlatform.Utilities;
 using Ltfs.Label;
 using Ltfs;
 using Ltfs.Index;
+using LtfsServer.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace LtfsTest;
 
@@ -90,6 +92,48 @@ public class LtfsTest
     public void AddDirectory()
     {
 
+    }
+
+
+    [Fact]
+    public async Task LocalTapeRegistry_FindsLatestCmEntry()
+    {
+        var root = Path.Combine(Path.GetTempPath(), nameof(LocalTapeRegistry_FindsLatestCmEntry), Guid.NewGuid().ToString("N"));
+        var tapeName = "C00392L6";
+        var tapeDir = Path.Combine(root, tapeName);
+        Directory.CreateDirectory(tapeDir);
+
+        try
+        {
+            var xmlPath = Path.Combine(tapeDir, "C00392L6_P0_G3_L105310_20250830_171308.6964061.xml");
+            await File.WriteAllTextAsync(xmlPath, "<ltfsindex />");
+
+            var cmSource = Path.Combine(AppContext.BaseDirectory, "LTFSIndex_Autosave_C00392L6_GEN3_Pb_B105310_20250830_171308.6964061.cm");
+            var cmTarget = Path.Combine(tapeDir, "Capture_G3_20250830_171308.6964061.cm");
+            File.Copy(cmSource, cmTarget);
+
+            var registry = new LocalTapeRegistry(NullLogger<LocalTapeRegistry>.Instance);
+            await registry.InitializeAsync(root);
+
+            var files = registry.GetFiles(tapeName).OrderByDescending(f => f.Index.Ticks).ToArray();
+
+            Assert.Equal(2, files.Length);
+
+            var cmInfo = Assert.Single(files.Where(f => f.CartridgeMemory is not null));
+            Assert.Equal("Capture_G3_20250830_171308.6964061.cm", cmInfo.Index.FileName);
+            Assert.Equal(3, cmInfo.Index.Generation);
+            Assert.NotNull(cmInfo.CartridgeMemory);
+            Assert.NotEmpty(cmInfo.CartridgeMemory!.Manufacturer.Format);
+
+            var xmlInfo = Assert.Single(files.Where(f => f.Index.FileName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)));
+            Assert.Equal(0, xmlInfo.Index.Partition);
+            Assert.Equal(105310, xmlInfo.Index.LocationStartBlock);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, true);
+        }
     }
 
 }

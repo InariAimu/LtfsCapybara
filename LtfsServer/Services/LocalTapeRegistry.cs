@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using System.Globalization;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using LtoTape;
 
 namespace LtfsServer.Services;
 
@@ -14,6 +15,7 @@ public sealed class LocalTapeRegistry : ILocalTapeRegistry
 {
     private readonly ConcurrentDictionary<string, ConcurrentBag<TapeFileInfo>> _tapes = new();
     private readonly ILogger<LocalTapeRegistry> _logger;
+    private const string TimestampFormat = "yyyyMMdd_HHmmss.FFFFFFF";
 
     private static readonly Regex FilenameRegex = new Regex(
         "^(.+?)_P(\\d+)_G(\\d+)_L(\\d+)_T(\\d+)\\.xml$",
@@ -22,6 +24,10 @@ public sealed class LocalTapeRegistry : ILocalTapeRegistry
     // Alternate pattern: {Barcode}_P{Partition}_G{Generation}_L{Location}_{yyyyMMdd}_{HHmmss}.{fraction}.xml
     private static readonly Regex AltFilenameRegex = new Regex(
         "^(.+?)_P(\\d+)_G(\\d+)_L(\\d+)_(\\d{8})_(\\d{6}\\.\\d{1,7})\\.xml$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex CmFilenameRegex = new Regex(
+        "^(.+?)_G(\\d+)_(\\d{8})_(\\d{6}\\.\\d{1,7})\\.cm$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     public LocalTapeRegistry(ILogger<LocalTapeRegistry> logger)
@@ -41,17 +47,22 @@ public sealed class LocalTapeRegistry : ILocalTapeRegistry
         {
             // Ensure directory exists; do not create if missing (but create to be permissive)
             Directory.CreateDirectory(localPath);
+            _tapes.Clear();
 
             var dirs = Directory.EnumerateDirectories(localPath);
             foreach (var dir in dirs)
             {
                 var tapeName = Path.GetFileName(dir) ?? string.Empty;
-                _tapes.TryAdd(tapeName, new ConcurrentBag<TapeFileInfo>());
+                var bag = new ConcurrentBag<TapeFileInfo>();
+                _tapes[tapeName] = bag;
 
                 IEnumerable<string> files;
                 try
                 {
-                    files = Directory.EnumerateFiles(dir, "*.xml");
+                    files = Directory.EnumerateFiles(dir, "*.*")
+                        .Where(static file =>
+                            file.EndsWith(".xml", StringComparison.OrdinalIgnoreCase) ||
+                            file.EndsWith(".cm", StringComparison.OrdinalIgnoreCase));
                 }
                 catch (Exception ex)
                 {
@@ -61,64 +72,32 @@ public sealed class LocalTapeRegistry : ILocalTapeRegistry
 
                 foreach (var f in files)
                 {
-                    var name = Path.GetFileName(f) ?? string.Empty;
-                    var m = FilenameRegex.Match(name);
-                    int partition = -1, generation = -1;
-                    long location = -1, ticks = -1;
-                    string barcode;
-
-                    if (m.Success)
+                    if (TryParseXmlFileInfo(tapeName, f, out TapeFileIndex? xmlInfo))
                     {
-                        barcode = m.Groups[1].Value;
-                        if (!int.TryParse(m.Groups[2].Value, out partition)) partition = -1;
-                        if (!int.TryParse(m.Groups[3].Value, out generation)) generation = -1;
-                        if (!long.TryParse(m.Groups[4].Value, out location)) location = -1;
-                        if (!long.TryParse(m.Groups[5].Value, out ticks)) ticks = -1;
-                    }
-                    else
-                    {
-                        var m2 = AltFilenameRegex.Match(name);
-                        if (!m2.Success)
-                        {
-                            _logger.LogDebug("Filename did not match known patterns: {file}", f);
-                            continue;
-                        }
-
-                        barcode = m2.Groups[1].Value;
-                        if (!int.TryParse(m2.Groups[2].Value, out partition)) partition = -1;
-                        if (!int.TryParse(m2.Groups[3].Value, out generation)) generation = -1;
-                        if (!long.TryParse(m2.Groups[4].Value, out location)) location = -1;
-
-                        // Parse timestamp like 20260305_015542.1560956 -> DateTime -> Ticks
-                        var datePart = m2.Groups[5].Value; // yyyyMMdd
-                        var timePart = m2.Groups[6].Value; // HHmmss.fraction
-                        var combined = $"{datePart}_{timePart}";
-                        if (DateTime.TryParseExact(combined, "yyyyMMdd_HHmmss.FFFFFFF", CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt))
-                        {
-                            ticks = dt.Ticks;
-                        }
-                        else
-                        {
-                            ticks = -1;
-                        }
-                    }
-
-                    if (!string.Equals(barcode, tapeName, StringComparison.Ordinal))
-                    {
-                        _logger.LogDebug("Filename barcode {barcode} does not match directory {tapeName} for file {file}", barcode, tapeName, f);
+                        bag.Add(new TapeFileInfo { Index = xmlInfo });
                         continue;
                     }
 
-                    var info = new TapeFileInfo
+                    if (TryParseCmFileInfo(f, out TapeFileIndex? cmInfo))
                     {
-                        FileName = name,
-                        Partition = partition,
-                        Generation = generation,
-                        LocationStartBlock = location,
-                        Ticks = ticks
-                    };
+                        var info = new TapeFileInfo { Index = cmInfo };
 
-                    _tapes[tapeName].Add(info);
+                        try
+                        {
+                            var cartridgeMemory = new CartridgeMemory();
+                            cartridgeMemory.FromLcgCmFile(f);
+                            info.CartridgeMemory = cartridgeMemory;
+                            bag.Add(info);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to parse cartridge memory file {file}", f);
+                        }
+
+                        continue;
+                    }
+
+                    _logger.LogDebug("Filename did not match known patterns: {file}", f);
                 }
             }
         }
@@ -146,9 +125,102 @@ public sealed class LocalTapeRegistry : ILocalTapeRegistry
 
         return Array.Empty<TapeFileInfo>();
     }
+
+    private bool TryParseXmlFileInfo(string tapeName, string filePath, out TapeFileIndex info)
+    {
+        var name = Path.GetFileName(filePath) ?? string.Empty;
+        var m = FilenameRegex.Match(name);
+        int partition = -1;
+        int generation = -1;
+        long location = -1;
+        long ticks = -1;
+        string barcode;
+
+        if (m.Success)
+        {
+            barcode = m.Groups[1].Value;
+            if (!int.TryParse(m.Groups[2].Value, out partition)) partition = -1;
+            if (!int.TryParse(m.Groups[3].Value, out generation)) generation = -1;
+            if (!long.TryParse(m.Groups[4].Value, out location)) location = -1;
+            if (!long.TryParse(m.Groups[5].Value, out ticks)) ticks = -1;
+        }
+        else
+        {
+            var m2 = AltFilenameRegex.Match(name);
+            if (!m2.Success)
+            {
+                info = new TapeFileIndex();
+                return false;
+            }
+
+            barcode = m2.Groups[1].Value;
+            if (!int.TryParse(m2.Groups[2].Value, out partition)) partition = -1;
+            if (!int.TryParse(m2.Groups[3].Value, out generation)) generation = -1;
+            if (!long.TryParse(m2.Groups[4].Value, out location)) location = -1;
+            ticks = ParseTimestampTicks(m2.Groups[5].Value, m2.Groups[6].Value);
+        }
+
+        if (!string.Equals(barcode, tapeName, StringComparison.Ordinal))
+        {
+            _logger.LogDebug("Filename barcode {barcode} does not match directory {tapeName} for file {file}", barcode, tapeName, filePath);
+            info = new TapeFileIndex();
+            return false;
+        }
+
+        info = new TapeFileIndex
+        {
+            FileName = name,
+            Partition = partition,
+            Generation = generation,
+            LocationStartBlock = location,
+            Ticks = ticks
+        };
+
+        return true;
+    }
+
+    private bool TryParseCmFileInfo(string filePath, out TapeFileIndex info)
+    {
+        var name = Path.GetFileName(filePath) ?? string.Empty;
+        var match = CmFilenameRegex.Match(name);
+        if (!match.Success)
+        {
+            info = new TapeFileIndex();
+            return false;
+        }
+
+        int generation = -1;
+        if (!int.TryParse(match.Groups[2].Value, out generation))
+            generation = -1;
+
+        info = new TapeFileIndex
+        {
+            FileName = name,
+            Partition = -1,
+            Generation = generation,
+            LocationStartBlock = -1,
+            Ticks = ParseTimestampTicks(match.Groups[3].Value, match.Groups[4].Value)
+        };
+
+        return true;
+    }
+
+    private static long ParseTimestampTicks(string datePart, string timePart)
+    {
+        var combined = $"{datePart}_{timePart}";
+        return DateTime.TryParseExact(combined, TimestampFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt)
+            ? dt.Ticks
+            : -1;
+    }
 }
 
 public class TapeFileInfo
+{
+    public TapeFileIndex Index { get; set; } = new();
+    public CartridgeMemory? CartridgeMemory { get; set; }
+}
+
+public class TapeFileIndex
 {
     public string FileName { get; set; } = string.Empty;
     public int Partition { get; set; }

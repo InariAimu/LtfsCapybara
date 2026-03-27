@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Security.Cryptography.X509Certificates;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Text;
 
 namespace LtoTape.CM;
 
@@ -30,9 +25,9 @@ public enum ServoBandID
 
 public class TapePhysicInfo
 {
-    public int NWraps = 0;
-    public int SetsPerWrap = 0;
-    public int TapDirLength = 0;
+    public int NWraps { get; set; } = 0;
+    public int SetsPerWrap { get; set; } = 0;
+    public int TapDirLength { get; set; } = 0;
 }
 
 public class TapeInfo
@@ -68,6 +63,8 @@ public class Manufacturer
     public bool IsCleanExpired { get; set; } = false;
     public bool IsCleaningTape { get => Gen == 0; }
 
+
+    public TapePhysicInfo TapePhysicInfo => TapeInfo.GetPhysicInfoByGeneration(Gen);
 
     public void Parse(byte[] data, int startOffset)
     {

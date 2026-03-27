@@ -27,6 +27,12 @@ const themeOverrides: GlobalThemeOverrides = {
         thPaddingMedium: '8px',
         tdPaddingMedium: '8px',
     },
+    Table: {
+        lineHeight: '1.1',
+        fontSizeMedium: '12px',
+        thPaddingMedium: '8px',
+        tdPaddingMedium: '8px',
+    },
 };
 </script>
 

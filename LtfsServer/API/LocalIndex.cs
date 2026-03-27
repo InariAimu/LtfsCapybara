@@ -11,12 +11,15 @@ public static class APILocalIndex
     {
         app.MapGet("/api/local/{tapeName}", (string tapeName, ILocalTapeRegistry registry, AppData appData) =>
         {
-            var files = registry.GetFiles(tapeName).OrderByDescending(f => f.Ticks).ToArray();
+            var files = registry.GetFiles(tapeName)
+                .Where(HasXmlIndex)
+                .OrderByDescending(f => f.Index.Ticks)
+                .ToArray();
             if (files.Length == 0)
                 return Results.NotFound(new { error = "No index files found for tape" });
 
             var file = files[0];
-            var path = Path.Combine(appData.Path, "local", tapeName, file.FileName);
+            var path = Path.Combine(appData.Path, "local", tapeName, file.Index.FileName);
             var index = LtfsIndex.FromXmlFile(path);
             if (index is null)
                 return Results.StatusCode(500);
@@ -27,12 +30,15 @@ public static class APILocalIndex
 
         app.MapGet("/api/local/{tapeName}/{**path}", (string tapeName, string path, ILocalTapeRegistry registry, AppData appData) =>
         {
-            var files = registry.GetFiles(tapeName).OrderByDescending(f => f.Ticks).ToArray();
+            var files = registry.GetFiles(tapeName)
+                .Where(HasXmlIndex)
+                .OrderByDescending(f => f.Index.Ticks)
+                .ToArray();
             if (files.Length == 0)
                 return Results.NotFound(new { error = "No index files found for tape" });
 
             var file = files[0];
-            var filePath = Path.Combine(appData.Path, "local", tapeName, file.FileName);
+            var filePath = Path.Combine(appData.Path, "local", tapeName, file.Index.FileName);
             var index = LtfsIndex.FromXmlFile(filePath);
             if (index is null)
                 return Results.StatusCode(500);
@@ -43,6 +49,29 @@ public static class APILocalIndex
 
             return Results.Ok(DirectoryToDto(target));
         });
+
+        app.MapGet("/api/localcm/{tapeName}", (string tapeName, ILocalTapeRegistry registry) =>
+        {
+            var file = registry.GetFiles(tapeName)
+                .Where(HasCartridgeMemory)
+                .OrderByDescending(f => f.Index.Ticks)
+                .FirstOrDefault();
+
+            if (file?.CartridgeMemory is null)
+                return Results.NotFound(new { error = "No cartridge memory files found for tape" });
+
+            return Results.Ok(file.CartridgeMemory);
+        });
+    }
+
+    private static bool HasXmlIndex(TapeFileInfo file)
+    {
+        return file.Index.FileName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasCartridgeMemory(TapeFileInfo file)
+    {
+        return file.CartridgeMemory is not null && file.Index.FileName.EndsWith(".cm", StringComparison.OrdinalIgnoreCase);
     }
 
     private static object DirectoryToDto(LtfsDirectory dir)

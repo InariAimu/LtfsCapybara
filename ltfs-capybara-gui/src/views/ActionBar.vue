@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { NSwitch } from 'naive-ui';
+import { NSwitch, NButton } from 'naive-ui';
 
 const props = defineProps<{
     showTapeInfoToggle: boolean;
@@ -22,13 +22,10 @@ function updateShowTapeInfo(value: boolean) {
             :value="showTapeInfo"
             @update:value="updateShowTapeInfo"
         >
-            <template #checked>
-                Tape Info
-            </template>
-            <template #unchecked>
-                File List
-            </template>
+            <template #checked> Tape Info </template>
+            <template #unchecked> File List </template>
         </n-switch>
+        <n-button :size="'small'"> Placeholder Action </n-button>
     </div>
 </template>
 

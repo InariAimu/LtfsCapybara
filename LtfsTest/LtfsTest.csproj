@@ -18,10 +18,17 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Ltfs\Ltfs.csproj" />
+    <ProjectReference Include="..\LtfsServer\LtfsServer.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="LTFSIndex_Autosave_C00392L6_GEN3_Pb_B105310_20250830_171308.6964061.cm">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

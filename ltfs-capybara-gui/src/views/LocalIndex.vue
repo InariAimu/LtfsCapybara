@@ -15,7 +15,9 @@ const store = useFileStore();
 const { t } = useI18n();
 const message = useMessage();
 const showTapeInfo = ref(false);
-const isRootNodeSelected = computed(() => Boolean(store.currentTapeName) && store.currentPath === '/');
+const isRootNodeSelected = computed(
+    () => Boolean(store.currentTapeName) && store.currentPath === '/',
+);
 
 watch(isRootNodeSelected, isRoot => {
     if (!isRoot) {
