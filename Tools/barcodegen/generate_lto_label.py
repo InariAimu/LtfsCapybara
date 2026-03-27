@@ -113,8 +113,9 @@ def generate_lto_label(
     ty = y0 + (text_area_h - h)//2 - 5
     draw.text((tx,ty), last_ch, font=font_small, fill="black")
 
-    # Generate Code39 barcode
-    code_class = barcode.get_barcode_class("code39")
+    # Generate Code39 barcode (importing the implementation directly)
+    from barcode.codex import Code39
+    code_class = Code39
     my_code = code_class(code, writer=ImageWriter(), add_checksum=False)
 
     bio = BytesIO()
