@@ -190,8 +190,8 @@ const wrapMetrics = computed(() => {
             :meta="metaViewModel"
             v-model:hide-sensitive="hideSensitive"
         />
-        <tape-usage-card :usage="usageMetrics" v-model:hide-sensitive="hideSensitive" />
         <tape-partitions-card :partition="partitionMetrics" />
+        <tape-usage-card :usage="usageMetrics" v-model:hide-sensitive="hideSensitive" />
         <tape-wrap-analysis-card :loading="loading" :wrap="wrapMetrics" />
     </div>
 </template>

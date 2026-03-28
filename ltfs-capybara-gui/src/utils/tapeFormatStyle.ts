@@ -26,7 +26,7 @@ export const defaultLtoFormatStyleConfig: LtoFormatStyleConfig = {
         10: '#000000',
     },
     vendorPalettes: {
-        HPE: {
+        HP: {
             2: '#800020',
             3: '#ffd54f',
             4: '#90ee90',
@@ -38,7 +38,11 @@ export const defaultLtoFormatStyleConfig: LtoFormatStyleConfig = {
 };
 
 function normalizeVendor(vendor: string): string {
-    return vendor.trim().toUpperCase();
+    let v = vendor.trim().toUpperCase();
+    if (v === 'HPE') {
+        v = 'HP';
+    }
+    return v;
 }
 
 function parseLtoGeneration(format: string): number | undefined {

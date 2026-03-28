@@ -1,5 +1,5 @@
-const LIGHT_GREEN = '#42ff55';
-const LIGHT_YELLOW = '#ffd21c';
+const LIGHT_GREEN = '#18a058';
+const LIGHT_YELLOW = '#f0ad00';
 const LIGHT_RED = '#ff4332';
 
 function parseHexColor(hex: string): [number, number, number] {

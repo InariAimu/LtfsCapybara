@@ -26,7 +26,7 @@ onMounted(async () => {
 
     try {
         const names = (await localTapeApi.list()).data;
-        console.log('Loaded local tapes:', names);
+        //console.log('Loaded local tapes:', names);
         data.value = (names || []).map((n: string, idx: number) => ({
             label: n,
             key: `${n}-${idx}`,
@@ -44,7 +44,7 @@ onMounted(async () => {
 function nodeProps({ option }: { option: TreeOption }) {
     return {
         async onClick() {
-            console.log('Node clicked:', option);
+            //console.log('Node clicked:', option);
             await getData(option, true);
         },
         onContextmenu(e: MouseEvent): void {

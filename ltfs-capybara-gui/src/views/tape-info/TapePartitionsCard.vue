@@ -41,11 +41,7 @@ const capacityLossPercentText = computed(() => {
         <n-table striped>
             <tbody>
                 <tr>
-                    <td style="width: 40%">Total Partitions</td>
-                    <td>{{ props.partition.partitionCount }}</td>
-                </tr>
-                <tr>
-                    <td>Estimated Capacity Loss</td>
+                    <td style="width: 40%">Estimated Capacity Loss</td>
                     <td>
                         {{ formatFileSize(props.partition.estimatedCapacityLoss) }}
                         {{ capacityLossPercentText }}

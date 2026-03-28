@@ -61,9 +61,11 @@ function updateHideSensitive(value: boolean) {
                     <td>
                         <div class="format-cell">
                             <span>{{ props.tapeInfo?.manufacturer.format || '' }}</span>
-                            <n-tag :type="'success'" :size="'tiny'">{{
-                                meta.particleTypeLabel
-                            }}</n-tag>
+                            <n-tag
+                                :type="meta.particleTypeLabel === 'BaFe' ? 'success' : 'warning'"
+                                :size="'tiny'"
+                                >{{ meta.particleTypeLabel }}</n-tag
+                            >
                             <span
                                 v-if="meta.formatStyle.color"
                                 class="format-color-swatch"
@@ -98,13 +100,15 @@ function updateHideSensitive(value: boolean) {
                     <td>Tape Vendor</td>
                     <td>
                         <span>{{ props.tapeInfo?.manufacturer.tapeVendor || '' }}</span
-                        >&nbsp;@ <span>{{ props.tapeInfo?.manufacturer.mfgDate || '' }}</span
-                        ><span
+                        >&nbsp;@ <span>{{ props.tapeInfo?.manufacturer.mfgDate || '' }}</span>
+                        <n-tag
                             v-if="meta.mfgAgeText"
-                            :style="{ color: meta.mfgAgeColor, paddingLeft: '10px' }"
+                            :size="'tiny'"
+                            :color="{ textColor: meta.mfgAgeColor }"
+                            style="margin-left: 10px"
                         >
                             {{ meta.mfgAgeText }}
-                        </span>
+                        </n-tag>
                     </td>
                 </tr>
                 <tr>
