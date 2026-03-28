@@ -8,6 +8,6 @@ public static class APILocalTapes
     public static void MapLocalTapesApi(this WebApplication app)
     {
         app.MapGet("/api/localtapes", (ILocalTapeRegistry registry) =>
-            Results.Ok(registry.GetTapeNames()));
+            Results.Ok(registry.GetTapeSummaries()));
     }
 }

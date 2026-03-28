@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { NCard, NTable, NTag } from 'naive-ui';
+import { useI18n } from 'vue-i18n';
 import { formatFileSize } from '@/utils/formatFileSize';
 
 interface PartitionBar {
@@ -25,6 +26,7 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+const { t } = useI18n();
 
 const capacityLossPercentText = computed(() => {
     if (props.partition.totalCapacity <= 0) {
@@ -37,11 +39,11 @@ const capacityLossPercentText = computed(() => {
 </script>
 
 <template>
-    <n-card title="Data on Tape" size="small" class="tape-info-card">
+    <n-card :title="t('tapeInfo.partitions.title')" size="small" class="tape-info-card">
         <n-table striped>
             <tbody>
                 <tr>
-                    <td style="width: 40%">Estimated Capacity Loss</td>
+                    <td style="width: 40%">{{ t('tapeInfo.partitions.estimatedCapacityLoss') }}</td>
                     <td>
                         {{ formatFileSize(props.partition.estimatedCapacityLoss) }}
                         {{ capacityLossPercentText }}
@@ -62,11 +64,15 @@ const capacityLossPercentText = computed(() => {
                     <span style="padding-left: 5px">( {{ item.usedPercent.toFixed(4) }}% )</span>
                     &nbsp;
                     <span style="margin-left: auto"
-                        >{{ formatFileSize(item.allocated - item.loss - item.used) }} available
+                        >{{ formatFileSize(item.allocated - item.loss - item.used) }}
+                        {{ t('tapeInfo.partitions.available') }}
                         {{ item.label }}</span
                     >
                 </div>
-                <div class="partition-colorbar" aria-label="Partition usage and loss bar">
+                <div
+                    class="partition-colorbar"
+                    :aria-label="t('tapeInfo.partitions.partitionUsageAndLossBarAriaLabel')"
+                >
                     <div
                         class="partition-colorbar-used"
                         :style="{ width: `${item.usedPercent}%` }"

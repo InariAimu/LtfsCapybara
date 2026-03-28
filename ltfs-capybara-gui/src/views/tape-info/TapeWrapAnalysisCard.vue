@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import type { DataTableColumns } from 'naive-ui';
 import { NCard, NDataTable } from 'naive-ui';
+import { useI18n } from 'vue-i18n';
 import type { WrapTableRow } from '@/api/types/tapeInfo';
 
 interface WrapColorSegment {
@@ -19,14 +21,15 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+const { t } = useI18n();
 
-const columns: DataTableColumns<WrapTableRow> = [
-    { title: 'Wrap', key: 'wrap' },
-    { title: 'Start Block', key: 'startBlock' },
-    { title: 'End Block', key: 'endBlock' },
-    { title: 'Filemark', key: 'filemark' },
+const columns = computed<DataTableColumns<WrapTableRow>>(() => [
+    { title: t('tapeInfo.wrap.wrap'), key: 'wrap' },
+    { title: t('tapeInfo.wrap.startBlock'), key: 'startBlock' },
+    { title: t('tapeInfo.wrap.endBlock'), key: 'endBlock' },
+    { title: t('tapeInfo.wrap.filemark'), key: 'filemark' },
     {
-        title: 'Set',
+        title: t('tapeInfo.wrap.set'),
         key: 'set',
         cellProps: (row: WrapTableRow) => ({
             style: {
@@ -35,7 +38,7 @@ const columns: DataTableColumns<WrapTableRow> = [
         }),
     },
     {
-        title: 'Capacity',
+        title: t('tapeInfo.wrap.capacity'),
         key: 'capacity',
         cellProps: (row: WrapTableRow) => ({
             style: {
@@ -43,15 +46,15 @@ const columns: DataTableColumns<WrapTableRow> = [
             },
         }),
     },
-];
+]);
 </script>
 
 <template>
-    <n-card title="Wrap Analysis" size="small" class="tape-info-card">
+    <n-card :title="t('tapeInfo.wrap.title')" size="small" class="tape-info-card">
         <div
             v-if="props.wrap.segments.length"
             class="wrap-colorbar"
-            aria-label="Wrap capacity colorbar"
+            :aria-label="t('tapeInfo.wrap.colorbarAriaLabel')"
         >
             <div
                 v-for="segment in props.wrap.segments"

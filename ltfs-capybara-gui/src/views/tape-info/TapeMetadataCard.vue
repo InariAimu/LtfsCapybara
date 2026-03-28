@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { NCard, NSwitch, NTable, NTag } from 'naive-ui';
+import { useI18n } from 'vue-i18n';
 import type { TapeInfo } from '@/api/types/tapeInfo';
 import type { LtoFormatStyle } from '@/utils/tapeFormatStyle';
 
@@ -17,6 +18,7 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+const { t } = useI18n();
 const emit = defineEmits<{
     'update:hideSensitive': [value: boolean];
 }>();
@@ -27,11 +29,11 @@ function updateHideSensitive(value: boolean) {
 </script>
 
 <template>
-    <n-card title="Tape Info" size="small" class="tape-info-card">
+    <n-card :title="t('tapeInfo.metadata.title')" size="small" class="tape-info-card">
         <n-table striped>
             <tbody>
                 <tr>
-                    <td style="width: 40%">Barcode</td>
+                    <td style="width: 40%">{{ t('tapeInfo.metadata.barcode') }}</td>
                     <td>
                         <div class="usage-value-row">
                             <span
@@ -48,7 +50,7 @@ function updateHideSensitive(value: boolean) {
                     </td>
                 </tr>
                 <tr>
-                    <td>Application</td>
+                    <td>{{ t('tapeInfo.metadata.application') }}</td>
                     <td>
                         <span>{{ props.tapeInfo?.applicationSpecific.vendor || '' }}</span
                         >&nbsp; <span>{{ props.tapeInfo?.applicationSpecific.name || '' }}</span
@@ -57,7 +59,7 @@ function updateHideSensitive(value: boolean) {
                     </td>
                 </tr>
                 <tr>
-                    <td>Format</td>
+                    <td>{{ t('tapeInfo.metadata.format') }}</td>
                     <td>
                         <div class="format-cell">
                             <span>{{ props.tapeInfo?.manufacturer.format || '' }}</span>
@@ -74,13 +76,13 @@ function updateHideSensitive(value: boolean) {
                                     backgroundColor: meta.formatStyle.color,
                                     '--worm-corner-color': meta.formatStyle.wormCornerColor,
                                 }"
-                                aria-label="LTO format color"
+                                :aria-label="t('tapeInfo.metadata.formatColorAriaLabel')"
                             />
                         </div>
                     </td>
                 </tr>
                 <tr>
-                    <td>Serial Number</td>
+                    <td>{{ t('tapeInfo.metadata.serialNumber') }}</td>
                     <td>
                         <div class="usage-value-row">
                             <span
@@ -97,7 +99,7 @@ function updateHideSensitive(value: boolean) {
                     </td>
                 </tr>
                 <tr>
-                    <td>Tape Vendor</td>
+                    <td>{{ t('tapeInfo.metadata.tapeVendor') }}</td>
                     <td>
                         <span>{{ props.tapeInfo?.manufacturer.tapeVendor || '' }}</span
                         >&nbsp;@ <span>{{ props.tapeInfo?.manufacturer.mfgDate || '' }}</span>
@@ -112,7 +114,7 @@ function updateHideSensitive(value: boolean) {
                     </td>
                 </tr>
                 <tr>
-                    <td>Media Vendor</td>
+                    <td>{{ t('tapeInfo.metadata.mediaVendor') }}</td>
                     <td>
                         <span>{{ props.tapeInfo?.mediaManufacturer.vendor || '' }}</span
                         >&nbsp;@ <span>{{ props.tapeInfo?.mediaManufacturer.mfgDate || '' }}</span>

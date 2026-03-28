@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Builder;
 using LtfsServer.Services;
 using Ltfs;
 using Ltfs.Index;
+using LtoTape;
 
 namespace LtfsServer.API;
 
@@ -50,17 +51,33 @@ public static class APILocalIndex
             return Results.Ok(DirectoryToDto(target));
         });
 
-        app.MapGet("/api/localcm/{tapeName}", (string tapeName, ILocalTapeRegistry registry) =>
+        app.MapGet("/api/localcm/{tapeName}", (string tapeName, ILocalTapeRegistry registry, AppData appData) =>
         {
             var file = registry.GetFiles(tapeName)
                 .Where(HasCartridgeMemory)
                 .OrderByDescending(f => f.Index.Ticks)
                 .FirstOrDefault();
 
-            if (file?.CartridgeMemory is null)
+            if (file is null)
                 return Results.NotFound(new { error = "No cartridge memory files found for tape" });
 
-            return Results.Ok(file.CartridgeMemory);
+            var cmPath = Path.Combine(appData.Path, "local", tapeName, file.Index.FileName);
+            if (!File.Exists(cmPath))
+                return Results.NotFound(new { error = "Cartridge memory file not found" });
+
+            try
+            {
+                var cartridgeMemory = new CartridgeMemory();
+                cartridgeMemory.FromLcgCmFile(cmPath);
+                return Results.Ok(cartridgeMemory);
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(
+                    detail: ex.Message,
+                    title: "Failed to parse cartridge memory file",
+                    statusCode: StatusCodes.Status500InternalServerError);
+            }
         });
     }
 
@@ -71,7 +88,7 @@ public static class APILocalIndex
 
     private static bool HasCartridgeMemory(TapeFileInfo file)
     {
-        return file.CartridgeMemory is not null && file.Index.FileName.EndsWith(".cm", StringComparison.OrdinalIgnoreCase);
+        return file.Index.FileName.EndsWith(".cm", StringComparison.OrdinalIgnoreCase);
     }
 
     private static object DirectoryToDto(LtfsDirectory dir)

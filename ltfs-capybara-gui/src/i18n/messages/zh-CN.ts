@@ -31,7 +31,10 @@ export default {
         updateTime: '更新时间',
     },
     pathBar: {
-        searchPlaceholder: '搜索...',
+        searchPlaceholder: '在磁带中搜索',
+    },
+    fileTree: {
+        free: '可用',
     },
     locale: {
         enUS: '英语',
@@ -42,5 +45,55 @@ export default {
     },
     pages: {
         comingSoon: '该页面即将上线。',
+    },
+    tapeInfo: {
+        dateAge: {
+            lessThanOneMonthAgo: '不足 1 个月前',
+            agoSuffix: '前',
+            yearUnit: '年 | 年',
+            monthUnit: '个月 | 个月',
+        },
+        metadata: {
+            title: '磁带信息',
+            barcode: '条码',
+            application: '应用',
+            format: '格式',
+            serialNumber: '序列号',
+            tapeVendor: '磁带厂商',
+            mediaVendor: '介质厂商',
+            formatColorAriaLabel: 'LTO 格式颜色',
+        },
+        partitions: {
+            title: '磁带数据',
+            estimatedCapacityLoss: '预计容量损失',
+            available: '可用',
+            partitionUsageAndLossBarAriaLabel: '分区使用率与损耗条',
+            wrapsLabel: '[{count} 个卷绕]',
+        },
+        usage: {
+            title: '介质使用情况',
+            lastDriveSn: '最近驱动器序列号',
+            loadCount: '装载次数',
+            total: '总计',
+            read: '读',
+            write: '写',
+            fve: '总容量倍率',
+            rwRetries: '读写重试',
+            rwUnrecovered: '读写不可恢复',
+            suspendedWritesAppend: '挂起写入 / 追加',
+            fatalSuspendedWrites: '致命挂起写入',
+        },
+        wrap: {
+            title: '卷绕使用情况',
+            wrap: '编号',
+            startBlock: '起始块',
+            endBlock: '结束块',
+            filemark: '文件标记',
+            set: '集合',
+            capacity: '写入量情况',
+            colorbarAriaLabel: '卷绕容量色条',
+            eod: '数据结束',
+            guard: '保护区',
+        },
     },
 };

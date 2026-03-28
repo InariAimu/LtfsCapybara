@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Warning } from '@vicons/ionicons5';
 import { NCard, NIcon, NSwitch, NTable, NTag } from 'naive-ui';
+import { useI18n } from 'vue-i18n';
 import type { UsageInfo } from '@/api/types/tapeInfo';
 import { formatFileSize } from '@/utils/formatFileSize';
 
@@ -18,6 +19,7 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+const { t } = useI18n();
 const emit = defineEmits<{
     'update:hideSensitive': [value: boolean];
 }>();
@@ -28,11 +30,11 @@ function updateHideSensitive(value: boolean) {
 </script>
 
 <template>
-    <n-card title="Medium Usage" size="small" class="tape-info-card">
+    <n-card :title="t('tapeInfo.usage.title')" size="small" class="tape-info-card">
         <n-table striped>
             <tbody>
                 <tr>
-                    <td style="width: 40%">Last Drive SN</td>
+                    <td style="width: 40%">{{ t('tapeInfo.usage.lastDriveSn') }}</td>
                     <td>
                         <div class="usage-value-row">
                             <span
@@ -49,61 +51,73 @@ function updateHideSensitive(value: boolean) {
                     </td>
                 </tr>
                 <tr>
-                    <td>Load Count</td>
+                    <td>{{ t('tapeInfo.usage.loadCount') }}</td>
                     <td>
                         {{ props.usage.usageInfo?.threadCount || '' }}
                     </td>
                 </tr>
                 <tr>
-                    <td>Total</td>
+                    <td>{{ t('tapeInfo.usage.total') }}</td>
                     <td>
-                        <n-tag :type="'success'" :size="'tiny'"> Read</n-tag
+                        <n-tag :type="'success'" :size="'tiny'">{{
+                            t('tapeInfo.usage.read')
+                        }}</n-tag
                         ><span style="margin: 0 16px 0 8px">
                             {{ formatFileSize(props.usage.totalRead) }}</span
                         >
-                        <n-tag :type="'error'" :size="'tiny'"> Write</n-tag>
+                        <n-tag :type="'error'" :size="'tiny'">{{
+                            t('tapeInfo.usage.write')
+                        }}</n-tag>
                         <span style="margin: 0 16px 0 8px">{{
                             formatFileSize(props.usage.totalWrite)
                         }}</span>
-                        <n-tag :type="'info'" :size="'tiny'">FVE</n-tag>
+                        <n-tag :type="'info'" :size="'tiny'">{{ t('tapeInfo.usage.fve') }}</n-tag>
                         <span style="margin: 0 16px 0 8px">{{ props.usage.fveText }}</span>
                     </td>
                 </tr>
                 <tr>
-                    <td>RW Retries</td>
+                    <td>{{ t('tapeInfo.usage.rwRetries') }}</td>
                     <td>
-                        <n-tag :type="'success'" :size="'tiny'"> Read</n-tag
+                        <n-tag :type="'success'" :size="'tiny'">{{
+                            t('tapeInfo.usage.read')
+                        }}</n-tag
                         ><span style="margin: 0 16px 0 8px">
                             {{ props.usage.usageInfo?.lifeReadRetries }}</span
                         >
-                        <n-tag :type="'error'" :size="'tiny'"> Write</n-tag>
+                        <n-tag :type="'error'" :size="'tiny'">{{
+                            t('tapeInfo.usage.write')
+                        }}</n-tag>
                         <span style="margin: 0 16px 0 8px">{{
                             props.usage.usageInfo?.lifeWriteRetries
                         }}</span>
                     </td>
                 </tr>
                 <tr>
-                    <td>RW Unrecovered</td>
+                    <td>{{ t('tapeInfo.usage.rwUnrecovered') }}</td>
                     <td>
-                        <n-tag :type="'success'" :size="'tiny'"> Read</n-tag
+                        <n-tag :type="'success'" :size="'tiny'">{{
+                            t('tapeInfo.usage.read')
+                        }}</n-tag
                         ><span style="margin: 0 16px 0 8px">
                             {{ props.usage.usageInfo?.lifeUnRecovReads }}</span
                         >
-                        <n-tag :type="'error'" :size="'tiny'"> Write</n-tag>
+                        <n-tag :type="'error'" :size="'tiny'">{{
+                            t('tapeInfo.usage.write')
+                        }}</n-tag>
                         <span style="margin: 0 16px 0 8px">{{
                             props.usage.usageInfo?.lifeUnRecovWrites
                         }}</span>
                     </td>
                 </tr>
                 <tr>
-                    <td>Suspended Writes / Append</td>
+                    <td>{{ t('tapeInfo.usage.suspendedWritesAppend') }}</td>
                     <td>
                         {{ props.usage.usageInfo?.lifeSuspendedWrites }} /
                         {{ props.usage.usageInfo?.lifeSuspendedAppendWrites }}
                     </td>
                 </tr>
                 <tr>
-                    <td>Fatal Suspended Writes</td>
+                    <td>{{ t('tapeInfo.usage.fatalSuspendedWrites') }}</td>
                     <td>
                         <span class="fatal-warning-value">
                             <span>{{ props.usage.usageInfo?.lifeFatalSusWrites }}</span>

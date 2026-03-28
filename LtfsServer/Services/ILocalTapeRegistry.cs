@@ -16,6 +16,11 @@ public interface ILocalTapeRegistry
     IEnumerable<string> GetTapeNames();
 
     /// <summary>
+    /// Get CM-derived tape summaries keyed by tape name.
+    /// </summary>
+    IEnumerable<LocalTapeSummary> GetTapeSummaries();
+
+    /// <summary>
     /// Get parsed file infos for a tape name.
     /// </summary>
     IEnumerable<TapeFileInfo> GetFiles(string tapeName);

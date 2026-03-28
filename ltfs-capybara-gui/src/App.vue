@@ -22,13 +22,13 @@ const themeOverrides: GlobalThemeOverrides = {
         nodeHeight: '28px',
     },
     DataTable: {
-        lineHeight: '1.1',
+        lineHeight: '1.25',
         fontSizeMedium: '12px',
         thPaddingMedium: '8px',
         tdPaddingMedium: '8px',
     },
     Table: {
-        lineHeight: '1.1',
+        lineHeight: '1.0',
         fontSizeMedium: '12px',
         thPaddingMedium: '8px',
         tdPaddingMedium: '8px',

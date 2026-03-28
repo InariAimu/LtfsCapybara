@@ -119,11 +119,16 @@ public class LtfsTest
 
             Assert.Equal(2, files.Length);
 
-            var cmInfo = Assert.Single(files.Where(f => f.CartridgeMemory is not null));
+            var cmInfo = Assert.Single(files.Where(f => f.Index.FileName.EndsWith(".cm", StringComparison.OrdinalIgnoreCase)));
             Assert.Equal("Capture_G3_20250830_171308.6964061.cm", cmInfo.Index.FileName);
             Assert.Equal(3, cmInfo.Index.Generation);
-            Assert.NotNull(cmInfo.CartridgeMemory);
-            Assert.NotEmpty(cmInfo.CartridgeMemory!.Manufacturer.Format);
+
+            var summary = Assert.Single(registry.GetTapeSummaries().Where(s => s.TapeName == tapeName));
+            Assert.True(summary.Generation > 0);
+            Assert.NotEmpty(summary.ParticleType);
+            Assert.NotEmpty(summary.Vendor);
+            Assert.True(summary.TotalSizeBytes > 0);
+            Assert.True(summary.FreeSizeBytes >= 0);
 
             var xmlInfo = Assert.Single(files.Where(f => f.Index.FileName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)));
             Assert.Equal(0, xmlInfo.Index.Partition);

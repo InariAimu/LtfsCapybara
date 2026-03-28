@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { NSwitch, NButton } from 'naive-ui';
 
-const props = defineProps<{
+const { showTapeInfoToggle, showTapeInfo } = defineProps<{
     showTapeInfoToggle: boolean;
     showTapeInfo: boolean;
 }>();

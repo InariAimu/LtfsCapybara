@@ -1,6 +1,10 @@
+import { i18n } from '@/i18n';
+
 const LIGHT_GREEN = '#18a058';
 const LIGHT_YELLOW = '#f0ad00';
 const LIGHT_RED = '#ff4332';
+
+type TranslateFn = (key: string, plural?: number) => string;
 
 function parseHexColor(hex: string): [number, number, number] {
     const normalized = hex.replace('#', '');
@@ -65,7 +69,10 @@ function getAgePartsFromNow(date: Date): { years: number; months: number } {
     return { years: Math.max(0, years), months: Math.max(0, months) };
 }
 
-export function formatRelativeAgeFromNow(value?: string | null): string {
+export function formatRelativeAgeFromNow(
+    value?: string | null,
+    translate: TranslateFn = i18n.global.t,
+): string {
     const date = parseCompactDate(value);
     if (!date) {
         return '';
@@ -79,17 +86,17 @@ export function formatRelativeAgeFromNow(value?: string | null): string {
     const { years, months } = getAgePartsFromNow(date);
     const parts: string[] = [];
     if (years > 0) {
-        parts.push(`${years} year${years === 1 ? '' : 's'}`);
+        parts.push(`${years} ${translate('tapeInfo.dateAge.yearUnit', years)}`);
     }
     if (months > 0) {
-        parts.push(`${months} month${months === 1 ? '' : 's'}`);
+        parts.push(`${months} ${translate('tapeInfo.dateAge.monthUnit', months)}`);
     }
 
     if (!parts.length) {
-        return 'less than 1 month ago';
+        return translate('tapeInfo.dateAge.lessThanOneMonthAgo');
     }
 
-    return `${parts.join(' ')} ago`;
+    return `${parts.join(' ')} ${translate('tapeInfo.dateAge.agoSuffix')}`;
 }
 
 export function getRelativeAgeColor(value?: string | null): string {

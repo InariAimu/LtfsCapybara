@@ -14,6 +14,7 @@ namespace LtfsServer.Services;
 public sealed class LocalTapeRegistry : ILocalTapeRegistry
 {
     private readonly ConcurrentDictionary<string, ConcurrentBag<TapeFileInfo>> _tapes = new();
+    private readonly ConcurrentDictionary<string, LocalTapeSummary> _tapeSummaries = new();
     private readonly ILogger<LocalTapeRegistry> _logger;
     private const string TimestampFormat = "yyyyMMdd_HHmmss.FFFFFFF";
 
@@ -48,6 +49,7 @@ public sealed class LocalTapeRegistry : ILocalTapeRegistry
             // Ensure directory exists; do not create if missing (but create to be permissive)
             Directory.CreateDirectory(localPath);
             _tapes.Clear();
+            _tapeSummaries.Clear();
 
             var dirs = Directory.EnumerateDirectories(localPath);
             foreach (var dir in dirs)
@@ -81,13 +83,15 @@ public sealed class LocalTapeRegistry : ILocalTapeRegistry
                     if (TryParseCmFileInfo(f, out TapeFileIndex? cmInfo))
                     {
                         var info = new TapeFileInfo { Index = cmInfo };
+                        bag.Add(info);
 
                         try
                         {
                             var cartridgeMemory = new CartridgeMemory();
                             cartridgeMemory.FromLcgCmFile(f);
-                            info.CartridgeMemory = cartridgeMemory;
-                            bag.Add(info);
+
+                            var summary = BuildSummary(tapeName, cmInfo, cartridgeMemory);
+                            UpsertSummary(summary);
                         }
                         catch (Exception ex)
                         {
@@ -113,6 +117,13 @@ public sealed class LocalTapeRegistry : ILocalTapeRegistry
     public IEnumerable<string> GetTapeNames()
     {
         return _tapes.Keys.OrderBy(k => k);
+    }
+
+    public IEnumerable<LocalTapeSummary> GetTapeSummaries()
+    {
+        return _tapeSummaries.Values
+            .OrderBy(v => v.TapeName, StringComparer.Ordinal)
+            .ToArray();
     }
 
     public IEnumerable<TapeFileInfo> GetFiles(string tapeName)
@@ -212,12 +223,58 @@ public sealed class LocalTapeRegistry : ILocalTapeRegistry
             ? dt.Ticks
             : -1;
     }
+
+    private static LocalTapeSummary BuildSummary(string tapeName, TapeFileIndex index, CartridgeMemory cartridgeMemory)
+    {
+        var generation = cartridgeMemory.Manufacturer.Gen;
+        var particleType = cartridgeMemory.Manufacturer.ParticleType.ToString();
+        var vendor = (cartridgeMemory.Manufacturer.TapeVendor ?? string.Empty).Trim();
+
+        CalculatePartitionSizes(cartridgeMemory, out var totalSizeBytes, out var freeSizeBytes);
+
+        return new LocalTapeSummary
+        {
+            TapeName = tapeName,
+            CmFileName = index.FileName,
+            Generation = generation,
+            ParticleType = particleType,
+            Vendor = vendor,
+            TotalSizeBytes = totalSizeBytes,
+            FreeSizeBytes = freeSizeBytes,
+            Ticks = index.Ticks
+        };
+    }
+
+    private static void CalculatePartitionSizes(CartridgeMemory cartridgeMemory, out long totalSizeBytes, out long freeSizeBytes)
+    {
+        totalSizeBytes = 0;
+        freeSizeBytes = 0;
+
+        foreach (var partition in cartridgeMemory.Partitions.Values)
+        {
+            var allocated = Math.Max(0L, partition.AllocatedSize);
+            var used = Math.Max(0L, partition.UsedSize);
+            var estimatedLoss = Math.Max(0L, partition.EstimatedLossSize);
+
+            totalSizeBytes += allocated;
+
+            var available = allocated - used - estimatedLoss;
+            freeSizeBytes += Math.Max(0L, available);
+        }
+    }
+
+    private void UpsertSummary(LocalTapeSummary incoming)
+    {
+        _tapeSummaries.AddOrUpdate(
+            incoming.TapeName,
+            incoming,
+            (_, existing) => incoming.Ticks >= existing.Ticks ? incoming : existing);
+    }
 }
 
 public class TapeFileInfo
 {
     public TapeFileIndex Index { get; set; } = new();
-    public CartridgeMemory? CartridgeMemory { get; set; }
 }
 
 public class TapeFileIndex
@@ -226,5 +283,17 @@ public class TapeFileIndex
     public int Partition { get; set; }
     public int Generation { get; set; }
     public long LocationStartBlock { get; set; }
+    public long Ticks { get; set; }
+}
+
+public class LocalTapeSummary
+{
+    public string TapeName { get; set; } = string.Empty;
+    public string CmFileName { get; set; } = string.Empty;
+    public int Generation { get; set; }
+    public string ParticleType { get; set; } = string.Empty;
+    public string Vendor { get; set; } = string.Empty;
+    public long TotalSizeBytes { get; set; }
+    public long FreeSizeBytes { get; set; }
     public long Ticks { get; set; }
 }

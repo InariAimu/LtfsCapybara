@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import type { PartitionInfo, UsageInfo, WrapInfo, WrapTableRow } from '@/api/types/tapeInfo';
 import TapeMetadataCard from '@/views/tape-info/TapeMetadataCard.vue';
 import TapePartitionsCard from '@/views/tape-info/TapePartitionsCard.vue';
@@ -23,6 +24,7 @@ type PartitionBar = {
 };
 
 const store = useFileStore();
+const { t } = useI18n();
 const hideSensitive = ref(false);
 const { tapeInfo, loading } = useTapeInfo(() => store.currentTapeName);
 
@@ -39,7 +41,7 @@ const metaViewModel = computed(() => {
 
     return {
         particleTypeLabel: particleTypeMap[info.manufacturer.particleType] ?? particleTypeMap[0],
-        mfgAgeText: formatRelativeAgeFromNow(info.manufacturer.mfgDate),
+        mfgAgeText: formatRelativeAgeFromNow(info.manufacturer.mfgDate, t),
         mfgAgeColor: getRelativeAgeColor(info.manufacturer.mfgDate),
         formatStyle: getLtoFormatStyle(info.manufacturer.format, info.manufacturer.tapeVendor),
     };
@@ -123,7 +125,7 @@ const partitionMetrics = computed(() => {
 
         return {
             key: idx,
-            label: `[${item.wrapCount} wraps]`,
+            label: t('tapeInfo.partitions.wrapsLabel', { count: item.wrapCount }),
             used,
             loss,
             allocated,
@@ -163,9 +165,9 @@ const wrapMetrics = computed(() => {
                 item.capacity > 0
                     ? `${item.capacity.toFixed(2)}%`
                     : item.type === 2
-                      ? 'EOD'
+                      ? t('tapeInfo.wrap.eod')
                       : item.type === 3
-                        ? 'GUARD'
+                        ? t('tapeInfo.wrap.guard')
                         : '0',
             rawCapacity: item.capacity,
             rawType: item.type,
@@ -190,8 +192,8 @@ const wrapMetrics = computed(() => {
             :meta="metaViewModel"
             v-model:hide-sensitive="hideSensitive"
         />
-        <tape-partitions-card :partition="partitionMetrics" />
         <tape-usage-card :usage="usageMetrics" v-model:hide-sensitive="hideSensitive" />
+        <tape-partitions-card :partition="partitionMetrics" />
         <tape-wrap-analysis-card :loading="loading" :wrap="wrapMetrics" />
     </div>
 </template>

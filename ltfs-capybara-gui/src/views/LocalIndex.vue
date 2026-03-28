@@ -85,7 +85,7 @@ function normalizePath(path: string): string {
                 @refresh="navigateByPath(store.currentPath)"
             />
         </n-layout-header>
-        <n-layout has-sider position="absolute" style="top: 42px; bottom: 0">
+        <n-layout has-sider position="absolute" style="top: 43px; bottom: 0">
             <n-layout-sider bordered content-style="padding: 5px 10px 0 10px;">
                 <file-tree-list />
             </n-layout-sider>

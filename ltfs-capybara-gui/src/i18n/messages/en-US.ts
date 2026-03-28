@@ -31,7 +31,10 @@ export default {
         updateTime: 'Update Time',
     },
     pathBar: {
-        searchPlaceholder: 'Search...',
+        searchPlaceholder: 'Search In Tape',
+    },
+    fileTree: {
+        free: 'Free',
     },
     locale: {
         enUS: 'English',
@@ -42,5 +45,55 @@ export default {
     },
     pages: {
         comingSoon: 'This page is coming soon.',
+    },
+    tapeInfo: {
+        dateAge: {
+            lessThanOneMonthAgo: 'less than 1 month ago',
+            agoSuffix: 'ago',
+            yearUnit: 'year | years',
+            monthUnit: 'month | months',
+        },
+        metadata: {
+            title: 'Tape Info',
+            barcode: 'Barcode',
+            application: 'Application',
+            format: 'Format',
+            serialNumber: 'Serial Number',
+            tapeVendor: 'Tape Vendor',
+            mediaVendor: 'Media Vendor',
+            formatColorAriaLabel: 'LTO format color',
+        },
+        partitions: {
+            title: 'Data on Tape',
+            estimatedCapacityLoss: 'Estimated Capacity Loss',
+            available: 'available',
+            partitionUsageAndLossBarAriaLabel: 'Partition usage and loss bar',
+            wrapsLabel: '[{count} wraps]',
+        },
+        usage: {
+            title: 'Medium Usage',
+            lastDriveSn: 'Last Drive SN',
+            loadCount: 'Load Count',
+            total: 'Total',
+            read: 'Read',
+            write: 'Write',
+            fve: 'FVE',
+            rwRetries: 'RW Retries',
+            rwUnrecovered: 'RW Unrecovered',
+            suspendedWritesAppend: 'Suspended Writes / Append',
+            fatalSuspendedWrites: 'Fatal Suspended Writes',
+        },
+        wrap: {
+            title: 'Wrap Analysis',
+            wrap: 'Wrap',
+            startBlock: 'Start Block',
+            endBlock: 'End Block',
+            filemark: 'Filemark',
+            set: 'Set',
+            capacity: 'Capacity',
+            colorbarAriaLabel: 'Wrap capacity colorbar',
+            eod: 'EOD',
+            guard: 'GUARD',
+        },
     },
 };
