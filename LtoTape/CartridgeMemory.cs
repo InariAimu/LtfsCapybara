@@ -11,14 +11,16 @@ public class CartridgeMemory
 
     private readonly Dictionary<int, PageInfo> _pages = [];
 
+    public ApplicationSpecific ApplicationSpecific { get; set; } = new();
     public Manufacturer Manufacturer { get; set; } = new();
     public MediaManufacturer MediaManufacturer { get; set; } = new();
-    public Dictionary<int, UsagePage> UsagePages { get; set; } = [];
-    public Dictionary<int, Usage> Usages { get; set; } = [];
     public TapeStatus TapeStatus { get; set; } = new();
     public Dictionary<int, EOD> EODs { get; set; } = [];
     public Dictionary<int, PartitionInfo> Partitions { get; set; } = [];
+    public Dictionary<int, Usage> Usages { get; set; } = [];
     public List<WrapInfo> Wraps { get; set; } = [];
+
+    public Dictionary<int, UsagePage> UsagePages { get; set; } = [];
 
     public void FromLcgCmFile(string cmTextFile)
     {
@@ -152,10 +154,12 @@ public class CartridgeMemory
             length = pi.Length;
 
         string mechRelatedInfoVendorID = "";
-        bool hasMechInfo = _pages.TryGetValue(0x0106, out PageInfo? mechInfoPage) && IsValidPage(mechInfoPage);
-        if (hasMechInfo)
+        bool hasMechInfo = _pages.TryGetValue(0x0106, out PageInfo? mechInfoPage) &&
+                                                        IsValidPage(mechInfoPage);
+        if (hasMechInfo && mechInfoPage is not null)
         {
-            mechRelatedInfoVendorID = Encoding.ASCII.GetString(_rawBytes, mechInfoPage.Offset + 4, 8).TrimEnd();
+            mechRelatedInfoVendorID =
+                Encoding.ASCII.GetString(_rawBytes, mechInfoPage.Offset + 4, 8).TrimEnd();
         }
 
         List<UsagePage> usagePages = new(4);
@@ -164,7 +168,7 @@ public class CartridgeMemory
         {
             int key = i + 0x0108;
 
-            if (_pages.TryGetValue(key, out pi) && IsValidPage(pi) && hasMechInfo)
+            if (_pages.TryGetValue(key, out pi) && IsValidPage(pi) && hasMechInfo && mechInfoPage is not null)
             {
                 byte[] buff = new byte[length + 64];
                 Array.Copy(_rawBytes, pi.Offset, buff, 0, length);
@@ -184,11 +188,12 @@ public class CartridgeMemory
 
         if (!hasUsageError)
         {
-            usagePages.Sort(static (a, b) => a.Data1.CompareTo(b.Data1));
+            usagePages.Sort(static (a, b) => b.Data1.CompareTo(a.Data1));
 
             for (int i = 0; i < 4; i++)
             {
                 UsagePages[i] = usagePages[i];
+                UsagePages[i].Index = (uint)i;
             }
 
             for (int i = 0; i < 3; i++)
@@ -335,7 +340,10 @@ public class CartridgeMemory
             partition.AllocatedSize = partition.WrapCount * (long)setsPerWrap * bytesPerSet;
         }
 
-
-
+        // parse application specific page
+        if (_pages.TryGetValue(0x0200, out pi) && IsValidPage(pi))
+        {
+            ApplicationSpecific.Parse(_rawBytes, pi.Offset, pi.Length);
+        }
     }
 }

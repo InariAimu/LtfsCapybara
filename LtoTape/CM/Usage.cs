@@ -34,7 +34,17 @@ public class Usage
     public ushort MaxDriveTemp { get; set; }
     public ushort MinDriveTemp { get; set; }
 
-
+    public Int64 LifeSetsWritten { get; set; }
+    public Int64 LifeSetsRead { get; set; }
+    public int LifeWriteRetries { get; set; }
+    public int LifeReadRetries { get; set; }
+    public int LifeUnRecovWrites { get; set; }
+    public int LifeUnRecovReads { get; set; }
+    public int LifeSuspendedWrites { get; set; }
+    public int LifeFatalSusWrites { get; set; }
+    public int LifeSuspendedAppendWrites { get; set; }
+    public uint LifeLP3Passes { get; set; }
+    public uint LifeMidpointPasses { get; set; }
 
     public void Parse(int index, int driveSNLength, int[] offsets, Dictionary<int, UsagePage> usagePages, Manufacturer manufacturer, string mechRelatedInfoVendorID, int length)
     {
@@ -54,7 +64,7 @@ public class Usage
         ThreadCount = BigEndianBitConverter.ToUInt32(usagePages[index].Data0, offsets[0]);
         SetsWritten = BigEndianBitConverter.ToInt64(usagePages[index].Data0, offsets[1]) - BigEndianBitConverter.ToInt64(usagePages[index + 1].Data0, offsets[1]);
         SetsRead = BigEndianBitConverter.ToInt64(usagePages[index].Data0, offsets[2]) - BigEndianBitConverter.ToInt64(usagePages[index + 1].Data0, offsets[2]);
-        TotalSets = BigEndianBitConverter.ToInt64(usagePages[index].Data0, offsets[1]) - BigEndianBitConverter.ToInt64(usagePages[index + 1].Data0, offsets[2]);
+        TotalSets = BigEndianBitConverter.ToInt64(usagePages[index].Data0, offsets[1]) + BigEndianBitConverter.ToInt64(usagePages[index + 1].Data0, offsets[2]);
         WriteRetries = BigEndianBitConverter.ToUInt32(usagePages[index].Data0, offsets[3]) - BigEndianBitConverter.ToUInt32(usagePages[index + 1].Data0, offsets[3]);
         ReadRetries = BigEndianBitConverter.ToUInt32(usagePages[index].Data0, offsets[4]) - BigEndianBitConverter.ToUInt32(usagePages[index + 1].Data0, offsets[4]);
         UnRecovWrites = (ushort)(BigEndianBitConverter.ToUInt16(usagePages[index].Data0, offsets[5]) - BigEndianBitConverter.ToUInt16(usagePages[index + 1].Data0, offsets[5]));
@@ -85,11 +95,17 @@ public class Usage
             if (maxDriveTemp > 0)
                 MaxDriveTemp = (ushort)(maxDriveTemp / 256);
 
-            ushort minDriveTemp = BigEndianBitConverter.ToUInt16(usagePages[index].Data0, 48);
+            ushort minDriveTemp = BigEndianBitConverter.ToUInt16(usagePages[index].Data0, 50);
             if (minDriveTemp > 0)
                 MinDriveTemp = (ushort)(minDriveTemp / 256);
 
             if (CCQWriteFails < 0) CCQWriteFails = 0;
+            if (C2RecovErrors < 0) C2RecovErrors = 0;
+            if (DirectionChanges < 0) DirectionChanges = 0;
+            if (TapePullingTime < 0) TapePullingTime = 0;
+            if (TapeMetresPulled < 0) TapeMetresPulled = 0;
+            if (Repositions < 0) Repositions = 0;
+            if (StreamFails < 0) StreamFails = 0;
         }
         else
         {
@@ -97,6 +113,29 @@ public class Usage
             C2RecovErrors = 0;
         }
 
+        LifeSetsWritten = BigEndianBitConverter.ToInt64(usagePages[index].Data0, offsets[1]);
+        LifeSetsRead = BigEndianBitConverter.ToInt64(usagePages[index].Data0, offsets[2]);
+        LifeWriteRetries = (int)BigEndianBitConverter.ToUInt32(usagePages[index].Data0, offsets[3]);
+        LifeReadRetries = (int)BigEndianBitConverter.ToUInt32(usagePages[index].Data0, offsets[4]);
+        LifeUnRecovWrites = (int)BigEndianBitConverter.ToUInt16(usagePages[index].Data0, offsets[5]);
+        LifeUnRecovReads = (int)BigEndianBitConverter.ToUInt16(usagePages[index].Data0, offsets[6]);
+        LifeSuspendedWrites = (int)BigEndianBitConverter.ToUInt16(usagePages[index].Data0, offsets[7]);
+        LifeFatalSusWrites = (int)BigEndianBitConverter.ToUInt16(usagePages[index].Data0, offsets[8]);
+        if (manufacturer.Gen >= 5 && offsets.Length > 10)
+        {
+            LifeSuspendedAppendWrites = (int)BigEndianBitConverter.ToUInt16(usagePages[index].Data0, 28);
+            LifeLP3Passes = BigEndianBitConverter.ToUInt32(usagePages[index].Data0, 68);
+            LifeMidpointPasses = BigEndianBitConverter.ToUInt32(usagePages[index].Data0, 72);
+        }
+
+        if (ThreadCount < 0) ThreadCount = 0;
+        if (SetsWritten < 0) SetsWritten = 0;
+        if (SetsRead < 0) SetsRead = 0;
+        if (WriteRetries < 0) WriteRetries = 0;
+        if (ReadRetries < 0) ReadRetries = 0;
+        if (UnRecovWrites < 0) UnRecovWrites = 0;
+        if (UnRecovReads < 0) UnRecovReads = 0;
+        if (SuspendedWrites < 0) SuspendedWrites = 0;
+        if (FatalSusWrites < 0) FatalSusWrites = 0;
     }
 }
-

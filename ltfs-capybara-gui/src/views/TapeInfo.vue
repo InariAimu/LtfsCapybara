@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { DataTableColumns } from 'naive-ui';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
-import { NCard, NDataTable, NEmpty, NTable, NTag } from 'naive-ui';
+import { AlertCircleSharp, Warning } from '@vicons/ionicons5';
+import { NCard, NDataTable, NIcon, NSwitch, NTable, NTag } from 'naive-ui';
 import { localCmApi } from '@/api/modules/localcm';
 import type { PartitionInfo, TapeInfo, WrapInfo, WrapTableRow } from '@/api/types/tapeInfo';
 import { particleTypeMap } from '@/constants/tape';
@@ -41,6 +42,7 @@ const columns: DataTableColumns<WrapTableRow> = [
 const wrapData = ref<WrapTableRow[]>([]);
 const tapeInfo = ref<TapeInfo | null>(null);
 const activeRequestId = ref(0);
+const hideLastDriveSn = ref(false);
 
 const wrapColorSegments = computed(() => {
     return wrapData.value.map(item => ({
@@ -50,29 +52,41 @@ const wrapColorSegments = computed(() => {
 });
 
 const formatStyle = computed(() => {
+    if (!tapeInfo.value) {
+        return getLtoFormatStyle(undefined, undefined);
+    }
     return getLtoFormatStyle(
-        tapeInfo.value?.manufacturer.format,
-        tapeInfo.value?.manufacturer.tapeVendor,
+        tapeInfo.value.manufacturer.format,
+        tapeInfo.value.manufacturer.tapeVendor,
     );
 });
 
 const loading = ref(false);
 
 const tapeMfgDateAgo = computed(() => {
-    return formatRelativeAgeFromNow(tapeInfo.value?.manufacturer.mfgDate);
+    if (!tapeInfo.value) {
+        return '';
+    }
+    return formatRelativeAgeFromNow(tapeInfo.value.manufacturer.mfgDate);
 });
 
 const tapeMfgDateAgoColor = computed(() => {
-    return getRelativeAgeColor(tapeInfo.value?.manufacturer.mfgDate);
+    if (!tapeInfo.value) {
+        return '';
+    }
+    return getRelativeAgeColor(tapeInfo.value.manufacturer.mfgDate);
 });
 
 const partitionBars = computed(() => {
-    const partitions = Object.values(tapeInfo.value?.partitions ?? {});
+    if (!tapeInfo.value) {
+        return [];
+    }
+    const partitions = Object.values(tapeInfo.value.partitions);
 
     return partitions.map((item: PartitionInfo, idx: number) => {
-        const allocated = Math.max(item.allocatedSize ?? 0, 0);
-        const used = Math.max(item.usedSize ?? 0, 0);
-        const loss = Math.max(item.estimatedLossSize ?? 0, 0);
+        const allocated = Math.max(item.allocatedSize, 0);
+        const used = Math.max(item.usedSize, 0);
+        const loss = Math.max(item.estimatedLossSize, 0);
 
         let usedPercent = 0;
         let lossPercent = 0;
@@ -88,8 +102,8 @@ const partitionBars = computed(() => {
         }
 
         return {
-            key: item.index ?? idx,
-            label: `[${item.wrapCount ?? 0} wraps]`,
+            key: idx,
+            label: `[${item.wrapCount} wraps]`,
             used,
             loss,
             allocated,
@@ -100,17 +114,23 @@ const partitionBars = computed(() => {
 });
 
 const estimatedCapacityLoss = computed(() => {
-    const partitions = Object.values(tapeInfo.value?.partitions ?? {});
+    if (!tapeInfo.value) {
+        return 0;
+    }
+    const partitions = Object.values(tapeInfo.value.partitions);
     const totalLoss = partitions.reduce((acc: number, item: PartitionInfo) => {
-        return acc + Math.max(item.estimatedLossSize ?? 0, 0);
+        return acc + Math.max(item.estimatedLossSize, 0);
     }, 0);
     return totalLoss;
 });
 
 const totalCapacity = computed(() => {
-    const partitions = Object.values(tapeInfo.value?.partitions ?? {});
+    if (!tapeInfo.value) {
+        return 0;
+    }
+    const partitions = Object.values(tapeInfo.value.partitions);
     const totalAllocated = partitions.reduce((acc: number, item: PartitionInfo) => {
-        return acc + Math.max(item.allocatedSize ?? 0, 0);
+        return acc + Math.max(item.allocatedSize, 0);
     }, 0);
     return totalAllocated;
 });
@@ -139,10 +159,6 @@ async function refreshTapeInfo() {
         }
     };
 
-    const displaySet = (set: number) => {
-        return `${set} / ${tapeInfo.value?.manufacturer.tapePhysicInfo.setsPerWrap ?? '?'}`;
-    };
-
     loading.value = true;
     try {
         const res = await localCmApi.get(tapeName);
@@ -151,14 +167,23 @@ async function refreshTapeInfo() {
         }
 
         tapeInfo.value = res?.data ?? null;
+        if (!tapeInfo.value) {
+            wrapData.value = [];
+            return;
+        }
+
+        const displaySet = (set: number) => {
+            return `${set} / ${tapeInfo.value!.manufacturer.tapePhysicInfo.setsPerWrap}`;
+        };
+
         const wraps = tapeInfo.value?.wraps ?? [];
         wrapData.value = wraps.map((item: WrapInfo, idx: number) => ({
             key: item.index ?? idx,
             wrap: item.index ?? idx,
-            startBlock: item.startBlock ?? '',
-            endBlock: item.endBlock ?? '',
-            filemark: item.fileMarkCount ?? '',
-            set: displaySet(item.set ?? 0),
+            startBlock: item.startBlock,
+            endBlock: item.endBlock,
+            filemark: item.fileMarkCount,
+            set: displaySet(item.set),
             capacity: displayCapacity(item),
             rawCapacity: item.capacity,
             rawType: item.type,
@@ -186,6 +211,52 @@ watch(
     { immediate: true },
 );
 
+const usageInfo = computed(() => {
+    if (!tapeInfo.value) {
+        return null;
+    }
+    const usagePages = tapeInfo.value.usages;
+    const usageList = Object.values(usagePages);
+    if (usageList.length === 0) {
+        return null;
+    }
+    return usageList[0];
+});
+
+const totalWrite = computed(() => {
+    if (!tapeInfo.value || !usageInfo.value) {
+        return 0;
+    }
+    return usageInfo.value.lifeSetsWritten * tapeInfo.value.manufacturer.kBytesPerSet * 1024;
+});
+
+const totalRead = computed(() => {
+    if (!tapeInfo.value || !usageInfo.value) {
+        return 0;
+    }
+    return usageInfo.value.lifeSetsRead * tapeInfo.value.manufacturer.kBytesPerSet * 1024;
+});
+
+const fve = computed(() => {
+    if (!tapeInfo.value) {
+        return '0.00';
+    }
+    const fullVolumeSize =
+        tapeInfo.value.manufacturer.kBytesPerSet *
+        1024 *
+        tapeInfo.value.manufacturer.tapePhysicInfo.nWraps *
+        tapeInfo.value.manufacturer.tapePhysicInfo.setsPerWrap;
+    if (fullVolumeSize <= 0) {
+        return '0.00';
+    }
+    const fveSize = (totalWrite.value + totalRead.value) / fullVolumeSize;
+    return `${fveSize.toFixed(2)} ( ${((fveSize / 260) * 100).toFixed(2)}% )`;
+});
+
+const hasFatalSuspendedWrites = computed(() => {
+    return Number(usageInfo.value?.lifeFatalSusWrites ?? 0) > 0;
+});
+
 onBeforeUnmount(() => {
     activeRequestId.value += 1;
 });
@@ -193,20 +264,36 @@ onBeforeUnmount(() => {
 
 <template>
     <div class="tape-info">
-        <n-card title="Application Info" size="small" class="tape-info-card">
-            <n-empty description="No data available" />
-        </n-card>
-        <n-card title="Medium Usage" size="small" class="tape-info-card">
-            <n-empty description="No data available" />
-        </n-card>
-        <n-card title="Medium Identity" size="small" class="tape-info-card">
+        <n-card title="Tape Info" size="small" class="tape-info-card">
             <n-table striped>
                 <tbody>
                     <tr>
-                        <td style="width: 40%">Format</td>
+                        <td style="width: 40%">Barcode</td>
+                        <td>
+                            <div class="usage-value-row">
+                            <span
+                                class="usage-sensitive-value"
+                                :class="{ 'usage-sensitive-value-blurred': hideLastDriveSn }"
+                                >{{ tapeInfo?.applicationSpecific.barCode || '' }}</span
+                            >
+                            <n-switch v-model:value="hideLastDriveSn" size="small" />
+                            </div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Application</td>
+                        <td>
+                            <span>{{ tapeInfo?.applicationSpecific.vendor || '' }}</span
+                            >&nbsp; <span>{{ tapeInfo?.applicationSpecific.name || '' }}</span
+                            >&nbsp;
+                            <span>{{ tapeInfo?.applicationSpecific.version || '' }}</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Format</td>
                         <td>
                             <div class="format-cell">
-                                <span>{{ tapeInfo?.manufacturer.format ?? '' }}</span>
+                                <span>{{ tapeInfo?.manufacturer.format || '' }}</span>
                                 <n-tag :type="'success'" :size="'tiny'">{{
                                     particleTypeMap[tapeInfo?.manufacturer.particleType ?? 0]
                                 }}</n-tag>
@@ -225,13 +312,22 @@ onBeforeUnmount(() => {
                     </tr>
                     <tr>
                         <td>Serial Number</td>
-                        <td>{{ tapeInfo?.manufacturer.cartridgeSN ?? '' }}</td>
+                        <td>
+                            <div class="usage-value-row">
+                            <span
+                                class="usage-sensitive-value"
+                                :class="{ 'usage-sensitive-value-blurred': hideLastDriveSn }"
+                                >{{ tapeInfo?.manufacturer.cartridgeSN || '' }}
+                            </span>
+                            <n-switch v-model:value="hideLastDriveSn" size="small" />
+                            </div>
+                        </td>
                     </tr>
                     <tr>
                         <td>Tape Vendor</td>
                         <td>
-                            <span>{{ tapeInfo?.manufacturer.tapeVendor ?? '' }}</span
-                            >&nbsp;@ <span>{{ tapeInfo?.manufacturer.mfgDate ?? '' }}</span
+                            <span>{{ tapeInfo?.manufacturer.tapeVendor || '' }}</span
+                            >&nbsp;@ <span>{{ tapeInfo?.manufacturer.mfgDate || '' }}</span
                             ><span
                                 v-if="tapeMfgDateAgo"
                                 :style="{ color: tapeMfgDateAgoColor, paddingLeft: '10px' }"
@@ -243,8 +339,96 @@ onBeforeUnmount(() => {
                     <tr>
                         <td>Media Vendor</td>
                         <td>
-                            <span>{{ tapeInfo?.mediaManufacturer.vendor ?? '' }}</span
-                            >&nbsp;@ <span>{{ tapeInfo?.mediaManufacturer.mfgDate ?? '' }}</span>
+                            <span>{{ tapeInfo?.mediaManufacturer.vendor || '' }}</span
+                            >&nbsp;@ <span>{{ tapeInfo?.mediaManufacturer.mfgDate || '' }}</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </n-table>
+        </n-card>
+        <n-card title="Medium Usage" size="small" class="tape-info-card">
+            <n-table striped>
+                <tbody>
+                    <tr>
+                        <td style="width: 40%">LastDrive SN</td>
+                        <td>
+                            <div class="usage-value-row">
+                                <span
+                                    class="usage-sensitive-value"
+                                    :class="{ 'usage-sensitive-value-blurred': hideLastDriveSn }"
+                                    >{{ usageInfo?.drvSN || '' }}</span
+                                >
+                                <n-switch v-model:value="hideLastDriveSn" size="small" />
+                            </div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Load Count</td>
+                        <td>
+                            {{ usageInfo?.threadCount || '' }}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Total</td>
+                        <td>
+                            <n-tag :type="'success'" :size="'tiny'"> Read</n-tag
+                            ><span style="margin: 0 16px 0 8px">
+                                {{ formatFileSize(totalRead) }}</span
+                            >
+                            <n-tag :type="'error'" :size="'tiny'"> Write</n-tag>
+                            <span style="margin: 0 16px 0 8px">{{
+                                formatFileSize(totalWrite)
+                            }}</span>
+                            <n-tag :type="'info'" :size="'tiny'">FVE</n-tag>
+                            <span style="margin: 0 16px 0 8px">{{ fve }}</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>RW Retries</td>
+                        <td>
+                            <n-tag :type="'success'" :size="'tiny'"> Read</n-tag
+                            ><span style="margin: 0 16px 0 8px">
+                                {{ usageInfo?.lifeReadRetries }}</span
+                            >
+                            <n-tag :type="'error'" :size="'tiny'"> Write</n-tag>
+                            <span style="margin: 0 16px 0 8px">{{
+                                usageInfo?.lifeWriteRetries
+                            }}</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>RW Unrecovered</td>
+                        <td>
+                            <n-tag :type="'success'" :size="'tiny'"> Read</n-tag
+                            ><span style="margin: 0 16px 0 8px">
+                                {{ usageInfo?.lifeUnRecovReads }}</span
+                            >
+                            <n-tag :type="'error'" :size="'tiny'"> Write</n-tag>
+                            <span style="margin: 0 16px 0 8px">{{
+                                usageInfo?.lifeUnRecovWrites
+                            }}</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Suspended Writes / Append</td>
+                        <td>
+                            {{ usageInfo?.lifeSuspendedWrites }} /
+                            {{ usageInfo?.lifeSuspendedAppendWrites }}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Fatal Suspended Writes</td>
+                        <td>
+                            <span class="fatal-warning-value">
+                                <span>{{ usageInfo?.lifeFatalSusWrites }}</span>
+                                <n-icon
+                                    v-if="hasFatalSuspendedWrites"
+                                    class="fatal-warning-icon"
+                                    :size="15"
+                                >
+                                    <warning />
+                                </n-icon>
+                            </span>
                         </td>
                     </tr>
                 </tbody>
@@ -425,5 +609,30 @@ onBeforeUnmount(() => {
         #d3d3d3 6px,
         #d3d3d3 12px
     );
+}
+
+.usage-value-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.usage-sensitive-value {
+    transition: filter 0.15s ease;
+}
+
+.usage-sensitive-value-blurred {
+    filter: blur(4px);
+}
+
+.fatal-warning-value {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.fatal-warning-icon {
+    color: #f0ad00;
 }
 </style>
