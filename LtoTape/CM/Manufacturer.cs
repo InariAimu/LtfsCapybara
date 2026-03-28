@@ -42,6 +42,23 @@ public class TapeInfo
             _ => new TapePhysicInfo()
         };
     }
+
+    public static int GetKBytesPerSetByGeneration(int generation)
+    {
+        return (generation) switch
+        {
+            1 => 404,
+            2 => 404,
+            3 => 1617,
+            4 => 1590,
+            5 => 2473,
+            6 => 2473,
+            7 => 5032,
+            8 => 5032,
+            9 => 9806,
+            _ => 0
+        };
+    }
 }
 
 public class Manufacturer
@@ -65,6 +82,7 @@ public class Manufacturer
 
 
     public TapePhysicInfo TapePhysicInfo => TapeInfo.GetPhysicInfoByGeneration(Gen);
+    public int KBytesPerSet => TapeInfo.GetKBytesPerSetByGeneration(Gen);
 
     public void Parse(byte[] data, int startOffset)
     {

@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import type { DataTableColumns } from 'naive-ui';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
-import { NCard, NDataTable, NEmpty, NTable } from 'naive-ui';
+import { NCard, NDataTable, NEmpty, NTable, NTag } from 'naive-ui';
 import { localCmApi } from '@/api/modules/localcm';
-import type { TapeInfo, WrapInfo, WrapTableRow } from '@/api/types/tapeInfo';
+import type { PartitionInfo, TapeInfo, WrapInfo, WrapTableRow } from '@/api/types/tapeInfo';
 import { particleTypeMap } from '@/constants/tape';
 import { useFileStore } from '@/stores/fileStore';
 import { getCapacityCellBackground } from '@/utils/tapeCapacityColor';
 import { formatRelativeAgeFromNow, getRelativeAgeColor } from '@/utils/tapeDateSemantic';
 import { getLtoFormatStyle } from '@/utils/tapeFormatStyle';
+import { formatFileSize } from '@/utils/formatFileSize';
 
 const store = useFileStore();
 
@@ -63,6 +64,55 @@ const tapeMfgDateAgo = computed(() => {
 
 const tapeMfgDateAgoColor = computed(() => {
     return getRelativeAgeColor(tapeInfo.value?.manufacturer.mfgDate);
+});
+
+const partitionBars = computed(() => {
+    const partitions = Object.values(tapeInfo.value?.partitions ?? {});
+
+    return partitions.map((item: PartitionInfo, idx: number) => {
+        const allocated = Math.max(item.allocatedSize ?? 0, 0);
+        const used = Math.max(item.usedSize ?? 0, 0);
+        const loss = Math.max(item.estimatedLossSize ?? 0, 0);
+
+        let usedPercent = 0;
+        let lossPercent = 0;
+        if (allocated > 0) {
+            usedPercent = (used / allocated) * 100;
+            lossPercent = (loss / allocated) * 100;
+            const totalPercent = usedPercent + lossPercent;
+            if (totalPercent > 100) {
+                const scale = 100 / totalPercent;
+                usedPercent *= scale;
+                lossPercent *= scale;
+            }
+        }
+
+        return {
+            key: item.index ?? idx,
+            label: `[${item.wrapCount ?? 0} wraps]`,
+            used,
+            loss,
+            allocated,
+            usedPercent,
+            lossPercent,
+        };
+    });
+});
+
+const estimatedCapacityLoss = computed(() => {
+    const partitions = Object.values(tapeInfo.value?.partitions ?? {});
+    const totalLoss = partitions.reduce((acc: number, item: PartitionInfo) => {
+        return acc + Math.max(item.estimatedLossSize ?? 0, 0);
+    }, 0);
+    return totalLoss;
+});
+
+const totalCapacity = computed(() => {
+    const partitions = Object.values(tapeInfo.value?.partitions ?? {});
+    const totalAllocated = partitions.reduce((acc: number, item: PartitionInfo) => {
+        return acc + Math.max(item.allocatedSize ?? 0, 0);
+    }, 0);
+    return totalAllocated;
 });
 
 async function refreshTapeInfo() {
@@ -153,10 +203,13 @@ onBeforeUnmount(() => {
             <n-table striped>
                 <tbody>
                     <tr>
-                        <td style="width: 40%;">Format</td>
+                        <td style="width: 40%">Format</td>
                         <td>
                             <div class="format-cell">
                                 <span>{{ tapeInfo?.manufacturer.format ?? '' }}</span>
+                                <n-tag :type="'success'" :size="'tiny'">{{
+                                    particleTypeMap[tapeInfo?.manufacturer.particleType ?? 0]
+                                }}</n-tag>
                                 <span
                                     v-if="formatStyle.color"
                                     class="format-color-swatch"
@@ -176,13 +229,10 @@ onBeforeUnmount(() => {
                     </tr>
                     <tr>
                         <td>Tape Vendor</td>
-                        <td>{{ tapeInfo?.manufacturer.tapeVendor ?? '' }}</td>
-                    </tr>
-                    <tr>
-                        <td>Tape mfg date</td>
                         <td>
-                            {{ tapeInfo?.manufacturer.mfgDate ?? '' }}
-                            <span
+                            <span>{{ tapeInfo?.manufacturer.tapeVendor ?? '' }}</span
+                            >&nbsp;@ <span>{{ tapeInfo?.manufacturer.mfgDate ?? '' }}</span
+                            ><span
                                 v-if="tapeMfgDateAgo"
                                 :style="{ color: tapeMfgDateAgoColor, paddingLeft: '10px' }"
                             >
@@ -192,15 +242,10 @@ onBeforeUnmount(() => {
                     </tr>
                     <tr>
                         <td>Media Vendor</td>
-                        <td>{{ tapeInfo?.mediaManufacturer.vendor ?? '' }}</td>
-                    </tr>
-                    <tr>
-                        <td>Media mfg date</td>
-                        <td>{{ tapeInfo?.mediaManufacturer.mfgDate ?? '' }}</td>
-                    </tr>
-                    <tr>
-                        <td>Particle Type</td>
-                        <td>{{ particleTypeMap[tapeInfo?.manufacturer.particleType ?? 0] }}</td>
+                        <td>
+                            <span>{{ tapeInfo?.mediaManufacturer.vendor ?? '' }}</span
+                            >&nbsp;@ <span>{{ tapeInfo?.mediaManufacturer.mfgDate ?? '' }}</span>
+                        </td>
                     </tr>
                 </tbody>
             </n-table>
@@ -209,11 +254,57 @@ onBeforeUnmount(() => {
             <n-table striped>
                 <tbody>
                     <tr>
-                        <td style="width: 40%;">Total Partitions</td>
-                        <td>{{ Object.keys(tapeInfo?.eoDs ?? {}).length }}</td>
+                        <td style="width: 40%">Total Partitions</td>
+                        <td>{{ Object.keys(tapeInfo?.partitions ?? {}).length }}</td>
+                    </tr>
+                    <tr>
+                        <td>Estimated Capacity Loss</td>
+                        <td>
+                            {{ formatFileSize(estimatedCapacityLoss) }}
+                            {{
+                                `( ${((estimatedCapacityLoss / totalCapacity) * 100).toFixed(4)}% )`
+                            }}
+                        </td>
                     </tr>
                 </tbody>
             </n-table>
+            <div v-if="partitionBars.length" class="partition-bars">
+                <div
+                    v-for="partition in partitionBars"
+                    :key="partition.key"
+                    class="partition-bar-row"
+                >
+                    <div class="partition-bar-label">
+                        <n-tag :type="'success'" :size="'tiny'">P{{ partition.key }}</n-tag
+                        >&nbsp;
+                        <span
+                            >{{ formatFileSize(partition.used) }} /
+                            {{ formatFileSize(partition.allocated) }}</span
+                        >&nbsp;
+                        <span style="padding-left: 5px"
+                            >( {{ partition.usedPercent.toFixed(4) }}% )</span
+                        >&nbsp;
+                        <span style="margin-left: auto"
+                            >{{
+                                formatFileSize(
+                                    partition.allocated - partition.loss - partition.used,
+                                )
+                            }}
+                            available {{ partition.label }}</span
+                        >
+                    </div>
+                    <div class="partition-colorbar" aria-label="Partition usage and loss bar">
+                        <div
+                            class="partition-colorbar-used"
+                            :style="{ width: `${partition.usedPercent}%` }"
+                        />
+                        <div
+                            class="partition-colorbar-loss"
+                            :style="{ width: `${partition.lossPercent}%` }"
+                        />
+                    </div>
+                </div>
+            </div>
         </n-card>
         <n-card title="Wrap Analysis" size="small" class="tape-info-card">
             <div
@@ -228,7 +319,7 @@ onBeforeUnmount(() => {
                     :style="{ backgroundColor: segment.backgroundColor }"
                 />
             </div>
-            <n-data-table :columns="columns" :data="wrapData" :loading="loading" />
+            <n-data-table :columns="columns" :data="wrapData" :loading="loading" :striped="true" />
         </n-card>
     </div>
 </template>
@@ -241,7 +332,7 @@ onBeforeUnmount(() => {
 }
 
 .tape-info-card {
-    margin-bottom: 5px;
+    margin-bottom: 0px;
 }
 
 .format-cell {
@@ -289,5 +380,50 @@ onBeforeUnmount(() => {
 
 .wrap-colorbar-segment:last-child {
     border-right: none;
+}
+
+.partition-bars {
+    margin-top: 12px;
+}
+
+.partition-bar-row {
+    margin-bottom: 10px;
+}
+
+.partition-bar-row:last-child {
+    margin-bottom: 0;
+}
+
+.partition-bar-label {
+    display: flex;
+    font-size: 12px;
+    color: #444;
+    margin-bottom: 4px;
+}
+
+.partition-colorbar {
+    display: flex;
+    justify-content: space-between;
+    height: 24px;
+    border: 1px solid #d9d9d9;
+    border-radius: 3px;
+    overflow: hidden;
+    background-color: #f5f5f5;
+}
+
+.partition-colorbar-used {
+    height: 100%;
+    background-color: #aeedae;
+}
+
+.partition-colorbar-loss {
+    height: 100%;
+    background-image: repeating-linear-gradient(
+        135deg,
+        #a8a8a8,
+        #a8a8a8 6px,
+        #d3d3d3 6px,
+        #d3d3d3 12px
+    );
 }
 </style>

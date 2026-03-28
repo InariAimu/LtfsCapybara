@@ -17,6 +17,7 @@ public class CartridgeMemory
     public Dictionary<int, Usage> Usages { get; set; } = [];
     public TapeStatus TapeStatus { get; set; } = new();
     public Dictionary<int, EOD> EODs { get; set; } = [];
+    public Dictionary<int, PartitionInfo> Partitions { get; set; } = [];
     public List<WrapInfo> Wraps { get; set; } = [];
 
     public void FromLcgCmFile(string cmTextFile)
@@ -78,6 +79,7 @@ public class CartridgeMemory
         UsagePages.Clear();
         Usages.Clear();
         EODs.Clear();
+        Partitions.Clear();
         Wraps.Clear();
 
         static bool IsValidPage(PageInfo p) => p.Offset > 0 && p.Length > 0;
@@ -283,6 +285,57 @@ public class CartridgeMemory
             }
         }
 
-        // offset is only for page directory traversal state and not needed after parse.
+        // Build logical partitions from contiguous non-guard wraps.
+        int setsPerWrap = Manufacturer.TapePhysicInfo.SetsPerWrap;
+        long bytesPerSet = Manufacturer.KBytesPerSet * 1024L;
+
+        PartitionInfo? currentPartition = null;
+        bool stopLossCount = false;
+        foreach (var wrap in Wraps)
+        {
+            if (wrap.Type == WrapType.Guard)
+            {
+                currentPartition = null;
+                continue;
+            }
+
+            if (currentPartition is null)
+            {
+                int partitionId = Partitions.Count;
+                currentPartition = new PartitionInfo
+                {
+                    Id = partitionId
+                };
+                Partitions[partitionId] = currentPartition;
+                stopLossCount = false;
+            }
+
+            currentPartition.WrapCount += 1;
+
+            long usedSets = Math.Max(0, (long)wrap.Set);
+            long lossSets = 0;
+            if (!stopLossCount)
+            {
+                if (wrap.Type == WrapType.EOD)
+                {
+                    stopLossCount = true;
+                }
+                else
+                {
+                    lossSets = Math.Max(0, (long)setsPerWrap - usedSets);
+                }
+            }
+
+            currentPartition.UsedSize += usedSets * bytesPerSet;
+            currentPartition.EstimatedLossSize += lossSets * bytesPerSet;
+        }
+
+        foreach (var partition in Partitions.Values)
+        {
+            partition.AllocatedSize = partition.WrapCount * (long)setsPerWrap * bytesPerSet;
+        }
+
+
+
     }
 }

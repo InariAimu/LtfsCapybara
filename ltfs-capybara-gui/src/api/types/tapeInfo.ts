@@ -16,6 +16,7 @@ export interface Manufacturer {
     particleType: number;
     isCleaningTape: boolean;
     tapePhysicInfo: TapePhysicInfo;
+    kBytesPerSet: number;
 }
 
 export interface MediaManufacturer {
@@ -40,10 +41,19 @@ export interface WrapInfo {
     capacity: number;
 }
 
+export interface PartitionInfo {
+    index: number;
+    wrapCount: number;
+    allocatedSize: number;
+    usedSize: number;
+    estimatedLossSize: number;
+}
+
 export interface TapeInfo {
     manufacturer: Manufacturer;
     mediaManufacturer: MediaManufacturer;
     eoDs: Record<string, EODs>;
+    partitions: Record<string, PartitionInfo>;
     wraps: WrapInfo[];
 }
 
