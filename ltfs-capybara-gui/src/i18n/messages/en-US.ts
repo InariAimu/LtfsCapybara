@@ -11,6 +11,7 @@ export default {
     menu: {
         overview: 'Overview',
         tapeMachine: 'Tape Machine',
+        noTapeDrives: 'No Tape Drives',
         tapeLibrary: 'Tape Library',
         ltfs: 'LTFS',
         localIndex: 'Local Index',
@@ -69,6 +70,36 @@ export default {
     },
     pages: {
         comingSoon: 'This page is coming soon.',
+    },
+    tapeMachine: {
+        selectDriveHint: 'Select a tape drive from the left panel to control it.',
+        fakeDevice: 'Fake Device',
+        infoTitle: 'Tape Cartridge Memory',
+        actions: {
+            threadTape: 'Thread Tape',
+            loadTape: 'Load Tape',
+            unthreadTape: 'Unthread Tape',
+            ejectTape: 'Eject Tape',
+            readInfo: 'Read Info',
+        },
+        state: {
+            unknown: 'Unknown',
+            empty: 'Empty',
+            loaded: 'Loaded',
+            threaded: 'Threaded',
+            faulted: 'Faulted',
+        },
+        info: {
+            barcode: 'Barcode',
+            format: 'Format',
+            serial: 'Serial Number',
+            vendor: 'Vendor',
+        },
+        errors: {
+            selectDriveFirst: 'Please select a tape drive first.',
+            loadStateFailed: 'Failed to load tape machine state.',
+            actionFailed: 'Failed to run tape machine action.',
+        },
     },
     tapeInfo: {
         dateAge: {

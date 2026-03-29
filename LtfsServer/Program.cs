@@ -2,8 +2,6 @@
 using LtfsServer;
 using LtfsServer.API;
 using LtfsServer.Services;
-
-using TapeDrive;
 using System.IO;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -23,6 +21,8 @@ builder.Services.AddCors(options =>
 
 // Register tape drive registry as app-wide singleton
 builder.Services.AddSingleton<ITapeDriveRegistry, TapeDriveRegistry>();
+builder.Services.AddSingleton<ITapeDriveService, TapeDriveService>();
+builder.Services.AddSingleton<ITapeMachineService, TapeMachineService>();
 // Register local tape registry (scans AppData.Path/local)
 builder.Services.AddSingleton<ILocalTapeRegistry, LocalTapeRegistry>();
 // Register local filesystem tree service (local drives + LAN shares)
@@ -36,9 +36,6 @@ app.UseCors("AllowVite");
 if (app.Environment.IsDevelopment())
 {
 	app.UseDeveloperExceptionPage();
-
-    var registry = app.Services.GetRequiredService<ITapeDriveRegistry>();
-    registry.TryAdd("fake-1", new FakeTapeDrive());
 }
 
 app.MapGet("/", () => Results.Ok(new { message = "LtfsServer running", env = app.Environment.EnvironmentName, url = $"{builder.WebHost}" }));

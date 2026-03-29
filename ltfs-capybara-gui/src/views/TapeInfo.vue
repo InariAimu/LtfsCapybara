@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { PartitionInfo, UsageInfo, WrapInfo, WrapTableRow } from '@/api/types/tapeInfo';
+import type { PartitionInfo, TapeInfo, UsageInfo, WrapInfo, WrapTableRow } from '@/api/types/tapeInfo';
 import TapeMetadataCard from '@/views/tape-info/TapeMetadataCard.vue';
 import TapePartitionsCard from '@/views/tape-info/TapePartitionsCard.vue';
 import TapeUsageCard from '@/views/tape-info/TapeUsageCard.vue';
@@ -12,6 +12,13 @@ import { useFileStore } from '@/stores/fileStore';
 import { getCapacityCellBackground } from '@/utils/tapeCapacityColor';
 import { formatRelativeAgeFromNow, getRelativeAgeColor } from '@/utils/tapeDateSemantic';
 import { getLtoFormatStyle } from '@/utils/tapeFormatStyle';
+
+interface Props {
+    tapeInfoData?: TapeInfo | null;
+    loading?: boolean;
+}
+
+const props = defineProps<Props>();
 
 type PartitionBar = {
     key: number;
@@ -27,9 +34,11 @@ const store = useFileStore();
 const { t } = useI18n();
 const hideSensitive = ref(false);
 const { tapeInfo, loading } = useTapeInfo(() => store.currentTapeName);
+const resolvedTapeInfo = computed(() => (props.tapeInfoData !== undefined ? props.tapeInfoData : tapeInfo.value));
+const resolvedLoading = computed(() => (props.loading !== undefined ? props.loading : loading.value));
 
 const metaViewModel = computed(() => {
-    const info = tapeInfo.value;
+    const info = resolvedTapeInfo.value;
     if (!info) {
         return {
             particleTypeLabel: particleTypeMap[0],
@@ -48,7 +57,7 @@ const metaViewModel = computed(() => {
 });
 
 const usageMetrics = computed(() => {
-    const info = tapeInfo.value;
+    const info = resolvedTapeInfo.value;
     const usageValues = info ? Object.values(info.usages) : [];
     const usageInfo: UsageInfo | null = usageValues.length > 0 ? usageValues[0] : null;
 
@@ -88,7 +97,7 @@ const usageMetrics = computed(() => {
 });
 
 const partitionMetrics = computed(() => {
-    const info = tapeInfo.value;
+    const info = resolvedTapeInfo.value;
     if (!info) {
         return {
             bars: [] as PartitionBar[],
@@ -143,7 +152,7 @@ const partitionMetrics = computed(() => {
 });
 
 const wrapMetrics = computed(() => {
-    const info = tapeInfo.value;
+    const info = resolvedTapeInfo.value;
     if (!info) {
         return {
             rows: [] as WrapTableRow[],
@@ -188,13 +197,13 @@ const wrapMetrics = computed(() => {
 <template>
     <div class="tape-info">
         <tape-metadata-card
-            :tape-info="tapeInfo"
+            :tape-info="resolvedTapeInfo"
             :meta="metaViewModel"
             v-model:hide-sensitive="hideSensitive"
         />
         <tape-usage-card :usage="usageMetrics" v-model:hide-sensitive="hideSensitive" />
         <tape-partitions-card :partition="partitionMetrics" />
-        <tape-wrap-analysis-card :loading="loading" :wrap="wrapMetrics" />
+        <tape-wrap-analysis-card :loading="resolvedLoading" :wrap="wrapMetrics" />
     </div>
 </template>
 

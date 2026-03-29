@@ -84,6 +84,8 @@ public partial class LTOTapeDrive : TapeDriveBase, IDisposable
     }
 
     public override void Load() => ScsiCommand([0x1b, 0, 0, 0, 0x01, 0]);
+    
+    public override void LoadUnthread() => ScsiCommand([0x1b, 0, 0, 0, 0x09, 0]);
 
     public override void Unload() => ScsiCommand([0x1b, 0, 0, 0, 0x00, 0]);
 

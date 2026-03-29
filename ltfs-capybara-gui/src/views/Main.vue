@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { NButton, NButtonGroup, NLayout, NLayoutHeader, NLayoutFooter, useMessage } from 'naive-ui';
+import { NLayout, NLayoutFooter } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
-
-import { invoke } from '@tauri-apps/api/core';
 
 import LeftPanel from './LeftPanel.vue';
 import Overview from './Overview.vue';
@@ -14,17 +12,21 @@ import TapeLibrary from './TapeLibrary.vue';
 import Ltfs from './Ltfs.vue';
 import Task from './Task.vue';
 
-const greetMsg = ref('');
 const { t } = useI18n();
 const selectedMenuKey = ref<string>('overview');
-
-const message = useMessage();
 
 function handleMenuSelect(key: string) {
     selectedMenuKey.value = key;
 }
 
 const currentPageComponent = computed(() => {
+    if (
+        selectedMenuKey.value === 'tape-machine-operations' ||
+        selectedMenuKey.value.startsWith('tape-machine:')
+    ) {
+        return TapeMachine;
+    }
+
     switch (selectedMenuKey.value) {
         case 'overview':
             return Overview;
@@ -34,9 +36,6 @@ const currentPageComponent = computed(() => {
             return LocalIndex;
         case 'task':
             return Task;
-        case 'tape-machine-operations':
-        case 'tape0':
-            return TapeMachine;
         case 'tape-library':
             return TapeLibrary;
         case 'ltfs':
@@ -48,11 +47,15 @@ const currentPageComponent = computed(() => {
     }
 });
 
-async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    greetMsg.value = await invoke('greet', { name: 'Meow!' });
-    message.info(greetMsg.value);
-}
+const selectedTapeDriveId = computed(() => {
+    const key = selectedMenuKey.value;
+    if (!key.startsWith('tape-machine:')) {
+        return null;
+    }
+
+    return key.substring('tape-machine:'.length);
+});
+
 </script>
 
 <template>
@@ -61,7 +64,12 @@ async function greet() {
         <n-layout>
             <n-layout position="absolute" style="top: 0; bottom: 32px">
                 <keep-alive include="LocalIndex">
-                    <component :is="currentPageComponent" />
+                    <component
+                        v-if="currentPageComponent === TapeMachine"
+                        :is="currentPageComponent"
+                        :tape-drive-id="selectedTapeDriveId"
+                    />
+                    <component v-else :is="currentPageComponent" />
                 </keep-alive>
             </n-layout>
             <n-layout-footer bordered position="absolute" style="height: 32px; padding: 5px">

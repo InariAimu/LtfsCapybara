@@ -11,6 +11,7 @@ export default {
     menu: {
         overview: '总览',
         tapeMachine: '磁带机',
+        noTapeDrives: '无磁带设备',
         tapeLibrary: '磁带库',
         ltfs: 'LTFS',
         localIndex: '本地索引',
@@ -69,6 +70,36 @@ export default {
     },
     pages: {
         comingSoon: '该页面即将上线。',
+    },
+    tapeMachine: {
+        selectDriveHint: '请先在左侧面板选择一个磁带机。',
+        fakeDevice: '模拟设备',
+        infoTitle: '磁带CM信息',
+        actions: {
+            threadTape: '加载磁带',
+            loadTape: '仅进仓',
+            unthreadTape: '退带',
+            ejectTape: '弹出',
+            readInfo: '读取信息',
+        },
+        state: {
+            unknown: '未知',
+            empty: '无磁带',
+            loaded: '已进仓',
+            threaded: '已加载',
+            faulted: '故障',
+        },
+        info: {
+            barcode: '条码',
+            format: '格式',
+            serial: '序列号',
+            vendor: '厂商',
+        },
+        errors: {
+            selectDriveFirst: '请先选择磁带机。',
+            loadStateFailed: '加载磁带机状态失败。',
+            actionFailed: '执行磁带机操作失败。',
+        },
     },
     tapeInfo: {
         dateAge: {

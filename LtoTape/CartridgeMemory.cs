@@ -67,6 +67,12 @@ public class CartridgeMemory
         Parse();
     }
 
+    public void FromBytes(byte[] rawBytes)
+    {
+        _rawBytes = rawBytes is null ? [] : [.. rawBytes];
+        Parse();
+    }
+
     public void SaveToBinaryFile(string binOutputFile)
     {
         File.WriteAllBytes(binOutputFile, _rawBytes);

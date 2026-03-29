@@ -64,6 +64,7 @@ public abstract class TapeDriveBase : IDisposable
     public virtual bool TestUnitReady() => true;
     public virtual bool GetInquiry() => true;
     public virtual void Load() { }
+    public virtual void LoadUnthread() { }
     public virtual void Unload() { }
     public virtual bool Rewind() => true;
     public virtual bool Unthread() => true;

@@ -6,6 +6,7 @@ import { useFileStore } from '@/stores/fileStore';
 import { localTapeApi } from '@/api/modules/localtapes';
 import formatFileSize from '@/utils/formatFileSize';
 import { getLtoFormatStyle } from '@/utils/tapeFormatStyle';
+import { useMessage } from 'naive-ui';
 
 interface LocalTapeSummary {
     tapeName: string;
@@ -69,6 +70,7 @@ const totalSpace = computed(() =>
     visibleData.value.reduce((sum, n) => sum + (Number(n.tapeSummary?.totalSizeBytes) || 0), 0),
 );
 const { t } = useI18n();
+const message = useMessage();
 
 const totalGradient = computed(() => {
     const usedPercent =
@@ -266,11 +268,16 @@ async function handleLoad(node: TreeOption) {
 
 async function getData(node: TreeOption, fileOnly: boolean = false) {
     const selectionRequestId = fileOnly ? ++latestSelectionRequest : latestSelectionRequest;
+    const treeNode = node as TreeOption & { children?: LocalTreeNode[] };
+    const tapeName = String((node as any).tapeName || (node.label as string) || '');
+    const currentPath = normalizePath((node as any).path || '/');
+
+    // Persist clicked node context immediately so root selection can still drive UI mode
+    // even when subsequent directory request fails (e.g. 404).
+    store.setCurrentLocation(tapeName, currentPath);
 
     try {
         // If node has a `path`, request that path; otherwise request root for the tape
-        const tapeName = (node as any).tapeName || (node.label as string);
-        const currentPath = normalizePath((node as any).path || '/');
         let res: any = null;
         if (currentPath !== '/') {
             res = await localTapeApi.getPath(tapeName, currentPath);
@@ -278,8 +285,6 @@ async function getData(node: TreeOption, fileOnly: boolean = false) {
             // root-level node
             res = await localTapeApi.getRoot(tapeName);
         }
-
-        store.setCurrentLocation(tapeName, currentPath);
 
         const isStaleSelection =
             fileOnly && selectionRequestId > 0 && selectionRequestId !== latestSelectionRequest;
@@ -312,7 +317,7 @@ async function getData(node: TreeOption, fileOnly: boolean = false) {
             }
 
             // only show directories in the tree; mark isLeaf always false
-            node.children = dirs.map((item: any) => {
+            treeNode.children = dirs.map((item: any) => {
                 const parentPath = normalizePath((node as any).path || '/');
                 const childPath =
                     parentPath === '/' ? `/${item.name}` : `${parentPath}/${item.name}`;
@@ -328,8 +333,27 @@ async function getData(node: TreeOption, fileOnly: boolean = false) {
             updatePathIndex(data.value);
             syncSelectionFromStore();
             store.setLocalIndexTreeData(data.value);
+        } else if (!fileOnly) {
+            // Mark node as loaded even when API returned no payload to avoid repeated load retries.
+            treeNode.children = [];
+            store.setLocalIndexTreeData(data.value);
         }
     } catch (err) {
+        const isStaleSelection =
+            fileOnly && selectionRequestId > 0 && selectionRequestId !== latestSelectionRequest;
+        if (!isStaleSelection) {
+            const status = (err as any)?.response?.status;
+            message.error(
+                status
+                    ? `Failed to load ${tapeName}:${currentPath} (HTTP ${status})`
+                    : `Failed to load ${tapeName}:${currentPath}`,
+            );
+        }
+        if (!fileOnly) {
+            // Mark node as loaded on failure (e.g. 404) so async tree does not keep requesting it.
+            treeNode.children = [];
+            store.setLocalIndexTreeData(data.value);
+        }
         console.error('Failed to load tape files', err);
     }
 }

@@ -68,7 +68,10 @@ public static class APILocalIndex
             try
             {
                 var cartridgeMemory = new CartridgeMemory();
-                cartridgeMemory.FromLcgCmFile(cmPath);
+                if (cmPath.EndsWith(".cmbin", StringComparison.OrdinalIgnoreCase))
+                    cartridgeMemory.FromBinaryFile(cmPath);
+                else
+                    cartridgeMemory.FromLcgCmFile(cmPath);
                 return Results.Ok(cartridgeMemory);
             }
             catch (Exception ex)
@@ -88,7 +91,8 @@ public static class APILocalIndex
 
     private static bool HasCartridgeMemory(TapeFileInfo file)
     {
-        return file.Index.FileName.EndsWith(".cm", StringComparison.OrdinalIgnoreCase);
+        return file.Index.FileName.EndsWith(".cm", StringComparison.OrdinalIgnoreCase)
+            || file.Index.FileName.EndsWith(".cmbin", StringComparison.OrdinalIgnoreCase);
     }
 
     private static object DirectoryToDto(LtfsDirectory dir)

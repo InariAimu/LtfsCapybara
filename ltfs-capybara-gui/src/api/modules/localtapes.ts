@@ -10,7 +10,7 @@ export const localTapeApi = {
             return res as unknown;
         } catch (err) {
             console.error('localTapeApi.getRoot error', err);
-            return null;
+            throw err;
         }
     },
 
@@ -24,7 +24,7 @@ export const localTapeApi = {
             return res as unknown;
         } catch (err) {
             console.error('localTapeApi.getPath error', err);
-            return null;
+            throw err;
         }
     },
 };

@@ -3,6 +3,8 @@ using TapeDrive;
 
 namespace LtfsServer.Services;
 
+public sealed record TapeDriveInfo(string Id, string DevicePath, string DisplayName, bool IsFake);
+
 public interface ITapeDriveRegistry
 {
     bool TryAdd(string id, TapeDriveBase drive);

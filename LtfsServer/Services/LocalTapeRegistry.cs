@@ -31,6 +31,10 @@ public sealed class LocalTapeRegistry : ILocalTapeRegistry
         "^(.+?)_G(\\d+)_(\\d{8})_(\\d{6}\\.\\d{1,7})\\.cm$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    private static readonly Regex CmBinaryFilenameRegex = new Regex(
+        "^(.+?)_(\\d{8})_(\\d{6}\\.\\d{1,7})\\.cmbin$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     public LocalTapeRegistry(ILogger<LocalTapeRegistry> logger)
     {
         _logger = logger;
@@ -64,7 +68,8 @@ public sealed class LocalTapeRegistry : ILocalTapeRegistry
                     files = Directory.EnumerateFiles(dir, "*.*")
                         .Where(static file =>
                             file.EndsWith(".xml", StringComparison.OrdinalIgnoreCase) ||
-                            file.EndsWith(".cm", StringComparison.OrdinalIgnoreCase));
+                            file.EndsWith(".cm", StringComparison.OrdinalIgnoreCase) ||
+                            file.EndsWith(".cmbin", StringComparison.OrdinalIgnoreCase));
                 }
                 catch (Exception ex)
                 {
@@ -74,34 +79,7 @@ public sealed class LocalTapeRegistry : ILocalTapeRegistry
 
                 foreach (var f in files)
                 {
-                    if (TryParseXmlFileInfo(tapeName, f, out TapeFileIndex? xmlInfo))
-                    {
-                        bag.Add(new TapeFileInfo { Index = xmlInfo });
-                        continue;
-                    }
-
-                    if (TryParseCmFileInfo(f, out TapeFileIndex? cmInfo))
-                    {
-                        var info = new TapeFileInfo { Index = cmInfo };
-                        bag.Add(info);
-
-                        try
-                        {
-                            var cartridgeMemory = new CartridgeMemory();
-                            cartridgeMemory.FromLcgCmFile(f);
-
-                            var summary = BuildSummary(tapeName, cmInfo, cartridgeMemory);
-                            UpsertSummary(summary);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogWarning(ex, "Failed to parse cartridge memory file {file}", f);
-                        }
-
-                        continue;
-                    }
-
-                    _logger.LogDebug("Filename did not match known patterns: {file}", f);
+                    TryUpsertFile(tapeName, f);
                 }
             }
         }
@@ -112,6 +90,46 @@ public sealed class LocalTapeRegistry : ILocalTapeRegistry
         }
 
         await Task.CompletedTask;
+    }
+
+    public bool TryUpsertFile(string tapeName, string filePath)
+    {
+        if (string.IsNullOrWhiteSpace(tapeName) || string.IsNullOrWhiteSpace(filePath))
+            return false;
+
+        var bag = _tapes.GetOrAdd(tapeName, _ => new ConcurrentBag<TapeFileInfo>());
+
+        if (TryParseXmlFileInfo(tapeName, filePath, out TapeFileIndex? xmlInfo))
+        {
+            bag.Add(new TapeFileInfo { Index = xmlInfo });
+            return true;
+        }
+
+        if (TryParseCmFileInfo(tapeName, filePath, out TapeFileIndex? cmInfo))
+        {
+            bag.Add(new TapeFileInfo { Index = cmInfo });
+
+            try
+            {
+                var cartridgeMemory = new CartridgeMemory();
+                if (filePath.EndsWith(".cmbin", StringComparison.OrdinalIgnoreCase))
+                    cartridgeMemory.FromBinaryFile(filePath);
+                else
+                    cartridgeMemory.FromLcgCmFile(filePath);
+
+                var summary = BuildSummary(tapeName, cmInfo, cartridgeMemory);
+                UpsertSummary(summary);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to parse cartridge memory file {file}", filePath);
+            }
+
+            return true;
+        }
+
+        _logger.LogDebug("Filename did not match known patterns: {file}", filePath);
+        return false;
     }
 
     public IEnumerable<string> GetTapeNames()
@@ -190,27 +208,58 @@ public sealed class LocalTapeRegistry : ILocalTapeRegistry
         return true;
     }
 
-    private bool TryParseCmFileInfo(string filePath, out TapeFileIndex info)
+    private bool TryParseCmFileInfo(string tapeName, string filePath, out TapeFileIndex info)
     {
         var name = Path.GetFileName(filePath) ?? string.Empty;
-        var match = CmFilenameRegex.Match(name);
-        if (!match.Success)
+        var cmMatch = CmFilenameRegex.Match(name);
+        if (cmMatch.Success)
+        {
+            var barcode = cmMatch.Groups[1].Value;
+            if (!string.Equals(barcode, tapeName, StringComparison.Ordinal))
+            {
+                _logger.LogDebug("Filename barcode {barcode} does not match directory {tapeName} for file {file}", barcode, tapeName, filePath);
+                info = new TapeFileIndex();
+                return false;
+            }
+
+            int generation = -1;
+            if (!int.TryParse(cmMatch.Groups[2].Value, out generation))
+                generation = -1;
+
+            info = new TapeFileIndex
+            {
+                FileName = name,
+                Partition = -1,
+                Generation = generation,
+                LocationStartBlock = -1,
+                Ticks = ParseTimestampTicks(cmMatch.Groups[3].Value, cmMatch.Groups[4].Value)
+            };
+
+            return true;
+        }
+
+        var cmBinMatch = CmBinaryFilenameRegex.Match(name);
+        if (!cmBinMatch.Success)
         {
             info = new TapeFileIndex();
             return false;
         }
 
-        int generation = -1;
-        if (!int.TryParse(match.Groups[2].Value, out generation))
-            generation = -1;
+        var cmBinBarcode = cmBinMatch.Groups[1].Value;
+        if (!string.Equals(cmBinBarcode, tapeName, StringComparison.Ordinal))
+        {
+            _logger.LogDebug("Filename barcode {barcode} does not match directory {tapeName} for file {file}", cmBinBarcode, tapeName, filePath);
+            info = new TapeFileIndex();
+            return false;
+        }
 
         info = new TapeFileIndex
         {
             FileName = name,
             Partition = -1,
-            Generation = generation,
+            Generation = -1,
             LocationStartBlock = -1,
-            Ticks = ParseTimestampTicks(match.Groups[3].Value, match.Groups[4].Value)
+            Ticks = ParseTimestampTicks(cmBinMatch.Groups[2].Value, cmBinMatch.Groups[3].Value)
         };
 
         return true;

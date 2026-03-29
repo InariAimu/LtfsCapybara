@@ -24,4 +24,9 @@ public interface ILocalTapeRegistry
     /// Get parsed file infos for a tape name.
     /// </summary>
     IEnumerable<TapeFileInfo> GetFiles(string tapeName);
+
+    /// <summary>
+    /// Parse and upsert a single file into the registry cache.
+    /// </summary>
+    bool TryUpsertFile(string tapeName, string filePath);
 }
