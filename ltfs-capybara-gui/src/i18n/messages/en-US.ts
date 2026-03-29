@@ -5,10 +5,11 @@ export default {
             dog: 'Dog',
             bear: 'Bear',
         },
-        footer: 'Cat',
+        footer: 'Idle - No task running',
         language: 'Language',
     },
     menu: {
+        overview: 'Overview',
         tapeMachine: 'Tape Machine',
         tapeLibrary: 'Tape Library',
         ltfs: 'LTFS',
@@ -40,8 +41,14 @@ export default {
         enUS: 'English',
         zhCN: 'Simplified Chinese',
     },
+    theme: {
+        auto: 'Auto',
+        light: 'Light',
+        dark: 'Dark',
+    },
     settings: {
         title: 'Settings',
+        themeMode: 'Theme',
     },
     pages: {
         comingSoon: 'This page is coming soon.',

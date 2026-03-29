@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import { NMessageProvider } from 'naive-ui';
-import { NConfigProvider, GlobalThemeOverrides } from 'naive-ui';
+import { NConfigProvider, GlobalThemeOverrides, darkTheme } from 'naive-ui';
 import { computed } from 'vue';
 import { dateEnUS, dateZhCN, enUS, zhCN } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import Main from '@/views/Main.vue';
+import { useAppTheme } from '@/theme';
 
 const { locale } = useI18n();
+const { isDarkTheme } = useAppTheme();
 
 const naiveLocale = computed(() => (locale.value === 'zh-CN' ? zhCN : enUS));
 const naiveDateLocale = computed(() => (locale.value === 'zh-CN' ? dateZhCN : dateEnUS));
+const naiveTheme = computed(() => (isDarkTheme.value ? darkTheme : null));
 
 const themeOverrides: GlobalThemeOverrides = {
     Collapse: {
@@ -38,6 +41,7 @@ const themeOverrides: GlobalThemeOverrides = {
 
 <template>
     <n-config-provider
+        :theme="naiveTheme"
         :theme-overrides="themeOverrides"
         :locale="naiveLocale"
         :date-locale="naiveDateLocale"

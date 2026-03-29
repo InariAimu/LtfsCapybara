@@ -2,6 +2,7 @@
 import type { MenuOption } from 'naive-ui';
 import type { Component } from 'vue';
 import {
+    HomeOutline,
     SettingsOutline,
     FileTrayFullSharp,
     FileTraySharp,
@@ -22,7 +23,7 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-    selectedKey: 'localindex',
+    selectedKey: 'overview',
 });
 
 const emit = defineEmits<{
@@ -32,6 +33,11 @@ const emit = defineEmits<{
 const { t } = useI18n();
 
 const menuOptions = computed<MenuOption[]>(() => [
+    {
+        label: t('menu.overview'),
+        key: 'overview',
+        icon: renderIcon(HomeOutline),
+    },
     {
         label: t('menu.tapeMachine'),
         key: 'tape-machine-operations',

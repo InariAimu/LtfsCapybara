@@ -5,10 +5,11 @@ export default {
             dog: '狗',
             bear: '熊',
         },
-        footer: '猫',
+        footer: '空闲 - 没有正在运行的任务',
         language: '语言',
     },
     menu: {
+        overview: '总览',
         tapeMachine: '磁带机',
         tapeLibrary: '磁带库',
         ltfs: 'LTFS',
@@ -40,8 +41,14 @@ export default {
         enUS: '英语',
         zhCN: '简体中文',
     },
+    theme: {
+        auto: '跟随系统',
+        light: '浅色',
+        dark: '深色',
+    },
     settings: {
         title: '设置',
+        themeMode: '主题',
     },
     pages: {
         comingSoon: '该页面即将上线。',
