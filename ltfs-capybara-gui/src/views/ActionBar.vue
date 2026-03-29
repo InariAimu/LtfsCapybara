@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { NSwitch, NButton } from 'naive-ui';
+import { ref } from 'vue';
+import DirectoryChooseDialog from '@/components/DirectoryChooseDialog.vue';
 
 const { showTapeInfoToggle, showTapeInfo } = defineProps<{
     showTapeInfoToggle: boolean;
@@ -13,6 +15,13 @@ const emit = defineEmits<{
 function updateShowTapeInfo(value: boolean) {
     emit('update:showTapeInfo', value);
 }
+
+const showDirectoryChooseDialog = ref(false);
+function handleClick() {
+    // Placeholder for action button click handler
+    console.log('Action button clicked');
+    showDirectoryChooseDialog.value = !showDirectoryChooseDialog.value;
+}
 </script>
 
 <template>
@@ -25,7 +34,9 @@ function updateShowTapeInfo(value: boolean) {
             <template #checked> Tape Info </template>
             <template #unchecked> File List </template>
         </n-switch>
-        <n-button :size="'small'"> Placeholder Action </n-button>
+        <n-button :size="'small'" @click="handleClick"> Placeholder Action </n-button>
+
+        <directory-choose-dialog :show="showDirectoryChooseDialog" @cancel="handleClick" />
     </div>
 </template>
 

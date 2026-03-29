@@ -37,6 +37,23 @@ export default {
     fileTree: {
         free: 'Free',
     },
+    directoryChooser: {
+        title: 'Choose Directory',
+        selectHint: 'Select a directory from the tree.',
+        pathPlaceholder: 'Enter a local or network path',
+        go: 'Go',
+        confirm: 'Confirm',
+        cancel: 'Cancel',
+        labels: {
+            drive: 'Drive',
+            network: 'Network',
+            folder: 'Folder',
+        },
+        errors: {
+            loadRootsFailed: 'Failed to load local drives and network locations.',
+            loadChildrenFailed: 'Failed to load children for: {path}',
+        },
+    },
     locale: {
         enUS: 'English',
         zhCN: 'Simplified Chinese',

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { NMessageProvider } from 'naive-ui';
+import { NMessageProvider, NModalProvider } from 'naive-ui';
 import { NConfigProvider, GlobalThemeOverrides, darkTheme } from 'naive-ui';
 import { computed } from 'vue';
 import { dateEnUS, dateZhCN, enUS, zhCN } from 'naive-ui';
@@ -46,7 +46,8 @@ const themeOverrides: GlobalThemeOverrides = {
         :locale="naiveLocale"
         :date-locale="naiveDateLocale"
     >
-        <n-message-provider> <Main /> </n-message-provider
+        <n-message-provider>
+            <n-modal-provider><Main /></n-modal-provider> </n-message-provider
     ></n-config-provider>
 </template>
 

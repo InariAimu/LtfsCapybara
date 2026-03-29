@@ -346,6 +346,14 @@ function handleExpandedKeys(keys: Array<string | number>) {
     expandedKeys.value = keys;
     store.setLocalIndexExpandedKeys(keys);
 }
+
+function renderLabel({ option }: { option: TreeOption }) {
+    const path = normalizePath(((option as any).path as string) || '');
+    if (path === '/') {
+        return h('span', { class: 'local-tree-root-label' }, String(option.label ?? ''));
+    }
+    return option.label as string;
+}
 </script>
 
 <template>
@@ -401,6 +409,7 @@ function handleExpandedKeys(keys: Array<string | number>) {
             :show-line="true"
             :indent="12"
             :data="visibleData"
+            :render-label="renderLabel"
             :selected-keys="selectedKeys"
             :expanded-keys="expandedKeys"
             :on-load="handleLoad"
@@ -415,5 +424,9 @@ function handleExpandedKeys(keys: Array<string | number>) {
 .n-tree-node-content {
     white-space: nowrap;
     width: max-content;
+}
+
+.local-tree-root-label {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
 }
 </style>

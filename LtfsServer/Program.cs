@@ -25,6 +25,8 @@ builder.Services.AddCors(options =>
 builder.Services.AddSingleton<ITapeDriveRegistry, TapeDriveRegistry>();
 // Register local tape registry (scans AppData.Path/local)
 builder.Services.AddSingleton<ILocalTapeRegistry, LocalTapeRegistry>();
+// Register local filesystem tree service (local drives + LAN shares)
+builder.Services.AddSingleton<ILocalFileSystemTreeService, LocalFileSystemTreeService>();
 
 var app = builder.Build();
 
@@ -63,6 +65,8 @@ app.MapTapeDriveApi();
 app.MapLocalTapesApi();
 // Register LocalIndex API endpoints (load and return LTFS index contents)
 app.MapLocalIndexApi();
+// Register host local filesystem API endpoints
+app.MapLocalFileSystemApi();
 
 // Initialize local tape registry from AppData.Path/local before starting
 var localRegistry = app.Services.GetRequiredService<ILocalTapeRegistry>();

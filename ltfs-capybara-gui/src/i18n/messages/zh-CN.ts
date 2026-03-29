@@ -37,6 +37,23 @@ export default {
     fileTree: {
         free: '可用',
     },
+    directoryChooser: {
+        title: '选择目录',
+        selectHint: '请在树中选择一个目录。',
+        pathPlaceholder: '输入本地路径或网络路径',
+        go: '前往',
+        confirm: '确认',
+        cancel: '取消',
+        labels: {
+            drive: '驱动器',
+            network: '网络',
+            folder: '目录',
+        },
+        errors: {
+            loadRootsFailed: '加载本地驱动器和网络位置失败。',
+            loadChildrenFailed: '加载子目录失败：{path}',
+        },
+    },
     locale: {
         enUS: '英语',
         zhCN: '简体中文',
