@@ -85,6 +85,9 @@ export default {
         },
         wrap: {
             title: '卷绕使用情况',
+            overall: '整体',
+            forward: '正向',
+            reverse: '反向',
             wrap: '编号',
             startBlock: '起始块',
             endBlock: '结束块',

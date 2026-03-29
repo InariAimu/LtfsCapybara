@@ -85,6 +85,9 @@ export default {
         },
         wrap: {
             title: 'Wrap Analysis',
+            overall: 'Overall',
+            forward: 'Forward',
+            reverse: 'Reverse',
             wrap: 'Wrap',
             startBlock: 'Start Block',
             endBlock: 'End Block',

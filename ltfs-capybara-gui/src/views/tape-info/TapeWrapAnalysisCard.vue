@@ -23,6 +23,10 @@ interface Props {
 const props = defineProps<Props>();
 const { t } = useI18n();
 
+const forwardSegments = computed(() => props.wrap.segments.filter((_, index) => index % 2 === 0));
+
+const reverseSegments = computed(() => props.wrap.segments.filter((_, index) => index % 2 === 1));
+
 const columns = computed<DataTableColumns<WrapTableRow>>(() => [
     { title: t('tapeInfo.wrap.wrap'), key: 'wrap' },
     { title: t('tapeInfo.wrap.startBlock'), key: 'startBlock' },
@@ -51,17 +55,51 @@ const columns = computed<DataTableColumns<WrapTableRow>>(() => [
 
 <template>
     <n-card :title="t('tapeInfo.wrap.title')" size="small" class="tape-info-card">
-        <div
-            v-if="props.wrap.segments.length"
-            class="wrap-colorbar"
-            :aria-label="t('tapeInfo.wrap.colorbarAriaLabel')"
-        >
+        <div v-if="props.wrap.segments.length" class="wrap-colorbars">
             <div
-                v-for="segment in props.wrap.segments"
-                :key="segment.key"
-                class="wrap-colorbar-segment"
-                :style="{ backgroundColor: segment.backgroundColor }"
-            />
+                class="wrap-colorbar-group"
+                :aria-label="`${t('tapeInfo.wrap.colorbarAriaLabel')} forward`"
+            >
+                <span class="colorbar-title">{{ t('tapeInfo.wrap.overall') }}</span>
+                <div class="wrap-colorbar">
+                    <div
+                        v-for="segment in props.wrap.segments"
+                        :key="segment.key"
+                        class="wrap-colorbar-segment"
+                        :style="{ backgroundColor: segment.backgroundColor }"
+                    />
+                </div>
+            </div>
+
+            <div
+                class="wrap-colorbar-group"
+                :aria-label="`${t('tapeInfo.wrap.colorbarAriaLabel')} forward`"
+            >
+                <span class="colorbar-title">{{ t('tapeInfo.wrap.forward') }}</span>
+                <div class="wrap-colorbar wrap-colorbar-half">
+                    <div
+                        v-for="segment in forwardSegments"
+                        :key="segment.key"
+                        class="wrap-colorbar-segment"
+                        :style="{ backgroundColor: segment.backgroundColor }"
+                    />
+                </div>
+            </div>
+
+            <div
+                class="wrap-colorbar-group"
+                :aria-label="`${t('tapeInfo.wrap.colorbarAriaLabel')} reverse`"
+            >
+                <span class="colorbar-title">{{ t('tapeInfo.wrap.reverse') }}</span>
+                <div class="wrap-colorbar wrap-colorbar-half">
+                    <div
+                        v-for="segment in reverseSegments"
+                        :key="segment.key"
+                        class="wrap-colorbar-segment"
+                        :style="{ backgroundColor: segment.backgroundColor }"
+                    />
+                </div>
+            </div>
         </div>
         <n-data-table
             :columns="columns"
@@ -77,14 +115,41 @@ const columns = computed<DataTableColumns<WrapTableRow>>(() => [
     margin-bottom: 0;
 }
 
+.colorbar-title {
+    font-size: 12px;
+}
+
+.wrap-colorbars {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 8px;
+    gap: 5px;
+}
+
+.wrap-colorbar-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.wrap-colorbar-title {
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    text-transform: lowercase;
+    color: #595959;
+}
+
 .wrap-colorbar {
     display: flex;
     height: 24px;
-    margin-bottom: 16px;
     border: 1px solid #d9d9d9;
     border-radius: 3px;
     overflow: hidden;
     background-color: #f5f5f5;
+}
+
+.wrap-colorbar-half {
+    height: 14px !important;
 }
 
 .wrap-colorbar-segment {
