@@ -121,6 +121,8 @@ export default {
         partitions: {
             title: '磁带数据',
             estimatedCapacityLoss: '预计容量损失',
+            capacityLossPercentNa: '( 不适用 )',
+            capacityLossPercentText: '( 占总容量 {percent}%，占已用容量 {percentOfUsed}% )',
             available: '可用',
             partitionUsageAndLossBarAriaLabel: '分区使用率与损耗条',
             wrapsLabel: '[{count} 个卷绕]',
@@ -144,6 +146,7 @@ export default {
             forward: '正向',
             reverse: '反向',
             wrap: '编号',
+            wraps: '卷绕',
             startBlock: '起始块',
             endBlock: '结束块',
             filemark: '文件标记',
@@ -152,6 +155,12 @@ export default {
             colorbarAriaLabel: '卷绕容量色条',
             eod: '数据结束',
             guard: '保护区',
+            capacityTooltip: `容量说明:
+100~101%：全新磁带，略有多余空间
+95~100%：健康
+80~95%：严重磨损
+50~55%：可能存在磁头通道损坏
+50%以下：磁带或磁头严重损坏`,
         },
     },
 };

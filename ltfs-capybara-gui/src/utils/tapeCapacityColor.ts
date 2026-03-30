@@ -1,11 +1,16 @@
 const WRAP_TYPE_GUARD = 3;
+
+const ERROR_CAPACITY = 50;
+const FATAL_CAPACITY = 60;
 const CRITICAL_CAPACITY = 90;
 const WARNING_CAPACITY = 95;
 const MAX_CAPACITY = 100;
 
 const COLORS = {
     guard: '#9fc5ff',
-    critical: '#ff8888',
+    error: '#ff4d4d',
+    fatal: '#ff8888',
+    critical: '#ffa27d',
     warningStart: '#fff6cf',
     warningEnd: '#ffdfb9',
     healthyStart: '#fff2ad',
@@ -41,6 +46,14 @@ export function getCapacityCellBackground(capacity: unknown, type?: unknown): st
 
     if (typeof capacity !== 'number' || Number.isNaN(capacity) || capacity <= 0) {
         return undefined;
+    }
+
+    if (capacity <= ERROR_CAPACITY) {
+        return COLORS.error;
+    }
+
+    if (capacity <= FATAL_CAPACITY) {
+        return COLORS.fatal;
     }
 
     if (capacity <= CRITICAL_CAPACITY) {

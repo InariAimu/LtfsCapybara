@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, h } from 'vue';
 import type { DataTableColumns } from 'naive-ui';
-import { NCard, NDataTable } from 'naive-ui';
+import { NCard, NDataTable, NFlex, NIcon, NPopover } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
+import { AlertCircle } from '@vicons/ionicons5';
 import type { WrapTableRow } from '@/api/types/tapeInfo';
 
 interface WrapColorSegment {
@@ -20,6 +21,10 @@ interface Props {
     wrap: WrapMetrics;
 }
 
+type DisplayWrapTableRow = WrapTableRow & {
+    wrapDisplay?: string;
+};
+
 const props = defineProps<Props>();
 const { t } = useI18n();
 
@@ -27,8 +32,54 @@ const forwardSegments = computed(() => props.wrap.segments.filter((_, index) => 
 
 const reverseSegments = computed(() => props.wrap.segments.filter((_, index) => index % 2 === 1));
 
-const columns = computed<DataTableColumns<WrapTableRow>>(() => [
-    { title: t('tapeInfo.wrap.wrap'), key: 'wrap' },
+const displayRows = computed<DisplayWrapTableRow[]>(() => {
+    const rows = props.wrap.rows;
+    if (rows.length <= 1) {
+        return rows;
+    }
+
+    const isCollapsibleEmptyRow = (row: WrapTableRow) =>
+        row.rawCapacity === 0 && row.rawType !== 2 && row.rawType !== 3;
+
+    const hasEodTail = rows[rows.length - 1].rawType === 2;
+    const mergeEnd = hasEodTail ? rows.length - 2 : rows.length - 1;
+    if (mergeEnd < 0) {
+        return rows;
+    }
+
+    let tailStart = mergeEnd + 1;
+    for (let i = mergeEnd; i >= 0; i -= 1) {
+        if (isCollapsibleEmptyRow(rows[i])) {
+            tailStart = i;
+            continue;
+        }
+        break;
+    }
+
+    const zeroTailCount = mergeEnd - tailStart + 1;
+    if (zeroTailCount <= 1) {
+        return rows;
+    }
+
+    const headRows = rows.slice(0, tailStart);
+    const firstTailRow = rows[tailStart];
+    const lastTailRow = rows[mergeEnd];
+    const mergedTailRow: DisplayWrapTableRow = {
+        ...firstTailRow,
+        wrapDisplay: `${firstTailRow.wrap}-${lastTailRow.wrap}`,
+    };
+
+    const suffixRows = hasEodTail ? [rows[rows.length - 1]] : [];
+
+    return [...headRows, mergedTailRow, ...suffixRows];
+});
+
+const columns = computed<DataTableColumns<DisplayWrapTableRow>>(() => [
+    {
+        title: t('tapeInfo.wrap.wrap'),
+        key: 'wrap',
+        render: (row: DisplayWrapTableRow) => row.wrapDisplay ?? row.wrap,
+    },
     { title: t('tapeInfo.wrap.startBlock'), key: 'startBlock' },
     { title: t('tapeInfo.wrap.endBlock'), key: 'endBlock' },
     { title: t('tapeInfo.wrap.filemark'), key: 'filemark' },
@@ -51,16 +102,60 @@ const columns = computed<DataTableColumns<WrapTableRow>>(() => [
         }),
     },
 ]);
+
+function createTitle(): ReturnType<typeof h> {
+    return h(
+        NFlex,
+        {
+            align: 'center',
+            style: { gap: '6px' },
+        },
+        {
+            default: () => [
+                h('span', t('tapeInfo.wrap.title')),
+                h(
+                    NPopover,
+                    {
+                        trigger: 'hover',
+                        placement: 'top',
+                    },
+                    {
+                        default: () =>
+                            t('tapeInfo.wrap.capacityTooltip')
+                                .split('\n')
+                                .flatMap((line, i, arr) =>
+                                    i < arr.length - 1 ? [line, h('br')] : [line],
+                                ),
+                        trigger: () =>
+                            h(
+                                NIcon,
+                                {
+                                    size: 16,
+                                    color: '#4098fc',
+                                },
+                                {
+                                    default: () => h(AlertCircle),
+                                },
+                            ),
+                    },
+                ),
+            ],
+        },
+    );
+}
 </script>
 
 <template>
-    <n-card :title="t('tapeInfo.wrap.title')" size="small" class="tape-info-card">
+    <n-card :title="createTitle" size="small" class="tape-info-card">
         <div v-if="props.wrap.segments.length" class="wrap-colorbars">
             <div
                 class="wrap-colorbar-group"
                 :aria-label="`${t('tapeInfo.wrap.colorbarAriaLabel')} forward`"
             >
-                <span class="colorbar-title">{{ t('tapeInfo.wrap.overall') }}</span>
+                <span class="colorbar-title"
+                    >{{ t('tapeInfo.wrap.overall') }} - {{ props.wrap.segments.length }}
+                    {{ t('tapeInfo.wrap.wraps') }}</span
+                >
                 <div class="wrap-colorbar">
                     <div
                         v-for="segment in props.wrap.segments"
@@ -101,12 +196,7 @@ const columns = computed<DataTableColumns<WrapTableRow>>(() => [
                 </div>
             </div>
         </div>
-        <n-data-table
-            :columns="columns"
-            :data="props.wrap.rows"
-            :loading="loading"
-            :striped="true"
-        />
+        <n-data-table :columns="columns" :data="displayRows" :loading="loading" :striped="true" />
     </n-card>
 </template>
 

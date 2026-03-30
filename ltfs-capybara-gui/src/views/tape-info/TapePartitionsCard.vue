@@ -17,6 +17,7 @@ interface PartitionBar {
 interface PartitionMetrics {
     bars: PartitionBar[];
     totalCapacity: number;
+    usedCapacity: number;
     estimatedCapacityLoss: number;
     partitionCount: number;
 }
@@ -30,11 +31,16 @@ const { t } = useI18n();
 
 const capacityLossPercentText = computed(() => {
     if (props.partition.totalCapacity <= 0) {
-        return '( 0.0000% )';
+        return t('tapeInfo.partitions.capacityLossPercentNa');
     }
 
     const percent = (props.partition.estimatedCapacityLoss / props.partition.totalCapacity) * 100;
-    return `( ${percent.toFixed(4)}% )`;
+    const percentOfUsed =
+        (props.partition.estimatedCapacityLoss / props.partition.usedCapacity) * 100;
+    return t('tapeInfo.partitions.capacityLossPercentText', {
+        percent: percent.toFixed(2),
+        percentOfUsed: percentOfUsed.toFixed(2),
+    });
 });
 </script>
 
@@ -74,12 +80,12 @@ const capacityLossPercentText = computed(() => {
                     :aria-label="t('tapeInfo.partitions.partitionUsageAndLossBarAriaLabel')"
                 >
                     <div
-                        class="partition-colorbar-used"
-                        :style="{ width: `${item.usedPercent}%` }"
-                    />
-                    <div
                         class="partition-colorbar-loss"
                         :style="{ width: `${item.lossPercent}%` }"
+                    />
+                    <div
+                        class="partition-colorbar-used"
+                        :style="{ width: `${item.usedPercent}%` }"
                     />
                 </div>
             </div>
@@ -113,7 +119,6 @@ const capacityLossPercentText = computed(() => {
 
 .partition-colorbar {
     display: flex;
-    justify-content: space-between;
     height: 24px;
     border: 1px solid #d9d9d9;
     border-radius: 3px;

@@ -112,6 +112,7 @@ const partitionMetrics = computed(() => {
         return {
             bars: [] as PartitionBar[],
             totalCapacity: 0,
+            usedCapacity: 0,
             estimatedCapacityLoss: 0,
             partitionCount: 0,
         };
@@ -119,6 +120,7 @@ const partitionMetrics = computed(() => {
 
     const partitions = Object.values(info.partitions);
     let totalCapacity = 0;
+    let usedCapacity = 0;
     let estimatedCapacityLoss = 0;
 
     const bars = partitions.map((item: PartitionInfo, idx: number) => {
@@ -127,6 +129,7 @@ const partitionMetrics = computed(() => {
         const loss = Math.max(item.estimatedLossSize, 0);
 
         totalCapacity += allocated;
+        usedCapacity += used;
         estimatedCapacityLoss += loss;
 
         let usedPercent = 0;
@@ -156,6 +159,7 @@ const partitionMetrics = computed(() => {
     return {
         bars,
         totalCapacity,
+        usedCapacity,
         estimatedCapacityLoss,
         partitionCount: partitions.length,
     };

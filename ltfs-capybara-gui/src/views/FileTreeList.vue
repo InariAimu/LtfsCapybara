@@ -146,9 +146,7 @@ function updatePathIndex(nodes: LocalTreeNode[]) {
 }
 
 function getRootNodeKeys(): Array<string | number> {
-    return data.value
-        .filter(node => normalizePath(node.path) === '/')
-        .map(node => node.key);
+    return data.value.filter(node => normalizePath(node.path) === '/').map(node => node.key);
 }
 
 function ensureRootNodesCollapsed() {
@@ -522,7 +520,12 @@ function renderLabel({ option }: { option: TreeOption }) {
                     gap: 0px 10px;
                 "
             >
-                <n-input v-model:value="filterText" size="tiny" :placeholder="'barcode'" clearable />
+                <n-input
+                    v-model:value="filterText"
+                    size="tiny"
+                    :placeholder="'barcode'"
+                    clearable
+                />
                 <n-select
                     v-model:value="filterGeneration"
                     :options="generationOptions"

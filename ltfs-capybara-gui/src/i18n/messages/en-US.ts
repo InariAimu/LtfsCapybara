@@ -121,6 +121,8 @@ export default {
         partitions: {
             title: 'Data on Tape',
             estimatedCapacityLoss: 'Estimated Capacity Loss',
+            capacityLossPercentNa: '( N/A )',
+            capacityLossPercentText: '( {percent}% of Total,   {percentOfUsed}% of Used )',
             available: 'available',
             partitionUsageAndLossBarAriaLabel: 'Partition usage and loss bar',
             wrapsLabel: '[{count} wraps]',
@@ -144,6 +146,7 @@ export default {
             forward: 'Forward',
             reverse: 'Reverse',
             wrap: 'Wrap',
+            wraps: 'Wraps',
             startBlock: 'Start Block',
             endBlock: 'End Block',
             filemark: 'Filemark',
@@ -152,6 +155,12 @@ export default {
             colorbarAriaLabel: 'Wrap capacity colorbar',
             eod: 'EOD',
             guard: 'GUARD',
+            capacityTooltip: `Capacity description:
+100~101%: New tape with some extra space
+95~100%: Healthy
+80~95%: Worn
+50~55%: Driver head may have broken channel
+<50%: Broken tape or driver head`,
         },
     },
 };
