@@ -22,6 +22,19 @@ export interface FsChildrenResponse {
     loadedAtUtc: string;
 }
 
+export interface FsFileDto {
+    name: string;
+    path: string;
+    size: number;
+}
+
+export interface FsFilesResponse {
+    parentPath: string;
+    files: FsFileDto[];
+    warning?: string | null;
+    loadedAtUtc: string;
+}
+
 export const localFileSystemApi = {
     async getRoots(): Promise<FsRootsResponse | null> {
         try {
@@ -41,6 +54,16 @@ export const localFileSystemApi = {
             return res.data;
         } catch (err) {
             console.error('localFileSystemApi.getChildren error', err);
+            return null;
+        }
+    },
+
+    async getFiles(path: string): Promise<FsFilesResponse | null> {
+        try {
+            const res = await apiClient.get<FsFilesResponse>('/fsfiles', { params: { path } });
+            return res.data;
+        } catch (err) {
+            console.error('localFileSystemApi.getFiles error', err);
             return null;
         }
     },

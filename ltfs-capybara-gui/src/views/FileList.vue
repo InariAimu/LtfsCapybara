@@ -6,14 +6,15 @@ import { useI18n } from 'vue-i18n';
 import { useFileStore } from '@/stores/fileStore';
 
 interface Row {
-    key: number;
+    key: number | string;
     name: string;
-    size: number;
+    size: number | string;
     index: number;
     crc64: string;
     createTime: string;
     modifyTime: string;
     updateTime: string;
+    type?: string;
     taskType?: string;
 }
 
@@ -54,6 +55,14 @@ const columns = computed<DataTableColumns<Row>>(() => [
         title: t('table.size'),
         key: 'size',
         width: 100,
+        render(row) {
+            const itemType = String(row.type || '').toLowerCase();
+            if (itemType && itemType !== 'file') {
+                return '-';
+            }
+
+            return row.size ?? '-';
+        },
     },
     {
         title: t('table.index'),

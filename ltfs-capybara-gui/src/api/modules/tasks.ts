@@ -4,7 +4,12 @@ export type LtfsTaskType = 'write' | 'replace' | 'delete' | 'read' | 'format' | 
 export type FolderTaskType = 'add' | 'delete';
 
 export interface LtfsWriteTaskPayload {
-    taskType: 'Write' | 'Replace' | 'Delete';
+    taskType?: 'Write' | 'Replace' | 'Delete';
+    localPath: string;
+    targetPath: string;
+}
+
+export interface AddServerFolderTaskPayload {
     localPath: string;
     targetPath: string;
 }
@@ -99,6 +104,13 @@ export const taskApi = {
                 type: 'folder',
                 folderTask,
             },
+        );
+    },
+
+    addServerFolderTask(tapeBarcode: string, request: AddServerFolderTaskPayload) {
+        return apiClient.post<LtfsTaskGroup>(
+            `/tasks/groups/${encodeURIComponent(tapeBarcode)}/tasks/server-folder`,
+            request,
         );
     },
 

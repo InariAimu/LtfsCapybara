@@ -1,4 +1,4 @@
-export default {
+﻿export default {
     app: {
         actions: {
             cat: 'Cat',
@@ -119,6 +119,12 @@ export default {
         actionAdd: 'Add',
         actionRemove: 'Remove',
         selectNodeHint: 'Select an item from the left tree to view its tasks.',
+        add: 'Add',
+        addServerFiles: 'Add Server Files',
+        addServerFolder: 'Add Server Folder',
+        addLocalFiles: 'Add Local Files',
+        addLocalFolder: 'Add Local Folder',
+        
     },
     tapeMachine: {
         selectDriveHint: 'Select a tape drive from the left panel to control it.',

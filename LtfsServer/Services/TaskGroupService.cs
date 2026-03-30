@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Ltfs;
+using Ltfs.Index;
 
 namespace LtfsServer.Services;
 
@@ -9,6 +10,7 @@ public interface ITaskGroupService
     LtfsTaskGroup GetOrCreateGroup(string tapeBarcode);
     LtfsTaskGroup RenameGroup(string tapeBarcode, string name);
     LtfsTaskGroup AddTask(string tapeBarcode, LtfsTaskCreateRequest request);
+    LtfsTaskGroup AddServerFolderTask(string tapeBarcode, AddServerFolderTaskRequest request);
     LtfsTaskGroup AddFormatTask(string tapeBarcode, FormatTask? formatTask = null);
     LtfsTaskGroup DeleteTask(string tapeBarcode, string taskId);
 }
@@ -65,14 +67,27 @@ public sealed class LtfsTaskItem
     public long CreatedAtTicks { get; set; } = DateTime.UtcNow.Ticks;
 }
 
+public sealed class LtfsWriteTaskRequest
+{
+    public string? TaskType { get; set; }
+    public string LocalPath { get; set; } = string.Empty;
+    public string TargetPath { get; set; } = string.Empty;
+}
+
 public sealed class LtfsTaskCreateRequest
 {
     public string Type { get; set; } = string.Empty;
     public string TapeBarcode { get; set; } = string.Empty;
-    public WriteTask? WriteTask { get; set; }
+    public LtfsWriteTaskRequest? WriteTask { get; set; }
     public ReadTask? ReadTask { get; set; }
     public FormatTask? FormatTask { get; set; }
     public FolderTask? FolderTask { get; set; }
+}
+
+public sealed class AddServerFolderTaskRequest
+{
+    public string LocalPath { get; set; } = string.Empty;
+    public string TargetPath { get; set; } = string.Empty;
 }
 
 public sealed class RenameTaskGroupRequest
@@ -172,6 +187,27 @@ public sealed class TaskGroupService : ITaskGroupService
         }
     }
 
+    public LtfsTaskGroup AddServerFolderTask(string tapeBarcode, AddServerFolderTaskRequest request)
+    {
+        lock (_syncRoot)
+        {
+            var key = NormalizeBarcode(tapeBarcode);
+            var localPath = NormalizeLocalDirectoryPath(request.LocalPath);
+            var targetPath = NormalizeFolderPath(request.TargetPath);
+            var group = GetOrCreateGroupCore(key);
+
+            foreach (var task in BuildServerFolderTasks(key, localPath, targetPath))
+            {
+                group.Tasks.Add(task);
+            }
+
+            group.UpdatedAtTicks = DateTime.UtcNow.Ticks;
+            ValidateGroup(group);
+            SaveToDisk();
+            return Clone(group);
+        }
+    }
+
     public LtfsTaskGroup AddFormatTask(string tapeBarcode, FormatTask? formatTask = null)
     {
         lock (_syncRoot)
@@ -247,14 +283,7 @@ public sealed class TaskGroupService : ITaskGroupService
 
         if (type is LtfsTaskType.Write or LtfsTaskType.Replace or LtfsTaskType.Delete)
         {
-            var writeTask = request.WriteTask ?? CreateDefaultWriteTask(type);
-            writeTask.TaskType = type switch
-            {
-                LtfsTaskType.Write => FileTaskType.Write,
-                LtfsTaskType.Replace => FileTaskType.Replace,
-                LtfsTaskType.Delete => FileTaskType.Delete,
-                _ => writeTask.TaskType,
-            };
+            var writeTask = CreateWriteTask(type, request.WriteTask);
             task.WriteTask = writeTask;
             return task;
         }
@@ -293,6 +322,30 @@ public sealed class TaskGroupService : ITaskGroupService
         throw new ArgumentException($"Unsupported task type '{type}'.");
     }
 
+    private static WriteTask CreateWriteTask(string type, LtfsWriteTaskRequest? request)
+    {
+        if (request is null)
+        {
+            throw new ArgumentException("Write task payload is required.");
+        }
+
+        var taskType = NormalizeWriteTaskType(type, request.TaskType);
+        var localPath = taskType == FileTaskType.Delete
+            ? NormalizeLocalPathForDelete(request.LocalPath)
+            : NormalizeLocalFilePath(request.LocalPath);
+        var targetPath = NormalizeFilePath(request.TargetPath);
+
+        return new WriteTask
+        {
+            TaskType = taskType,
+            LocalPath = localPath,
+            TargetPath = targetPath,
+            LtfsPath = taskType == FileTaskType.Delete
+                ? LtfsFile.Default()
+                : CreateLtfsFile(localPath, targetPath),
+        };
+    }
+
     private static WriteTask CreateDefaultWriteTask(string type)
     {
         var taskType = type switch
@@ -310,6 +363,57 @@ public sealed class TaskGroupService : ITaskGroupService
             TargetPath = string.Empty,
             LtfsPath = Ltfs.Index.LtfsFile.Default(),
         };
+    }
+
+    private static IEnumerable<LtfsTaskItem> BuildServerFolderTasks(string tapeBarcode, string localRootPath, string targetRootPath)
+    {
+        var queue = new Queue<(string LocalDir, string TapeDir)>();
+        queue.Enqueue((localRootPath, targetRootPath));
+
+        while (queue.Count > 0)
+        {
+            var current = queue.Dequeue();
+
+            yield return new LtfsTaskItem
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Type = LtfsTaskType.Folder,
+                TapeBarcode = tapeBarcode,
+                FolderTask = new FolderTask
+                {
+                    TaskType = FolderTaskType.Add,
+                    Path = current.TapeDir,
+                },
+                CreatedAtTicks = DateTime.UtcNow.Ticks,
+            };
+
+            foreach (var filePath in Directory.EnumerateFiles(current.LocalDir).OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+            {
+                var fileName = Path.GetFileName(filePath);
+                var targetPath = CombineTapePath(current.TapeDir, fileName);
+
+                yield return new LtfsTaskItem
+                {
+                    Id = Guid.NewGuid().ToString("N"),
+                    Type = LtfsTaskType.Write,
+                    TapeBarcode = tapeBarcode,
+                    WriteTask = new WriteTask
+                    {
+                        TaskType = FileTaskType.Write,
+                        LocalPath = filePath,
+                        TargetPath = targetPath,
+                        LtfsPath = CreateLtfsFile(filePath, targetPath),
+                    },
+                    CreatedAtTicks = DateTime.UtcNow.Ticks,
+                };
+            }
+
+            foreach (var directoryPath in Directory.EnumerateDirectories(current.LocalDir).OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+            {
+                var directoryName = Path.GetFileName(directoryPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                queue.Enqueue((directoryPath, CombineTapePath(current.TapeDir, directoryName)));
+            }
+        }
     }
 
     private LtfsTaskGroup GetOrCreateGroupCore(string tapeBarcode)
@@ -390,6 +494,107 @@ public sealed class TaskGroupService : ITaskGroupService
         }
 
         return normalized;
+    }
+
+    private static string NormalizeFilePath(string path)
+    {
+        var normalized = NormalizeFolderPath(path);
+        if (normalized == "/")
+        {
+            throw new ArgumentException("File target path cannot be root.");
+        }
+
+        return normalized;
+    }
+
+    private static string NormalizeLocalDirectoryPath(string path)
+    {
+        var trimmed = (path ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(trimmed))
+        {
+            throw new ArgumentException("Local directory path is required.");
+        }
+
+        var normalized = Path.GetFullPath(trimmed);
+        if (!Directory.Exists(normalized))
+        {
+            throw new DirectoryNotFoundException($"Directory '{trimmed}' was not found.");
+        }
+
+        return normalized;
+    }
+
+    private static string NormalizeLocalFilePath(string path)
+    {
+        var trimmed = (path ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(trimmed))
+        {
+            throw new ArgumentException("Local file path is required.");
+        }
+
+        var normalized = Path.GetFullPath(trimmed);
+        if (!File.Exists(normalized))
+        {
+            throw new FileNotFoundException($"File '{trimmed}' was not found.", normalized);
+        }
+
+        return normalized;
+    }
+
+    private static string NormalizeLocalPathForDelete(string path)
+    {
+        var trimmed = (path ?? string.Empty).Trim();
+        return string.IsNullOrWhiteSpace(trimmed) ? string.Empty : Path.GetFullPath(trimmed);
+    }
+
+    private static FileTaskType NormalizeWriteTaskType(string type, string? requestTaskType)
+    {
+        var expected = type switch
+        {
+            LtfsTaskType.Write => FileTaskType.Write,
+            LtfsTaskType.Replace => FileTaskType.Replace,
+            LtfsTaskType.Delete => FileTaskType.Delete,
+            _ => throw new ArgumentException($"Unsupported write task type '{type}'."),
+        };
+
+        if (string.IsNullOrWhiteSpace(requestTaskType))
+        {
+            return expected;
+        }
+
+        if (!Enum.TryParse<FileTaskType>(requestTaskType.Trim(), true, out var parsed) || parsed != expected)
+        {
+            throw new ArgumentException($"Write taskType '{requestTaskType}' does not match task type '{type}'.");
+        }
+
+        return expected;
+    }
+
+    private static LtfsFile CreateLtfsFile(string localPath, string targetPath)
+    {
+        var fileInfo = new FileInfo(localPath);
+        var ltfsFile = LtfsFile.Default();
+        ltfsFile.Name = Path.GetFileName(targetPath);
+        ltfsFile.Length = (ulong)fileInfo.Length;
+        ltfsFile.CreationTime = fileInfo.CreationTimeUtc;
+        ltfsFile.ChangeTime = fileInfo.LastWriteTimeUtc;
+        ltfsFile.ModifyTime = fileInfo.LastWriteTimeUtc;
+        ltfsFile.AccessTime = fileInfo.LastAccessTimeUtc;
+        ltfsFile.BackupTime = fileInfo.LastWriteTimeUtc;
+        ltfsFile.ReadOnly = fileInfo.IsReadOnly;
+        return ltfsFile;
+    }
+
+    private static string CombineTapePath(string parentPath, string childName)
+    {
+        var normalizedParent = NormalizeFolderPath(parentPath);
+        var trimmedChild = (childName ?? string.Empty).Trim().Replace('\\', '/').Trim('/');
+        if (string.IsNullOrWhiteSpace(trimmedChild))
+        {
+            throw new ArgumentException("Path segment is required.");
+        }
+
+        return normalizedParent == "/" ? "/" + trimmedChild : normalizedParent + "/" + trimmedChild;
     }
 
     private static void ValidateGroup(LtfsTaskGroup group)

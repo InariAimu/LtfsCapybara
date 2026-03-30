@@ -354,13 +354,18 @@ async function getData(node: TreeOption, fileOnly: boolean = false) {
                 .filter((item: any) => item.type === 'file')
                 .map((item: any) => ({
                     ...item,
-                    key: item.index,
+                    key: item.index ?? `file:${currentPath}:${item.name}`,
                     size: formatFileSize(Number(item.size) || 0),
                 }));
+            const directories = dirs.map((item: any) => ({
+                ...item,
+                key: item.index ?? `dir:${currentPath}:${item.name}`,
+                size: '-',
+            }));
 
-            // put files into store
+            // Keep both directories and files for the table view.
             try {
-                store.setFiles(files);
+                store.setFiles([...directories, ...files]);
             } catch (e) {
                 console.warn('Failed to store files', e);
             }

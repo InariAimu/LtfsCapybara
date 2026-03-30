@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 
 namespace LtfsServer.Services;
 
@@ -131,6 +131,47 @@ public sealed class LocalFileSystemTreeService : ILocalFileSystemTreeService
 
         var ordered = children.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ToArray();
         return Task.FromResult(new LocalFsChildrenResult(normalized, ordered));
+    }
+
+    public Task<LocalFsFilesResult> GetFilesAsync(string path, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var normalized = NormalizeAndValidatePath(path);
+
+        IEnumerable<string> files;
+        try
+        {
+            files = Directory.EnumerateFiles(normalized);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Task.FromResult(new LocalFsFilesResult(normalized, Array.Empty<LocalFsFile>(), "Access denied"));
+        }
+        catch (IOException ex)
+        {
+            _logger.LogWarning(ex, "Failed to enumerate files at path {Path}", normalized);
+            return Task.FromResult(new LocalFsFilesResult(normalized, Array.Empty<LocalFsFile>(), ex.Message));
+        }
+
+        var ordered = files
+            .Select(path =>
+            {
+                long size = 0;
+                try
+                {
+                    size = new FileInfo(path).Length;
+                }
+                catch
+                {
+                    // Ignore file metadata failures and keep default size.
+                }
+
+                return new LocalFsFile(Path.GetFileName(path), path, size);
+            })
+            .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return Task.FromResult(new LocalFsFilesResult(normalized, ordered));
     }
 
     private async Task<IReadOnlyList<LocalFsNode>> GetDiscoveredNetworkRootsAsync(CancellationToken cancellationToken)

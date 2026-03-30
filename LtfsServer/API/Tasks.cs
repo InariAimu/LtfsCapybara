@@ -44,6 +44,34 @@ public static class APITasks
             {
                 return Results.BadRequest(new { error = ex.Message });
             }
+            catch (FileNotFoundException ex)
+            {
+                return Results.NotFound(new { error = ex.Message });
+            }
+            catch (DirectoryNotFoundException ex)
+            {
+                return Results.NotFound(new { error = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        app.MapPost("/api/tasks/groups/{tapeBarcode}/tasks/server-folder", (string tapeBarcode, AddServerFolderTaskRequest request, ITaskGroupService service) =>
+        {
+            try
+            {
+                return Results.Ok(service.AddServerFolderTask(tapeBarcode, request));
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+            catch (DirectoryNotFoundException ex)
+            {
+                return Results.NotFound(new { error = ex.Message });
+            }
             catch (InvalidOperationException ex)
             {
                 return Results.BadRequest(new { error = ex.Message });

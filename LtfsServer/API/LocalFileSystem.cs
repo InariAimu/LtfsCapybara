@@ -1,4 +1,4 @@
-using LtfsServer.Services;
+﻿using LtfsServer.Services;
 
 namespace LtfsServer.API;
 
@@ -30,6 +30,39 @@ public static class APILocalFileSystem
                 {
                     parentPath = result.ParentPath,
                     items = result.Children.Select(ToDto).ToArray(),
+                    warning = result.Warning,
+                    loadedAtUtc = DateTime.UtcNow,
+                });
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+            catch (DirectoryNotFoundException ex)
+            {
+                return Results.NotFound(new { error = ex.Message });
+            }
+        });
+
+        app.MapGet("/api/fsfiles", async (string? path, ILocalFileSystemTreeService service, HttpContext context) =>
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return Results.BadRequest(new { error = "Query string 'path' is required." });
+            }
+
+            try
+            {
+                var result = await service.GetFilesAsync(path, context.RequestAborted);
+                return Results.Ok(new
+                {
+                    parentPath = result.ParentPath,
+                    files = result.Files.Select(x => new
+                    {
+                        name = x.Name,
+                        path = x.Path,
+                        size = x.Size,
+                    }).ToArray(),
                     warning = result.Warning,
                     loadedAtUtc = DateTime.UtcNow,
                 });

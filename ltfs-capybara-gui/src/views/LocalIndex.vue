@@ -17,6 +17,7 @@ const { t } = useI18n();
 const message = useMessage();
 const showTapeInfo = ref(false);
 const treeRefreshToken = ref(0);
+
 const isRootNodeSelected = computed(
     () => Boolean(store.currentTapeName) && store.currentPath === '/',
 );
@@ -154,7 +155,13 @@ function normalizeFolderPath(path: string): string {
     return compact.startsWith('/') ? compact : `/${compact}`;
 }
 
-async function handleAddFolder() {
+function localBasename(localPath: string): string {
+    const normalized = localPath.replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/\/$/, '');
+    const parts = normalized.split('/').filter(Boolean);
+    return parts[parts.length - 1] ?? normalized;
+}
+
+async function handleAddServerFolder(localPath: string) {
     const tapeName = store.currentTapeName;
     if (!tapeName) {
         message.warning(t('messages.selectTapeFirst'));
@@ -166,32 +173,41 @@ async function handleAddFolder() {
         return;
     }
 
-    const folderName = window.prompt(t('task.addFolderNamePrompt'))?.trim() ?? '';
-    if (!folderName) {
-        message.warning(t('task.addFolderNameRequired'));
+    const baseName = localBasename(localPath);
+    if (!baseName) {
+        message.warning(t('task.addServerFolderFailed'));
         return;
     }
 
-    if (folderName.includes('/') || folderName.includes('\\')) {
-        message.warning(t('task.addFolderNameInvalid'));
-        return;
-    }
+    const parentTapePath = normalizeFolderPath(store.currentPath);
+    const targetTapeRoot =
+        parentTapePath === '/' ? `/${baseName}` : `${parentTapePath}/${baseName}`;
 
-    const parentPath = normalizeFolderPath(store.currentPath);
-    const folderPath = parentPath === '/' ? `/${folderName}` : `${parentPath}/${folderName}`;
+    // If target folder already exists in tape filesystem, do nothing.
+    try {
+        await localTapeApi.getPath(tapeName, targetTapeRoot);
+        message.warning(t('task.addServerFolderExists'));
+        return;
+    } catch (err: any) {
+        if (err?.response?.status !== 404) {
+            console.error('handleAddServerFolder check error', err);
+            message.error(t('task.addServerFolderFailed'));
+            return;
+        }
+    }
 
     try {
-        const response = await taskApi.addFolderTask(tapeName, {
-            taskType: 'add',
-            path: folderPath,
+        const response = await taskApi.addServerFolderTask(tapeName, {
+            localPath,
+            targetPath: targetTapeRoot,
         });
         store.upsertTaskGroup(response.data);
+
         treeRefreshToken.value += 1;
-        message.success(t('task.addFolderSuccess'));
+        message.success(t('task.addServerFolderSuccess'));
     } catch (err) {
-        console.error('handleAddFolder error', err);
-        message.error(t('task.addFolderFailed'));
-        return;
+        console.error('handleAddServerFolder error', err);
+        message.error(t('task.addServerFolderFailed'));
     }
 }
 
@@ -230,9 +246,9 @@ function normalizePath(path: string): string {
                     <action-bar
                         :show-tape-info-toggle="isRootNodeSelected"
                         :show-tape-info="showTapeInfo"
-                        :add-folder-disabled="!isCurrentTapeEditable"
+                        :add-disabled="!isCurrentTapeEditable"
                         @update:show-tape-info="showTapeInfo = $event"
-                        @add-folder="handleAddFolder"
+                        @add-server-folder="handleAddServerFolder"
                     />
                     <div v-if="showNoLtfsCard" class="file-list-content no-ltfs-panel">
                         <n-card :title="t('task.noLtfsTitle')" size="small">

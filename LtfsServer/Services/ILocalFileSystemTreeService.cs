@@ -1,4 +1,4 @@
-namespace LtfsServer.Services;
+﻿namespace LtfsServer.Services;
 
 public sealed record LocalFsNode(
     string Id,
@@ -16,9 +16,23 @@ public sealed record LocalFsChildrenResult(
     string? Warning = null
 );
 
+public sealed record LocalFsFile(
+    string Name,
+    string Path,
+    long Size
+);
+
+public sealed record LocalFsFilesResult(
+    string ParentPath,
+    IReadOnlyList<LocalFsFile> Files,
+    string? Warning = null
+);
+
 public interface ILocalFileSystemTreeService
 {
     Task<IReadOnlyList<LocalFsNode>> GetRootsAsync(CancellationToken cancellationToken = default);
 
     Task<LocalFsChildrenResult> GetChildrenAsync(string path, CancellationToken cancellationToken = default);
+
+    Task<LocalFsFilesResult> GetFilesAsync(string path, CancellationToken cancellationToken = default);
 }
