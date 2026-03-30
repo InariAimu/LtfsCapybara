@@ -16,6 +16,15 @@ interface WrapMetrics {
     segments: WrapColorSegment[];
 }
 
+interface VerticalSegmentItem {
+    segment: WrapColorSegment;
+    isSpace?: false;
+}
+
+interface SpacerItem {
+    isSpace: true;
+}
+
 interface Props {
     loading: boolean;
     wrap: WrapMetrics;
@@ -31,6 +40,47 @@ const { t } = useI18n();
 const forwardSegments = computed(() => props.wrap.segments.filter((_, index) => index % 2 === 0));
 
 const reverseSegments = computed(() => props.wrap.segments.filter((_, index) => index % 2 === 1));
+
+const verticalWrapSegments = computed<(VerticalSegmentItem | SpacerItem)[]>(() => {
+    const segments = props.wrap.segments;
+    if (segments.length === 0) return [];
+
+    // Divide into 4 groups of equal size
+    const groupSize = Math.ceil(segments.length / 4);
+    const groups: WrapColorSegment[][] = [];
+    for (let i = 0; i < 4; i++) {
+        const start = i * groupSize;
+        const end = Math.min(start + groupSize, segments.length);
+        groups[i] = segments.slice(start, end);
+    }
+
+    // Reorder groups from top to bottom: [3, 1, 0, 2]
+    const reorderedGroups = [groups[3], groups[1], groups[0], groups[2]];
+
+    // Process each group: arrange even indices (top half) then odd indices (bottom half)
+    const result: (VerticalSegmentItem | SpacerItem)[] = [];
+
+    reorderedGroups.forEach((group, groupIdx) => {
+        // Top half: even indices (0, 2, 4, ...)
+        const evenItems = group.filter((_, idx) => idx % 2 === 0);
+        evenItems.forEach(item => {
+            result.push({ segment: item, isSpace: false });
+        });
+
+        // Bottom half: odd indices (1, 3, 5, ...) in reverse order (9, 7, 5, 3, 1)
+        const oddItems = group.filter((_, idx) => idx % 2 === 1);
+        oddItems.reverse().forEach(item => {
+            result.push({ segment: item, isSpace: false });
+        });
+
+        // Add 1px space between groups (except after last group)
+        if (groupIdx < 3) {
+            result.push({ isSpace: true });
+        }
+    });
+
+    return result;
+});
 
 const displayRows = computed<DisplayWrapTableRow[]>(() => {
     const rows = props.wrap.rows;
@@ -195,7 +245,28 @@ function createTitle(): ReturnType<typeof h> {
                     />
                 </div>
             </div>
+
+            <div
+                class="wrap-colorbar-group"
+                :aria-label="`${t('tapeInfo.wrap.colorbarAriaLabel')} vertical`"
+            >
+                <span class="colorbar-title">{{ t('tapeInfo.wrap.vertical') }}</span>
+                <div class="wrap-colorbar-vertical">
+                    <div
+                        v-for="(item, idx) in verticalWrapSegments"
+                        :key="item.isSpace ? `space-${idx}` : item.segment.key"
+                        class="wrap-colorbar-segment-vertical"
+                        :class="{ 'wrap-colorbar-space': item.isSpace }"
+                        :style="{
+                            backgroundColor: !item.isSpace
+                                ? item.segment.backgroundColor
+                                : 'transparent',
+                        }"
+                    />
+                </div>
+            </div>
         </div>
+
         <n-data-table :columns="columns" :data="displayRows" :loading="loading" :striped="true" />
     </n-card>
 </template>
@@ -207,6 +278,8 @@ function createTitle(): ReturnType<typeof h> {
 
 .colorbar-title {
     font-size: 12px;
+    margin-top: 2px;
+    margin-bottom: 2px;
 }
 
 .wrap-colorbars {
@@ -250,5 +323,26 @@ function createTitle(): ReturnType<typeof h> {
 
 .wrap-colorbar-segment:last-child {
     border-right: none;
+}
+
+.wrap-colorbar-vertical {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid #d9d9d9;
+    border-radius: 3px;
+    overflow: hidden;
+    background-color: #f5f5f5;
+}
+
+.wrap-colorbar-segment-vertical {
+    flex: 1;
+    height: 1px;
+    min-height: 1px;
+}
+
+.wrap-colorbar-space {
+    height: 1px;
+    background-color: #000000 !important;
+    margin-bottom: 0;
 }
 </style>
