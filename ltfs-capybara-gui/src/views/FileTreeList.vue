@@ -334,6 +334,7 @@ async function getData(node: TreeOption, fileOnly: boolean = false) {
         } else {
             // root-level node
             res = await localTapeApi.getRoot(tapeName);
+            store.setNoLtfsState(tapeName, false);
         }
 
         const isStaleSelection =
@@ -400,11 +401,22 @@ async function getData(node: TreeOption, fileOnly: boolean = false) {
                 store.setFiles([]);
             }
             const status = (err as any)?.response?.status;
-            message.error(
-                status
-                    ? `Failed to load ${tapeName}:${currentPath} (HTTP ${status})`
-                    : `Failed to load ${tapeName}:${currentPath}`,
-            );
+            const error = (err as any)?.response?.data?.error;
+            const isNoLtfsFilesystemError =
+                currentPath === '/' &&
+                status === 404 &&
+                error === 'No index files found for tape';
+
+            if (isNoLtfsFilesystemError) {
+                store.setNoLtfsState(tapeName, true);
+                message.warning(t('messages.noLtfsFilesystem'));
+            } else {
+                message.error(
+                    status
+                        ? `Failed to load ${tapeName}:${currentPath} (HTTP ${status})`
+                        : `Failed to load ${tapeName}:${currentPath}`,
+                );
+            }
         }
         if (!fileOnly) {
             // Mark node as loaded on failure (e.g. 404) so async tree does not keep requesting it.

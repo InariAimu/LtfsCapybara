@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { NLayout, NLayoutHeader, NLayoutSider, useMessage } from 'naive-ui';
+import { NLayout, NLayoutHeader, NLayoutSider, NCard, NButton, NEmpty, useMessage } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import PathBar from './PathBar.vue';
 import FileTreeList from './FileTreeList.vue';
@@ -8,6 +8,7 @@ import FileList from './FileList.vue';
 import ActionBar from './ActionBar.vue';
 import TapeInfo from './TapeInfo.vue';
 import { localTapeApi } from '@/api/modules/localtapes';
+import { taskApi } from '@/api/modules/tasks';
 import formatFileSize from '@/utils/formatFileSize';
 import { useFileStore } from '@/stores/fileStore';
 
@@ -17,6 +18,12 @@ const message = useMessage();
 const showTapeInfo = ref(false);
 const isRootNodeSelected = computed(
     () => Boolean(store.currentTapeName) && store.currentPath === '/',
+);
+const showNoLtfsCard = computed(
+    () =>
+        isRootNodeSelected.value &&
+        store.noLtfsFilesystem &&
+        store.noLtfsTapeName.toLowerCase() === store.currentTapeName.toLowerCase(),
 );
 
 watch(isRootNodeSelected, isRoot => {
@@ -40,6 +47,10 @@ async function navigateByPath(path: string) {
                 ? await localTapeApi.getRoot(tapeName)
                 : await localTapeApi.getPath(tapeName, targetPath);
 
+        if (targetPath === '/') {
+            store.setNoLtfsState(tapeName, false);
+        }
+
         if (!(res && (res as any).data)) {
             message.error(t('messages.failedToLoadPath'));
             return;
@@ -57,9 +68,44 @@ async function navigateByPath(path: string) {
         store.setCurrentPath(targetPath);
     } catch (err) {
         console.error('navigateByPath error', err);
+        const status = (err as any)?.response?.status;
+        const error = (err as any)?.response?.data?.error;
+        const isNoLtfsFilesystemError =
+            targetPath === '/' && status === 404 && error === 'No index files found for tape';
+        if (isNoLtfsFilesystemError) {
+            store.setNoLtfsState(tapeName, true);
+            store.setFiles([]);
+            return;
+        }
+
         message.error(t('messages.unableToOpenPath', { path: targetPath }));
     } finally {
         store.setLoading(false);
+    }
+}
+
+async function handleAddFormatTask() {
+    const tapeName = store.currentTapeName;
+    if (!tapeName) {
+        return;
+    }
+
+    try {
+        const response = await taskApi.addFormatTask(tapeName, {
+            barcode: tapeName,
+            volumeName: tapeName,
+            extraPartitionCount: 1,
+            blockSize: 524288,
+            immediateMode: true,
+            capacity: 65535,
+            p0Size: 1,
+            p1Size: 65535,
+        });
+        store.upsertTaskGroup(response.data);
+        message.success(t('task.addFormatTaskSuccess'));
+    } catch (err) {
+        console.error('handleAddFormatTask error', err);
+        message.error(t('task.addFormatTaskFailed'));
     }
 }
 
@@ -96,7 +142,18 @@ function normalizePath(path: string): string {
                         :show-tape-info="showTapeInfo"
                         @update:show-tape-info="showTapeInfo = $event"
                     />
-                    <tape-info v-if="showTapeInfo" class="file-list-content" />
+                    <div v-if="showNoLtfsCard" class="file-list-content no-ltfs-panel">
+                        <n-card :title="t('task.noLtfsTitle')" size="small">
+                            <n-empty :description="t('messages.noLtfsFilesystem')">
+                                <template #extra>
+                                    <n-button type="primary" @click="handleAddFormatTask">
+                                        {{ t('task.addFormatTask') }}
+                                    </n-button>
+                                </template>
+                            </n-empty>
+                        </n-card>
+                    </div>
+                    <tape-info v-else-if="showTapeInfo" class="file-list-content" />
                     <file-list v-else class="file-list-content" />
                 </div>
             </n-layout>
@@ -118,5 +175,9 @@ function normalizePath(path: string): string {
 .file-list-content {
     flex: 1;
     min-height: 0;
+}
+
+.no-ltfs-panel {
+    padding: 10px;
 }
 </style>
