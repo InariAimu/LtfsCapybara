@@ -20,11 +20,29 @@ public static class LtfsTaskType
     public const string Delete = "delete";
     public const string Read = "read";
     public const string Format = "format";
+    public const string Folder = "folder";
 
     public static bool IsValid(string type)
     {
-        return type is Write or Replace or Delete or Read or Format;
+        return type is Write or Replace or Delete or Read or Format or Folder;
     }
+}
+
+public static class FolderTaskType
+{
+    public const string Add = "add";
+    public const string Delete = "delete";
+
+    public static bool IsValid(string type)
+    {
+        return type is Add or Delete;
+    }
+}
+
+public sealed class FolderTask
+{
+    public string TaskType { get; set; } = FolderTaskType.Add;
+    public string Path { get; set; } = "/";
 }
 
 public sealed class LtfsTaskGroup
@@ -43,6 +61,7 @@ public sealed class LtfsTaskItem
     public WriteTask? WriteTask { get; set; }
     public ReadTask? ReadTask { get; set; }
     public FormatTask? FormatTask { get; set; }
+    public FolderTask? FolderTask { get; set; }
     public long CreatedAtTicks { get; set; } = DateTime.UtcNow.Ticks;
 }
 
@@ -53,6 +72,7 @@ public sealed class LtfsTaskCreateRequest
     public WriteTask? WriteTask { get; set; }
     public ReadTask? ReadTask { get; set; }
     public FormatTask? FormatTask { get; set; }
+    public FolderTask? FolderTask { get; set; }
 }
 
 public sealed class RenameTaskGroupRequest
@@ -260,6 +280,16 @@ public sealed class TaskGroupService : ITaskGroupService
             return task;
         }
 
+        if (type == LtfsTaskType.Folder)
+        {
+            var folderTask = request.FolderTask ?? new FolderTask();
+            folderTask.TaskType = NormalizeFolderTaskType(folderTask.TaskType);
+            folderTask.Path = NormalizeFolderPath(folderTask.Path);
+
+            task.FolderTask = folderTask;
+            return task;
+        }
+
         throw new ArgumentException($"Unsupported task type '{type}'.");
     }
 
@@ -332,6 +362,36 @@ public sealed class TaskGroupService : ITaskGroupService
         return normalized;
     }
 
+    private static string NormalizeFolderTaskType(string type)
+    {
+        var normalized = (type ?? string.Empty).Trim().ToLowerInvariant();
+        if (!FolderTaskType.IsValid(normalized))
+        {
+            throw new ArgumentException($"Unsupported folder task type '{type}'.");
+        }
+
+        return normalized;
+    }
+
+    private static string NormalizeFolderPath(string path)
+    {
+        var normalized = (path ?? string.Empty).Trim().Replace('\\', '/');
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            throw new ArgumentException("Folder path is required.");
+        }
+
+        normalized = normalized == "/" ? "/" : normalized.Trim('/');
+        normalized = normalized == "/" ? "/" : "/" + normalized;
+
+        while (normalized.Contains("//", StringComparison.Ordinal))
+        {
+            normalized = normalized.Replace("//", "/", StringComparison.Ordinal);
+        }
+
+        return normalized;
+    }
+
     private static void ValidateGroup(LtfsTaskGroup group)
     {
         var formatIndexes = group.Tasks
@@ -360,6 +420,17 @@ public sealed class TaskGroupService : ITaskGroupService
             if (!LtfsTaskType.IsValid(task.Type))
             {
                 throw new InvalidOperationException($"Unsupported task type '{task.Type}'.");
+            }
+
+            if (task.Type == LtfsTaskType.Folder)
+            {
+                if (task.FolderTask is null)
+                {
+                    throw new InvalidOperationException("Folder task payload is required.");
+                }
+
+                task.FolderTask.TaskType = NormalizeFolderTaskType(task.FolderTask.TaskType);
+                task.FolderTask.Path = NormalizeFolderPath(task.FolderTask.Path);
             }
         }
     }
@@ -430,6 +501,13 @@ public sealed class TaskGroupService : ITaskGroupService
                         {
                             task.FormatTask.FormatParam.Barcode = group.TapeBarcode;
                         }
+                    }
+
+                    if (task.Type == LtfsTaskType.Folder)
+                    {
+                        task.FolderTask ??= new FolderTask();
+                        task.FolderTask.TaskType = NormalizeFolderTaskType(task.FolderTask.TaskType);
+                        task.FolderTask.Path = NormalizeFolderPath(task.FolderTask.Path);
                     }
                 }
 

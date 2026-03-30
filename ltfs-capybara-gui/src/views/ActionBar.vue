@@ -1,26 +1,26 @@
 <script setup lang="ts">
 import { NSwitch, NButton } from 'naive-ui';
-import { ref } from 'vue';
-import DirectoryChooseDialog from '@/components/DirectoryChooseDialog.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const { showTapeInfoToggle, showTapeInfo } = defineProps<{
     showTapeInfoToggle: boolean;
     showTapeInfo: boolean;
+    addFolderDisabled?: boolean;
 }>();
 
 const emit = defineEmits<{
     (e: 'update:showTapeInfo', value: boolean): void;
+    (e: 'add-folder'): void;
 }>();
 
 function updateShowTapeInfo(value: boolean) {
     emit('update:showTapeInfo', value);
 }
 
-const showDirectoryChooseDialog = ref(false);
-function handleClick() {
-    // Placeholder for action button click handler
-    console.log('Action button clicked');
-    showDirectoryChooseDialog.value = !showDirectoryChooseDialog.value;
+function handleAddFolder() {
+    emit('add-folder');
 }
 </script>
 
@@ -34,9 +34,9 @@ function handleClick() {
             <template #checked> Tape Info </template>
             <template #unchecked> File List </template>
         </n-switch>
-        <n-button :size="'small'" @click="handleClick"> Placeholder Action </n-button>
-
-        <directory-choose-dialog :show="showDirectoryChooseDialog" @cancel="handleClick" />
+        <n-button :size="'small'" :disabled="addFolderDisabled" @click="handleAddFolder">
+            {{ t('task.addFolder') }}
+        </n-button>
     </div>
 </template>
 

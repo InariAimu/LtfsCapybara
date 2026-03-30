@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { NLayout, NLayoutHeader, NLayoutSider, NCard, NButton, NEmpty, useMessage } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import PathBar from './PathBar.vue';
@@ -16,14 +16,39 @@ const store = useFileStore();
 const { t } = useI18n();
 const message = useMessage();
 const showTapeInfo = ref(false);
+const treeRefreshToken = ref(0);
 const isRootNodeSelected = computed(
     () => Boolean(store.currentTapeName) && store.currentPath === '/',
 );
+const currentTapeGroup = computed(() =>
+    store.taskGroups.find(
+        g => g.tapeBarcode.toLowerCase() === store.currentTapeName.toLowerCase(),
+    ),
+);
+const currentTapeHasFormatTask = computed(() =>
+    Boolean(currentTapeGroup.value?.tasks?.some(task => task.type === 'format')),
+);
+const isCurrentTapeEditable = computed(() => {
+    if (!store.currentTapeName) {
+        return false;
+    }
+
+    if (!store.noLtfsFilesystem) {
+        return true;
+    }
+
+    if (store.noLtfsTapeName.toLowerCase() !== store.currentTapeName.toLowerCase()) {
+        return true;
+    }
+
+    return currentTapeHasFormatTask.value;
+});
 const showNoLtfsCard = computed(
     () =>
         isRootNodeSelected.value &&
         store.noLtfsFilesystem &&
-        store.noLtfsTapeName.toLowerCase() === store.currentTapeName.toLowerCase(),
+        store.noLtfsTapeName.toLowerCase() === store.currentTapeName.toLowerCase() &&
+        !currentTapeHasFormatTask.value,
 );
 
 watch(isRootNodeSelected, isRoot => {
@@ -102,12 +127,77 @@ async function handleAddFormatTask() {
             p1Size: 65535,
         });
         store.upsertTaskGroup(response.data);
+        treeRefreshToken.value += 1;
         message.success(t('task.addFormatTaskSuccess'));
     } catch (err) {
         console.error('handleAddFormatTask error', err);
         message.error(t('task.addFormatTaskFailed'));
     }
 }
+
+async function loadTaskGroups() {
+    try {
+        const response = await taskApi.listGroups();
+        store.setTaskGroups(response.data ?? []);
+    } catch (err) {
+        console.error('loadTaskGroups error', err);
+    }
+}
+
+function normalizeFolderPath(path: string): string {
+    const trimmed = (path || '/').trim().replace(/\\/g, '/');
+    if (!trimmed || trimmed === '/') {
+        return '/';
+    }
+
+    const compact = trimmed.replace(/\/{2,}/g, '/');
+    return compact.startsWith('/') ? compact : `/${compact}`;
+}
+
+async function handleAddFolder() {
+    const tapeName = store.currentTapeName;
+    if (!tapeName) {
+        message.warning(t('messages.selectTapeFirst'));
+        return;
+    }
+
+    if (!isCurrentTapeEditable.value) {
+        message.warning(t('task.addFolderDisabled'));
+        return;
+    }
+
+    const folderName = window.prompt(t('task.addFolderNamePrompt'))?.trim() ?? '';
+    if (!folderName) {
+        message.warning(t('task.addFolderNameRequired'));
+        return;
+    }
+
+    if (folderName.includes('/') || folderName.includes('\\')) {
+        message.warning(t('task.addFolderNameInvalid'));
+        return;
+    }
+
+    const parentPath = normalizeFolderPath(store.currentPath);
+    const folderPath = parentPath === '/' ? `/${folderName}` : `${parentPath}/${folderName}`;
+
+    try {
+        const response = await taskApi.addFolderTask(tapeName, {
+            taskType: 'add',
+            path: folderPath,
+        });
+        store.upsertTaskGroup(response.data);
+        treeRefreshToken.value += 1;
+        message.success(t('task.addFolderSuccess'));
+    } catch (err) {
+        console.error('handleAddFolder error', err);
+        message.error(t('task.addFolderFailed'));
+        return;
+    }
+}
+
+onMounted(async () => {
+    await loadTaskGroups();
+});
 
 function normalizePath(path: string): string {
     const trimmed = (path || '/').trim();
@@ -133,14 +223,16 @@ function normalizePath(path: string): string {
         </n-layout-header>
         <n-layout has-sider position="absolute" style="top: 43px; bottom: 0">
             <n-layout-sider bordered content-style="padding: 0px 5px 0 10px;">
-                <file-tree-list :show-tape-info="showTapeInfo" />
+                <file-tree-list :show-tape-info="showTapeInfo" :refresh-token="treeRefreshToken" />
             </n-layout-sider>
             <n-layout>
                 <div class="file-list-pane">
                     <action-bar
                         :show-tape-info-toggle="isRootNodeSelected"
                         :show-tape-info="showTapeInfo"
+                        :add-folder-disabled="!isCurrentTapeEditable"
                         @update:show-tape-info="showTapeInfo = $event"
+                        @add-folder="handleAddFolder"
                     />
                     <div v-if="showNoLtfsCard" class="file-list-content no-ltfs-panel">
                         <n-card :title="t('task.noLtfsTitle')" size="small">

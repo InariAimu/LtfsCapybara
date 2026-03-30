@@ -1,6 +1,7 @@
 import { apiClient } from '../client';
 
-export type LtfsTaskType = 'write' | 'replace' | 'delete' | 'read' | 'format';
+export type LtfsTaskType = 'write' | 'replace' | 'delete' | 'read' | 'format' | 'folder';
+export type FolderTaskType = 'add' | 'delete';
 
 export interface LtfsWriteTaskPayload {
     taskType: 'Write' | 'Replace' | 'Delete';
@@ -24,6 +25,11 @@ export interface LtfsFormatParam {
     p1Size: number;
 }
 
+export interface LtfsFolderTaskPayload {
+    taskType: FolderTaskType;
+    path: string;
+}
+
 export interface LtfsTaskItem {
     id: string;
     type: LtfsTaskType;
@@ -33,6 +39,7 @@ export interface LtfsTaskItem {
     formatTask?: {
         formatParam: LtfsFormatParam;
     } | null;
+    folderTask?: LtfsFolderTaskPayload | null;
     createdAtTicks: number;
 }
 
@@ -51,6 +58,7 @@ export interface LtfsTaskCreateRequest {
     formatTask?: {
         formatParam: LtfsFormatParam;
     };
+    folderTask?: LtfsFolderTaskPayload;
 }
 
 export const taskApi = {
@@ -80,6 +88,16 @@ export const taskApi = {
             `/tasks/groups/${encodeURIComponent(tapeBarcode)}/tasks/format`,
             {
                 formatTask: formatParam ? { formatParam } : undefined,
+            },
+        );
+    },
+
+    addFolderTask(tapeBarcode: string, folderTask: LtfsFolderTaskPayload) {
+        return apiClient.post<LtfsTaskGroup>(
+            `/tasks/groups/${encodeURIComponent(tapeBarcode)}/tasks`,
+            {
+                type: 'folder',
+                folderTask,
             },
         );
     },

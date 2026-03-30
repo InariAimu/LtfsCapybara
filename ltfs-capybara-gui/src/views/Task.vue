@@ -1,8 +1,20 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
-import { NCard, NEmpty, NFlex, NInput, NButton, NTag, NText, useMessage } from 'naive-ui';
+import { computed, h, onMounted, ref } from 'vue';
+import {
+    NLayout,
+    NLayoutSider,
+    NTree,
+    NDataTable,
+    NTag,
+    NFlex,
+    NText,
+    NButton,
+    NEmpty,
+    useMessage,
+} from 'naive-ui';
+import type { TreeOption, DataTableColumns } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
-import { taskApi, type LtfsTaskGroup, type LtfsTaskItem } from '@/api/modules/tasks';
+import { taskApi } from '@/api/modules/tasks';
 import { useFileStore } from '@/stores/fileStore';
 
 const { t } = useI18n();
@@ -10,44 +22,307 @@ const message = useMessage();
 const store = useFileStore();
 
 const isLoading = ref(false);
-const editingBarcode = ref('');
-const editingName = ref('');
+const selectedKeys = ref<string[]>([]);
+const selectedTape = ref('');
+const selectedPath = ref('/');
 
-const groups = computed(() =>
-    [...store.taskGroups].sort((a, b) => a.tapeBarcode.localeCompare(b.tapeBarcode)),
-);
+// ─── Path helpers ────────────────────────────────────────────────────────────
 
-function formatTimestamp(ticks: number): string {
-    if (!ticks) {
-        return '-';
+function normalizePath(path: string): string {
+    const trimmed = (path || '/').trim().replace(/\\/g, '/');
+    if (!trimmed || trimmed === '/') return '/';
+    const compact = trimmed.replace(/\/{2,}/g, '/');
+    return compact.startsWith('/') ? compact : `/${compact}`;
+}
+
+function getParentPath(path: string): string {
+    const p = normalizePath(path);
+    if (p === '/') return '/';
+    const i = p.lastIndexOf('/');
+    return i <= 0 ? '/' : p.substring(0, i);
+}
+
+function getPathName(path: string): string {
+    const p = normalizePath(path);
+    if (p === '/') return '/';
+    return p.substring(p.lastIndexOf('/') + 1);
+}
+
+function isDirectChild(parent: string, child: string): boolean {
+    return getParentPath(normalizePath(child)) === normalizePath(parent);
+}
+
+// ─── Tree ────────────────────────────────────────────────────────────────────
+
+interface TaskTreeNode extends TreeOption {
+    tapeName: string;
+    path: string;
+    taskAction?: string;
+}
+
+function buildTree(groups: typeof store.taskGroups): TaskTreeNode[] {
+    return groups.map(group => {
+        const dirPaths = new Set<string>(['/']);
+        const folderActionMap = new Map<string, string>();
+        const sorted = [...group.tasks].sort((a, b) => a.createdAtTicks - b.createdAtTicks);
+
+        for (const task of sorted) {
+            if (task.type === 'folder' && task.folderTask) {
+                const p = normalizePath(task.folderTask.path);
+                dirPaths.add(p);
+                folderActionMap.set(p, task.folderTask.taskType);
+                let anc = getParentPath(p);
+                while (anc !== '/') {
+                    dirPaths.add(anc);
+                    anc = getParentPath(anc);
+                }
+            }
+            if (task.writeTask) {
+                let dir = getParentPath(normalizePath(task.writeTask.targetPath));
+                while (dir !== '/') {
+                    dirPaths.add(dir);
+                    dir = getParentPath(dir);
+                }
+            }
+        }
+
+        const nodeMap = new Map<string, TaskTreeNode>();
+        const root: TaskTreeNode = {
+            key: `${group.tapeBarcode}::/`,
+            label: group.tapeBarcode,
+            tapeName: group.tapeBarcode,
+            path: '/',
+            children: [],
+        };
+        nodeMap.set('/', root);
+
+        [...dirPaths]
+            .filter(p => p !== '/')
+            .sort((a, b) => a.split('/').length - b.split('/').length)
+            .forEach(p => {
+                const node: TaskTreeNode = {
+                    key: `${group.tapeBarcode}::${p}`,
+                    label: getPathName(p),
+                    tapeName: group.tapeBarcode,
+                    path: p,
+                    taskAction: folderActionMap.get(p),
+                    children: [],
+                };
+                nodeMap.set(p, node);
+            });
+
+        for (const [p, node] of nodeMap) {
+            if (p === '/') continue;
+            const parentNode = nodeMap.get(getParentPath(p)) ?? root;
+            (parentNode.children as TaskTreeNode[]).push(node);
+        }
+
+        for (const node of nodeMap.values()) {
+            if ((node.children as TaskTreeNode[])?.length === 0) {
+                node.isLeaf = true;
+                delete node.children;
+            }
+        }
+
+        return root;
+    });
+}
+
+const treeData = computed(() => buildTree(store.taskGroups));
+
+const renderLabel = ({ option }: { option: TreeOption }) => {
+    const node = option as TaskTreeNode;
+    if (!node.taskAction) return node.label as string;
+    const type = node.taskAction === 'delete' ? 'error' : 'success';
+    const text = node.taskAction === 'delete' ? t('task.actionRemove') : t('task.actionAdd');
+    return h(NFlex, { align: 'center', size: 4, wrap: false }, {
+        default: () => [
+            h(NText, null, { default: () => node.label as string }),
+            h(NTag, { size: 'tiny', type }, { default: () => text }),
+        ],
+    });
+};
+
+function handleUpdateSelectedKeys(
+    keys: Array<string | number>,
+    _options: Array<TreeOption | null>,
+) {
+    const key = keys[0] as string | undefined;
+    if (!key) return;
+    const sep = key.indexOf('::');
+    if (sep === -1) return;
+    selectedTape.value = key.substring(0, sep);
+    selectedPath.value = key.substring(sep + 2);
+    selectedKeys.value = [key];
+}
+
+// ─── Table ───────────────────────────────────────────────────────────────────
+
+interface TaskTableRow {
+    key: string;
+    name: string;
+    fullPath: string;
+    itemType: 'file' | 'folder' | 'format';
+    taskAction: string;
+    createdAtTicks: number;
+    taskId: string;
+}
+
+const tableRows = computed<TaskTableRow[]>(() => {
+    if (!selectedTape.value) return [];
+    const group = store.taskGroups.find(
+        g => g.tapeBarcode.toLowerCase() === selectedTape.value.toLowerCase(),
+    );
+    if (!group) return [];
+
+    const rows: TaskTableRow[] = [];
+
+    if (selectedPath.value === '/') {
+        for (const task of group.tasks) {
+            if (task.type === 'format') {
+                rows.push({
+                    key: task.id,
+                    name: t('task.typeFormat'),
+                    fullPath: '/',
+                    itemType: 'format',
+                    taskAction: 'format',
+                    createdAtTicks: task.createdAtTicks,
+                    taskId: task.id,
+                });
+            }
+        }
     }
 
+    for (const task of group.tasks) {
+        if (task.type === 'folder' && task.folderTask) {
+            const p = normalizePath(task.folderTask.path);
+            if (isDirectChild(selectedPath.value, p)) {
+                rows.push({
+                    key: task.id,
+                    name: getPathName(p),
+                    fullPath: p,
+                    itemType: 'folder',
+                    taskAction: task.folderTask.taskType,
+                    createdAtTicks: task.createdAtTicks,
+                    taskId: task.id,
+                });
+            }
+        }
+        if (task.writeTask) {
+            const p = normalizePath(task.writeTask.targetPath);
+            if (isDirectChild(selectedPath.value, p)) {
+                rows.push({
+                    key: task.id,
+                    name: getPathName(p),
+                    fullPath: p,
+                    itemType: 'file',
+                    taskAction: task.type,
+                    createdAtTicks: task.createdAtTicks,
+                    taskId: task.id,
+                });
+            }
+        }
+    }
+
+    return rows;
+});
+
+function formatTimestamp(ticks: number): string {
+    if (!ticks) return '-';
     const date = new Date(ticks / 10000 - 62135596800000);
     return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString();
 }
 
-function taskTypeLabel(taskType: string): string {
-    switch (taskType) {
+function actionTagType(
+    action: string,
+    itemType: string,
+): 'success' | 'warning' | 'error' | 'info' | 'default' {
+    if (itemType === 'format') return 'warning';
+    switch (action.toLowerCase()) {
+        case 'add':
+        case 'write':
+            return 'success';
+        case 'replace':
+            return 'info';
+        case 'delete':
+            return 'error';
+        default:
+            return 'default';
+    }
+}
+
+function actionLabel(action: string, itemType: string): string {
+    if (itemType === 'format') return t('task.typeFormat');
+    switch (action.toLowerCase()) {
+        case 'add':
+            return t('task.actionAdd');
+        case 'delete':
+            return t('task.actionRemove');
         case 'write':
             return t('task.typeWrite');
         case 'replace':
             return t('task.typeReplace');
-        case 'delete':
-            return t('task.typeDelete');
-        case 'read':
-            return t('task.typeRead');
-        case 'format':
-            return t('task.typeFormat');
         default:
-            return taskType;
+            return action;
     }
 }
+
+const columns = computed<DataTableColumns<TaskTableRow>>(() => [
+    {
+        title: t('table.name'),
+        key: 'name',
+        ellipsis: { tooltip: true },
+        render(row) {
+            const icon = row.itemType === 'file' ? '📄' : row.itemType === 'format' ? '💾' : '📁';
+            return `${icon} ${row.name}`;
+        },
+    },
+    {
+        title: t('table.taskType'),
+        key: 'taskAction',
+        width: 90,
+        render(row) {
+            return h(
+                NTag,
+                { size: 'small', type: actionTagType(row.taskAction, row.itemType) },
+                { default: () => actionLabel(row.taskAction, row.itemType) },
+            );
+        },
+    },
+    {
+        title: t('task.createdAt'),
+        key: 'createdAtTicks',
+        width: 160,
+        render(row) {
+            return formatTimestamp(row.createdAtTicks);
+        },
+    },
+    {
+        title: '',
+        key: '_actions',
+        width: 80,
+        render(row) {
+            return h(
+                NButton,
+                {
+                    size: 'tiny',
+                    type: 'error',
+                    tertiary: true,
+                    onClick: () => handleDeleteTask(row),
+                },
+                { default: () => t('task.deleteTask') },
+            );
+        },
+    },
+]);
+
+// ─── Actions ─────────────────────────────────────────────────────────────────
 
 async function loadTaskGroups() {
     isLoading.value = true;
     try {
-        const response = await taskApi.listGroups();
-        store.setTaskGroups(response.data ?? []);
+        const res = await taskApi.listGroups();
+        store.setTaskGroups(res.data ?? []);
     } catch (err) {
         console.error('loadTaskGroups error', err);
         message.error(t('task.loadTaskGroupsFailed'));
@@ -56,144 +331,60 @@ async function loadTaskGroups() {
     }
 }
 
-function beginRename(group: LtfsTaskGroup) {
-    editingBarcode.value = group.tapeBarcode;
-    editingName.value = group.name;
-}
-
-function cancelRename() {
-    editingBarcode.value = '';
-    editingName.value = '';
-}
-
-async function saveRename(group: LtfsTaskGroup) {
-    const name = editingName.value.trim();
-    if (!name) {
-        message.warning(t('task.groupNameRequired'));
-        return;
-    }
-
+async function handleDeleteTask(row: TaskTableRow) {
     try {
-        const response = await taskApi.renameGroup(group.tapeBarcode, name);
-        store.upsertTaskGroup(response.data);
-        cancelRename();
-        message.success(t('task.renameGroupSuccess'));
-    } catch (err) {
-        console.error('saveRename error', err);
-        message.error(t('task.renameGroupFailed'));
-    }
-}
-
-async function deleteTask(group: LtfsTaskGroup, task: LtfsTaskItem) {
-    try {
-        const response = await taskApi.deleteTask(group.tapeBarcode, task.id);
-        store.upsertTaskGroup(response.data);
+        const res = await taskApi.deleteTask(selectedTape.value, row.taskId);
+        store.upsertTaskGroup(res.data);
         message.success(t('task.deleteTaskSuccess'));
     } catch (err) {
-        console.error('deleteTask error', err);
+        console.error('handleDeleteTask error', err);
         message.error(t('task.deleteTaskFailed'));
     }
 }
 
-onMounted(async () => {
-    await loadTaskGroups();
-});
+onMounted(loadTaskGroups);
 </script>
 
 <template>
-    <div class="task-page">
-        <n-card :title="t('menu.task')" size="small" :segmented="{ content: true }">
-            <template #header-extra>
-                <n-button tertiary size="small" :loading="isLoading" @click="loadTaskGroups">
-                    {{ t('task.refresh') }}
-                </n-button>
-            </template>
-
-            <n-empty v-if="groups.length === 0" :description="t('task.emptyGroups')" />
-
-            <div v-else class="group-list">
-                <n-card
-                    v-for="group in groups"
-                    :key="group.tapeBarcode"
-                    size="small"
-                    class="group-card"
-                    :title="group.tapeBarcode"
-                >
-                    <n-flex align="center" justify="space-between" style="margin-bottom: 8px">
-                        <n-flex align="center">
-                            <n-text depth="3">{{ t('task.groupName') }}</n-text>
-                            <template v-if="editingBarcode === group.tapeBarcode">
-                                <n-input v-model:value="editingName" size="small" style="width: 220px" />
-                                <n-button size="small" type="primary" @click="saveRename(group)">
-                                    {{ t('task.save') }}
-                                </n-button>
-                                <n-button size="small" @click="cancelRename">
-                                    {{ t('task.cancel') }}
-                                </n-button>
-                            </template>
-                            <template v-else>
-                                <n-text>{{ group.name }}</n-text>
-                            </template>
-                        </n-flex>
-                        <n-button
-                            v-if="editingBarcode !== group.tapeBarcode"
-                            size="small"
-                            tertiary
-                            @click="beginRename(group)"
-                        >
-                            {{ t('task.renameGroup') }}
-                        </n-button>
-                    </n-flex>
-
-                    <n-empty v-if="group.tasks.length === 0" :description="t('task.emptyTasks')" />
-
-                    <n-flex v-else vertical :size="8">
-                        <n-card
-                            v-for="task in group.tasks"
-                            :key="task.id"
-                            size="small"
-                            embedded
-                            class="task-item"
-                        >
-                            <n-flex align="center" justify="space-between" :wrap="false">
-                                <n-flex align="center" :wrap="false">
-                                    <n-tag size="small" type="info">
-                                        {{ taskTypeLabel(task.type) }}
-                                    </n-tag>
-                                    <n-text depth="3">{{ task.id }}</n-text>
-                                </n-flex>
-
-                                <n-button size="tiny" type="error" tertiary @click="deleteTask(group, task)">
-                                    {{ t('task.deleteTask') }}
-                                </n-button>
-                            </n-flex>
-                            <n-text depth="3" style="display: block; margin-top: 6px">
-                                {{ t('task.createdAt') }}: {{ formatTimestamp(task.createdAtTicks) }}
-                            </n-text>
-                        </n-card>
-                    </n-flex>
-                </n-card>
-            </div>
-        </n-card>
-    </div>
+    <n-layout class="task-page" has-sider>
+        <n-layout-sider bordered content-style="padding: 8px 6px 8px 10px;">
+            <n-flex vertical :size="8" style="height: 100%">
+                <n-flex align="center" justify="space-between" style="flex-shrink: 0">
+                    <n-text strong>{{ t('menu.task') }}</n-text>
+                    <n-button size="small" tertiary :loading="isLoading" @click="loadTaskGroups">
+                        {{ t('task.refresh') }}
+                    </n-button>
+                </n-flex>
+                <n-empty v-if="treeData.length === 0" :description="t('task.emptyGroups')" />
+                <n-tree
+                    v-else
+                    block-line
+                    :data="treeData"
+                    :selected-keys="selectedKeys"
+                    :default-expand-all="true"
+                    :render-label="renderLabel"
+                    @update:selected-keys="handleUpdateSelectedKeys"
+                />
+            </n-flex>
+        </n-layout-sider>
+        <n-layout content-style="padding: 10px;">
+            <n-empty
+                v-if="!selectedTape"
+                :description="t('task.selectNodeHint')"
+                style="margin-top: 40px"
+            />
+            <n-data-table
+                v-else
+                :columns="columns"
+                :data="tableRows"
+                size="small"
+            />
+        </n-layout>
+    </n-layout>
 </template>
 
 <style scoped>
 .task-page {
-    padding: 10px;
-}
-
-.group-list {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.group-card {
-    border-radius: 8px;
-}
-
-.task-item {
-    border: 1px solid var(--n-border-color);
+    height: 100%;
 }
 </style>

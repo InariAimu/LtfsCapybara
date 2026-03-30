@@ -34,6 +34,7 @@ interface LocalTreeNode {
     key: string;
     tapeName: string;
     path: string;
+    taskType?: string;
     isLeaf: boolean;
     children?: LocalTreeNode[];
     tapeSummary?: LocalTapeSummary | null;
@@ -44,9 +45,11 @@ const data = ref<LocalTreeNode[]>([]);
 const props = withDefaults(
     defineProps<{
         showTapeInfo?: boolean;
+        refreshToken?: number;
     }>(),
     {
         showTapeInfo: false,
+        refreshToken: 0,
     },
 );
 const store = useFileStore();
@@ -378,6 +381,7 @@ async function getData(node: TreeOption, fileOnly: boolean = false) {
                     isLeaf: false,
                     tapeName: tapeName,
                     path: childPath,
+                    taskType: item.taskType,
                 };
             });
 
@@ -448,6 +452,13 @@ watch(
     { immediate: true },
 );
 
+watch(
+    () => props.refreshToken,
+    async () => {
+        await loadTapes(false);
+    },
+);
+
 function handleExpandedKeys(keys: Array<string | number>) {
     if (props.showTapeInfo) {
         const rootKeySet = new Set(getRootNodeKeys());
@@ -466,7 +477,28 @@ function renderLabel({ option }: { option: TreeOption }) {
     if (path === '/') {
         return h('span', { class: 'local-tree-root-label' }, String(option.label ?? ''));
     }
-    return option.label as string;
+    const taskType = String((option as any).taskType || '').toLowerCase();
+    if (!taskType) {
+        return option.label as string;
+    }
+
+    return h(
+        NFlex,
+        { align: 'center', style: { gap: '6px', minWidth: 0 } },
+        {
+            default: () => [
+                h('span', String(option.label ?? '')),
+                h(
+                    NTag,
+                    {
+                        size: 'tiny',
+                        type: taskType === 'delete' ? 'warning' : 'success',
+                    },
+                    { default: () => taskType },
+                ),
+            ],
+        },
+    );
 }
 </script>
 

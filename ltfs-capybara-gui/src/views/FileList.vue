@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { DataTableColumns } from 'naive-ui';
-import { NDataTable } from 'naive-ui';
-import { computed } from 'vue';
+import { NDataTable, NTag } from 'naive-ui';
+import { computed, h } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useFileStore } from '@/stores/fileStore';
 
@@ -14,6 +14,7 @@ interface Row {
     createTime: string;
     modifyTime: string;
     updateTime: string;
+    taskType?: string;
 }
 
 const { t } = useI18n();
@@ -31,6 +32,23 @@ const columns = computed<DataTableColumns<Row>>(() => [
             tooltip: true,
         },
         resizable: true,
+    },
+    {
+        title: t('table.taskType'),
+        key: 'taskType',
+        width: 90,
+        render(row) {
+            const taskType = String(row.taskType || '').toLowerCase();
+            if (!taskType) {
+                return '-';
+            }
+
+            return h(
+                NTag,
+                { size: 'small', type: taskType === 'delete' ? 'warning' : 'success' },
+                { default: () => taskType },
+            );
+        },
     },
     {
         title: t('table.size'),
