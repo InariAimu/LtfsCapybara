@@ -2,7 +2,11 @@
 import { computed, ref, watch } from 'vue';
 import { NAlert, NButton, NCard, NSpace, NTag, useMessage } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
-import { tapeMachineApi, type TapeMachineAction, type TapeMachineSnapshot } from '@/api/modules/tapemachine';
+import {
+    tapeMachineApi,
+    type TapeMachineAction,
+    type TapeMachineSnapshot,
+} from '@/api/modules/tapemachine';
 import TapeInfo from '@/views/TapeInfo.vue';
 
 interface Props {
@@ -59,7 +63,7 @@ const stateLabel = computed(() => {
 
 function can(action: TapeMachineAction) {
     const allowedActions = snapshot.value?.allowedActions ?? [];
-    return allowedActions.some((allowedAction) => normalizeAction(allowedAction) === action);
+    return allowedActions.some(allowedAction => normalizeAction(allowedAction) === action);
 }
 
 async function loadState() {

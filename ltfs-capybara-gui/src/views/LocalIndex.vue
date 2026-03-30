@@ -86,8 +86,8 @@ function normalizePath(path: string): string {
             />
         </n-layout-header>
         <n-layout has-sider position="absolute" style="top: 43px; bottom: 0">
-            <n-layout-sider bordered content-style="padding: 5px 5px 0 10px;">
-                <file-tree-list />
+            <n-layout-sider bordered content-style="padding: 0px 5px 0 10px;">
+                <file-tree-list :show-tape-info="showTapeInfo" />
             </n-layout-sider>
             <n-layout>
                 <div class="file-list-pane">

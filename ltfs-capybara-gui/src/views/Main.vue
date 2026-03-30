@@ -55,7 +55,6 @@ const selectedTapeDriveId = computed(() => {
 
     return key.substring('tape-machine:'.length);
 });
-
 </script>
 
 <template>

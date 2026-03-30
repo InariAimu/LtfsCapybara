@@ -87,16 +87,6 @@ const menuOptions = computed<MenuOption[]>(() => [
         label: t('menu.ltfs'),
         key: 'ltfs',
         icon: renderIcon(FileTraySharp),
-        children: [
-            {
-                label: 'LTFS01L6',
-                key: 'ltfs01l6',
-            },
-            {
-                label: 'LTFS01L7',
-                key: 'ltfs01l7',
-            },
-        ],
     },
     {
         label: t('menu.localIndex'),

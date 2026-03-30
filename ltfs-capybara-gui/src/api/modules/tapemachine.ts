@@ -33,7 +33,9 @@ export interface TapeMachineSnapshot {
 
 export const tapeMachineApi = {
     getState(tapeDriveId: string) {
-        return apiClient.get<TapeMachineSnapshot>(`/tapedrives/${encodeURIComponent(tapeDriveId)}/machine`);
+        return apiClient.get<TapeMachineSnapshot>(
+            `/tapedrives/${encodeURIComponent(tapeDriveId)}/machine`,
+        );
     },
     execute(tapeDriveId: string, action: 'thread' | 'load' | 'unthread' | 'eject' | 'read-info') {
         const requestConfig = LONG_RUNNING_ACTIONS.has(action)

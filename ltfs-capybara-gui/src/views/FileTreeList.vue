@@ -1,6 +1,16 @@
 <script setup lang="ts">
 import { onMounted, h, ref, watch, computed } from 'vue';
-import { NTree, TreeOption, DropdownOption, NTag, NFlex, NButton, NText, NSelect } from 'naive-ui';
+import {
+    NTree,
+    TreeOption,
+    DropdownOption,
+    NTag,
+    NFlex,
+    NButton,
+    NText,
+    NSelect,
+    NInput,
+} from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import { useFileStore } from '@/stores/fileStore';
 import { localTapeApi } from '@/api/modules/localtapes';
@@ -31,6 +41,14 @@ interface LocalTreeNode {
 }
 
 const data = ref<LocalTreeNode[]>([]);
+const props = withDefaults(
+    defineProps<{
+        showTapeInfo?: boolean;
+    }>(),
+    {
+        showTapeInfo: false,
+    },
+);
 const store = useFileStore();
 const optionsRef = ref<DropdownOption[]>([]);
 const xRef = ref(0);
@@ -42,6 +60,7 @@ const nodeChainIndex = new Map<string, Array<string | number>>();
 let latestSelectionRequest = 0;
 
 const filterGeneration = ref<number | null>(null);
+const filterText = ref('');
 const isLoading = ref(false);
 
 const generationOptions = computed(() =>
@@ -54,11 +73,20 @@ const generationOptions = computed(() =>
         .map(g => ({ label: `L${g}`, value: g })),
 );
 
-const visibleData = computed(() =>
-    filterGeneration.value === null
-        ? data.value
-        : data.value.filter(n => n.tapeSummary?.generation === filterGeneration.value),
-);
+const visibleData = computed(() => {
+    const keyword = filterText.value.trim().toLowerCase();
+
+    return data.value.filter(n => {
+        const matchGeneration =
+            filterGeneration.value === null || n.tapeSummary?.generation === filterGeneration.value;
+        const matchText =
+            keyword.length === 0 ||
+            n.label.toLowerCase().includes(keyword) ||
+            n.tapeName.toLowerCase().includes(keyword);
+
+        return matchGeneration && matchText;
+    });
+});
 
 const tapeCount = computed(() => visibleData.value.length);
 
@@ -117,6 +145,27 @@ function updatePathIndex(nodes: LocalTreeNode[]) {
     walk(nodes, []);
 }
 
+function getRootNodeKeys(): Array<string | number> {
+    return data.value
+        .filter(node => normalizePath(node.path) === '/')
+        .map(node => node.key);
+}
+
+function ensureRootNodesCollapsed() {
+    if (!props.showTapeInfo) {
+        return;
+    }
+
+    const rootKeys = getRootNodeKeys();
+    if (rootKeys.length === 0) {
+        return;
+    }
+
+    const rootKeySet = new Set(rootKeys);
+    expandedKeys.value = expandedKeys.value.filter(key => !rootKeySet.has(key));
+    store.setLocalIndexExpandedKeys(expandedKeys.value);
+}
+
 function syncSelectionFromStore() {
     const tapeName = store.currentTapeName;
     const targetPath = normalizePath(store.currentPath || '/');
@@ -137,6 +186,7 @@ function syncSelectionFromStore() {
 
     store.setLocalIndexSelectedKeys(selectedKeys.value);
     store.setLocalIndexExpandedKeys(expandedKeys.value);
+    ensureRootNodesCollapsed();
 }
 
 function createTapeSuffix(entry: LocalTapeSummary): () => ReturnType<typeof h> {
@@ -229,6 +279,7 @@ async function loadTapes(useCache = true) {
 
         updatePathIndex(data.value);
         store.setLocalIndexTreeData(data.value);
+        ensureRootNodesCollapsed();
         syncSelectionFromStore();
     } catch (err) {
         console.error('Failed to load local tapes', err);
@@ -271,6 +322,7 @@ async function getData(node: TreeOption, fileOnly: boolean = false) {
     const treeNode = node as TreeOption & { children?: LocalTreeNode[] };
     const tapeName = String((node as any).tapeName || (node.label as string) || '');
     const currentPath = normalizePath((node as any).path || '/');
+    const shouldClearFilesOnRootFailure = !props.showTapeInfo && currentPath === '/';
 
     // Persist clicked node context immediately so root selection can still drive UI mode
     // even when subsequent directory request fails (e.g. 404).
@@ -332,16 +384,23 @@ async function getData(node: TreeOption, fileOnly: boolean = false) {
 
             updatePathIndex(data.value);
             syncSelectionFromStore();
+            ensureRootNodesCollapsed();
             store.setLocalIndexTreeData(data.value);
         } else if (!fileOnly) {
             // Mark node as loaded even when API returned no payload to avoid repeated load retries.
             treeNode.children = [];
+            if (currentPath === '/') {
+                (treeNode as any).isLeaf = true;
+            }
             store.setLocalIndexTreeData(data.value);
         }
     } catch (err) {
         const isStaleSelection =
             fileOnly && selectionRequestId > 0 && selectionRequestId !== latestSelectionRequest;
         if (!isStaleSelection) {
+            if (shouldClearFilesOnRootFailure) {
+                store.setFiles([]);
+            }
             const status = (err as any)?.response?.status;
             message.error(
                 status
@@ -352,6 +411,9 @@ async function getData(node: TreeOption, fileOnly: boolean = false) {
         if (!fileOnly) {
             // Mark node as loaded on failure (e.g. 404) so async tree does not keep requesting it.
             treeNode.children = [];
+            if (currentPath === '/') {
+                (treeNode as any).isLeaf = true;
+            }
             store.setLocalIndexTreeData(data.value);
         }
         console.error('Failed to load tape files', err);
@@ -366,7 +428,25 @@ watch(
     { immediate: true },
 );
 
+watch(
+    () => props.showTapeInfo,
+    enabled => {
+        if (enabled) {
+            ensureRootNodesCollapsed();
+        }
+    },
+    { immediate: true },
+);
+
 function handleExpandedKeys(keys: Array<string | number>) {
+    if (props.showTapeInfo) {
+        const rootKeySet = new Set(getRootNodeKeys());
+        const filtered = keys.filter(key => !rootKeySet.has(key));
+        expandedKeys.value = filtered;
+        store.setLocalIndexExpandedKeys(filtered);
+        return;
+    }
+
     expandedKeys.value = keys;
     store.setLocalIndexExpandedKeys(keys);
 }
@@ -381,53 +461,80 @@ function renderLabel({ option }: { option: TreeOption }) {
 </script>
 
 <template>
-    <div style="display: flex; flex-direction: column; height: 100%">
-        <n-flex
-            align="center"
-            :wrap="false"
+    <div>
+        <div
             style="
-                padding-bottom: 4px;
-                border-bottom: 1px solid var(--n-border-color);
-                flex-shrink: 0;
+                display: flex;
+                flex-direction: column;
+                position: fixed;
+                background: var(--n-color);
+                z-index: 2;
+                padding-top: 3px;
+                min-width: 242px;
+                gap: 4px;
             "
         >
-            <n-button
-                size="tiny"
-                tertiary
-                type="success"
-                :loading="isLoading"
-                style="padding: 0 4px; font-size: 14px"
-                @click="handleRefresh"
-                >↻</n-button
+            <n-flex
+                align="center"
+                :wrap="false"
+                style="
+                    padding-bottom: 4px;
+                    border-bottom: 1px solid var(--n-border-color);
+                    flex-shrink: 0;
+                    gap: 0px 10px;
+                "
             >
-            <n-text depth="3" style="font-size: 13px; white-space: nowrap">
-                {{ tapeCount }}
-            </n-text>
-            <n-tag
-                v-if="totalSpace > 0"
-                size="tiny"
-                :style="{
-                    whiteSpace: 'nowrap',
-                    flex: '1',
-                    textAlign: 'right',
-                    height: '21px',
-                    fontSize: '10px',
-                    background: totalGradient,
-                }"
+                <n-button
+                    size="tiny"
+                    tertiary
+                    type="success"
+                    :loading="isLoading"
+                    style="padding: 0 4px; font-size: 14px"
+                    @click="handleRefresh"
+                    >↻</n-button
+                >
+                <n-text depth="3" style="font-size: 13px; white-space: nowrap">
+                    {{ tapeCount }} Tapes
+                </n-text>
+                <n-tag
+                    v-if="totalSpace > 0"
+                    size="tiny"
+                    :style="{
+                        whiteSpace: 'nowrap',
+                        flex: '1',
+                        textAlign: 'right',
+                        height: '21px',
+                        fontSize: '10px',
+                        background: totalGradient,
+                    }"
+                >
+                    {{ formatFileSize(totalSpace) }} | {{ formatFileSize(totalFreeSpace) }}
+                    {{ t('fileTree.free') }}
+                </n-tag>
+            </n-flex>
+            <n-flex
+                align="center"
+                :wrap="false"
+                style="
+                    padding-bottom: 4px;
+                    border-bottom: 1px solid var(--n-border-color);
+                    flex-shrink: 0;
+                    gap: 0px 10px;
+                "
             >
-                {{ formatFileSize(totalSpace) }} | {{ formatFileSize(totalFreeSpace) }}
-                {{ t('fileTree.free') }}
-            </n-tag>
-            <n-select
-                v-model:value="filterGeneration"
-                :options="generationOptions"
-                size="tiny"
-                clearable
-                placeholder="L"
-                style="width: 60px; flex-shrink: 0"
-            />
-        </n-flex>
+                <n-input v-model:value="filterText" size="tiny" :placeholder="'barcode'" clearable />
+                <n-select
+                    v-model:value="filterGeneration"
+                    :options="generationOptions"
+                    size="tiny"
+                    clearable
+                    placeholder="L"
+                    style="width: 65px; flex-shrink: 0"
+                />
+            </n-flex>
+        </div>
         <n-tree
+            class="local-tree"
             block-line
             expand-on-click
             :show-line="true"
@@ -445,9 +552,25 @@ function renderLabel({ option }: { option: TreeOption }) {
 </template>
 
 <style>
-.n-tree-node-content {
+.local-tree {
+    min-width: 0;
+    position: relative;
+    top: 64px;
+}
+
+.local-tree .n-scrollbar-container {
+    overflow-x: hidden !important;
+}
+
+.local-tree .n-tree-node-content {
     white-space: nowrap;
-    width: max-content;
+    width: 100%;
+    min-width: 0;
+}
+
+.local-tree .n-tree-node-content__text {
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .local-tree-root-label {
