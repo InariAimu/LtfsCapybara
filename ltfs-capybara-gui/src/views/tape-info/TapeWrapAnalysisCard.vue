@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, h } from 'vue';
+import { computed, h, ref } from 'vue';
 import type { DataTableColumns } from 'naive-ui';
-import { NCard, NDataTable, NFlex, NIcon, NPopover } from 'naive-ui';
+import { NCard, NDataTable, NFlex, NIcon, NPopover, NSwitch } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import { AlertCircle } from '@vicons/ionicons5';
 import type { WrapTableRow } from '@/api/types/tapeInfo';
@@ -16,13 +16,9 @@ interface WrapMetrics {
     segments: WrapColorSegment[];
 }
 
-interface VerticalSegmentItem {
-    segment: WrapColorSegment;
-    isSpace?: false;
-}
-
-interface SpacerItem {
-    isSpace: true;
+interface HorizontalSegmentItem {
+    segment?: WrapColorSegment;
+    isSpace?: boolean;
 }
 
 interface Props {
@@ -36,12 +32,13 @@ type DisplayWrapTableRow = WrapTableRow & {
 
 const props = defineProps<Props>();
 const { t } = useI18n();
+const orderedLayoutEnabled = ref(false);
 
 const forwardSegments = computed(() => props.wrap.segments.filter((_, index) => index % 2 === 0));
 
 const reverseSegments = computed(() => props.wrap.segments.filter((_, index) => index % 2 === 1));
 
-const verticalWrapSegments = computed<(VerticalSegmentItem | SpacerItem)[]>(() => {
+const orderedHorizontalSegments = computed<HorizontalSegmentItem[]>(() => {
     const segments = props.wrap.segments;
     if (segments.length === 0) return [];
 
@@ -54,11 +51,11 @@ const verticalWrapSegments = computed<(VerticalSegmentItem | SpacerItem)[]>(() =
         groups[i] = segments.slice(start, end);
     }
 
-    // Reorder groups from top to bottom: [3, 1, 0, 2]
+    // Reorder groups from left to right: [3, 1, 0, 2]
     const reorderedGroups = [groups[3], groups[1], groups[0], groups[2]];
 
-    // Process each group: arrange even indices (top half) then odd indices (bottom half)
-    const result: (VerticalSegmentItem | SpacerItem)[] = [];
+    // Process each group: even indices first, then odd indices in reverse.
+    const result: HorizontalSegmentItem[] = [];
 
     reorderedGroups.forEach((group, groupIdx) => {
         // Top half: even indices (0, 2, 4, ...)
@@ -80,6 +77,13 @@ const verticalWrapSegments = computed<(VerticalSegmentItem | SpacerItem)[]>(() =
     });
 
     return result;
+});
+
+const overallSegments = computed<HorizontalSegmentItem[]>(() => {
+    if (!orderedLayoutEnabled.value) {
+        return props.wrap.segments.map(segment => ({ segment, isSpace: false }));
+    }
+    return orderedHorizontalSegments.value;
 });
 
 const displayRows = computed<DisplayWrapTableRow[]>(() => {
@@ -202,16 +206,27 @@ function createTitle(): ReturnType<typeof h> {
                 class="wrap-colorbar-group"
                 :aria-label="`${t('tapeInfo.wrap.colorbarAriaLabel')} forward`"
             >
-                <span class="colorbar-title"
-                    >{{ t('tapeInfo.wrap.overall') }} - {{ props.wrap.segments.length }}
-                    {{ t('tapeInfo.wrap.wraps') }}</span
-                >
+                <n-flex align="center" justify="space-between">
+                    <span class="colorbar-title"
+                        >{{ t('tapeInfo.wrap.overall') }} - {{ props.wrap.segments.length }}
+                        {{ t('tapeInfo.wrap.wraps') }}</span
+                    >
+                    <span class="colorbar-title" style="margin-left: auto"
+                        >{{ t('tapeInfo.wrap.vertical') }}</span
+                    >
+                    <n-switch v-model:value="orderedLayoutEnabled" size="small" />
+                </n-flex>
                 <div class="wrap-colorbar">
                     <div
-                        v-for="segment in props.wrap.segments"
-                        :key="segment.key"
+                        v-for="(item, idx) in overallSegments"
+                        :key="item.isSpace ? `space-${idx}` : item.segment?.key"
                         class="wrap-colorbar-segment"
-                        :style="{ backgroundColor: segment.backgroundColor }"
+                        :class="{ 'wrap-colorbar-space': item.isSpace }"
+                        :style="{
+                            backgroundColor: item.isSpace
+                                ? 'transparent'
+                                : item.segment?.backgroundColor,
+                        }"
                     />
                 </div>
             </div>
@@ -242,26 +257,6 @@ function createTitle(): ReturnType<typeof h> {
                         :key="segment.key"
                         class="wrap-colorbar-segment"
                         :style="{ backgroundColor: segment.backgroundColor }"
-                    />
-                </div>
-            </div>
-
-            <div
-                class="wrap-colorbar-group"
-                :aria-label="`${t('tapeInfo.wrap.colorbarAriaLabel')} vertical`"
-            >
-                <span class="colorbar-title">{{ t('tapeInfo.wrap.vertical') }}</span>
-                <div class="wrap-colorbar-vertical">
-                    <div
-                        v-for="(item, idx) in verticalWrapSegments"
-                        :key="item.isSpace ? `space-${idx}` : item.segment.key"
-                        class="wrap-colorbar-segment-vertical"
-                        :class="{ 'wrap-colorbar-space': item.isSpace }"
-                        :style="{
-                            backgroundColor: !item.isSpace
-                                ? item.segment.backgroundColor
-                                : 'transparent',
-                        }"
                     />
                 </div>
             </div>
@@ -325,24 +320,10 @@ function createTitle(): ReturnType<typeof h> {
     border-right: none;
 }
 
-.wrap-colorbar-vertical {
-    display: flex;
-    flex-direction: column;
-    border: 1px solid #d9d9d9;
-    border-radius: 3px;
-    overflow: hidden;
-    background-color: #f5f5f5;
-}
-
-.wrap-colorbar-segment-vertical {
-    flex: 1;
-    height: 1px;
-    min-height: 1px;
-}
-
 .wrap-colorbar-space {
-    height: 1px;
-    background-color: #000000 !important;
-    margin-bottom: 0;
+    flex: 0 0 1px;
+    min-width: 1px;
+    background: black !important;
+    border-right: none !important;
 }
 </style>

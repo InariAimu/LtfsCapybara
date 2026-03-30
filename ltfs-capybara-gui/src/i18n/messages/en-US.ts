@@ -161,7 +161,7 @@ export default {
 80~95%: Worn
 50~55%: Driver head may have broken channel
 <50%: Broken tape or driver head`,
-            vertical: 'Physical Layout',
+            vertical: 'Show Physical Layout',
         },
     },
 };
