@@ -27,6 +27,8 @@ builder.Services.AddSingleton<ITapeMachineService, TapeMachineService>();
 builder.Services.AddSingleton<ILocalTapeRegistry, LocalTapeRegistry>();
 // Register local filesystem tree service (local drives + LAN shares)
 builder.Services.AddSingleton<ILocalFileSystemTreeService, LocalFileSystemTreeService>();
+// Register server settings service (read/write appsettings.json)
+builder.Services.AddSingleton<IServerSettingsService, ServerSettingsService>();
 
 var app = builder.Build();
 
@@ -64,6 +66,8 @@ app.MapLocalTapesApi();
 app.MapLocalIndexApi();
 // Register host local filesystem API endpoints
 app.MapLocalFileSystemApi();
+// Register server settings API endpoints
+app.MapServerSettingsApi();
 
 // Initialize local tape registry from AppData.Path/local before starting
 var localRegistry = app.Services.GetRequiredService<ILocalTapeRegistry>();

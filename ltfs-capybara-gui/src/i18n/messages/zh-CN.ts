@@ -66,7 +66,17 @@ export default {
     },
     settings: {
         title: '设置',
+        appearance: '外观',
+        serverSettings: '服务器设置',
         themeMode: '主题',
+        indexOnDataPartition: '数据分区索引格式',
+        indexOnIndexPartition: '索引分区索引格式',
+        dataPath: 'dataPath',
+        dataPathPlaceholder: '留空将使用默认位置',
+        saveServerSettings: '保存',
+        serverSettingsLoadFailed: '加载服务器设置失败。',
+        serverSettingsSaveSuccess: '服务器设置已保存。',
+        serverSettingsSaveFailed: '保存服务器设置失败。',
     },
     pages: {
         comingSoon: '该页面即将上线。',

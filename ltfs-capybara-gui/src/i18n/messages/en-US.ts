@@ -66,7 +66,17 @@ export default {
     },
     settings: {
         title: 'Settings',
+        appearance: 'Appearance',
+        serverSettings: 'Server settings',
         themeMode: 'Theme',
+        indexOnDataPartition: 'Index on data partition',
+        indexOnIndexPartition: 'Index on index partition',
+        dataPath: 'Data path',
+        dataPathPlaceholder: 'Leave empty to use default location',
+        saveServerSettings: 'Save',
+        serverSettingsLoadFailed: 'Failed to load server settings.',
+        serverSettingsSaveSuccess: 'Server settings saved.',
+        serverSettingsSaveFailed: 'Failed to save server settings.',
     },
     pages: {
         comingSoon: 'This page is coming soon.',
