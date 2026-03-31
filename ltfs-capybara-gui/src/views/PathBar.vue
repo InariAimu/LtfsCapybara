@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, ref } from 'vue';
 import { NButton, NInput, NInputGroup, NIcon } from 'naive-ui';
 import {
     ArrowUpOutline,
@@ -8,6 +8,7 @@ import {
     SearchOutline,
 } from '@vicons/ionicons5';
 import { useI18n } from 'vue-i18n';
+import { getParentPath, getPathSegments, normalizePath } from '@/utils/path';
 
 interface Props {
     tapeName: string;
@@ -24,39 +25,14 @@ const emit = defineEmits<{
 const searchQuery = ref('');
 const { t } = useI18n();
 
-watch(
-    () => props.path,
-    () => {
-        // Path auto-updates via computed segments
-    },
-    { immediate: true },
-);
-
 function handleSearch() {
     // TODO: Implement search functionality
     console.log('Search TODO:', searchQuery.value);
 }
 
-const segments = computed(() => {
-    const normalized = normalizePath(props.path);
-    if (normalized === '/') {
-        return [] as string[];
-    }
-    return normalized.split('/').filter(Boolean);
-});
+const segments = computed(() => getPathSegments(props.path));
 
 const canGoUp = computed(() => normalizePath(props.path) !== '/');
-
-function normalizePath(path: string): string {
-    const trimmed = (path || '/').trim();
-    if (!trimmed) {
-        return '/';
-    }
-
-    const withSlashes = trimmed.replace(/\\/g, '/');
-    const compact = withSlashes.replace(/\/{2,}/g, '/');
-    return compact.startsWith('/') ? compact : `/${compact}`;
-}
 
 function navigateToIndex(index: number) {
     if (index < 0) {
@@ -73,8 +49,7 @@ function goUp() {
         return;
     }
 
-    const next = segments.value.slice(0, -1);
-    emit('navigate', next.length ? `/${next.join('/')}` : '/');
+    emit('navigate', getParentPath(props.path));
 }
 </script>
 

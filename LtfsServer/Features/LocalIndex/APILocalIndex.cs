@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Builder;
+using System.Globalization;
 using Ltfs;
 using Ltfs.Index;
 using LtoTape;
@@ -141,11 +142,11 @@ public static class APILocalIndex
                     {
                         Type = "dir",
                         Name = childName,
-                        Count = 0,
+                        Size = 0,
                     };
                 }
 
-                existing.TaskType = "delete";
+                existing.Task = "delete";
                 itemMap[childName] = existing;
                 continue;
             }
@@ -156,10 +157,10 @@ public static class APILocalIndex
                 {
                     Type = "dir",
                     Name = childName,
-                    Count = 0,
+                    Size = 0,
                 };
             dirItem.Type = "dir";
-            dirItem.TaskType = "add";
+            dirItem.Task = "add";
             itemMap[childName] = dirItem;
         }
 
@@ -181,7 +182,7 @@ public static class APILocalIndex
                     {
                         Type = "dir",
                         Name = childName,
-                        Count = 0,
+                        Size = 0,
                     };
 
                 dirItem.Type = "dir";
@@ -197,15 +198,12 @@ public static class APILocalIndex
                     Name = childName,
                     Size = 0,
                     Crc64 = string.Empty,
-                    CreateTime = string.Empty,
                     ModifyTime = string.Empty,
-                    UpdateTime = string.Empty,
-                    BackupTime = string.Empty,
                 };
             }
 
             fileItem.Type = "file";
-            fileItem.TaskType = action.Value;
+            fileItem.Task = action.Value;
             itemMap[childName] = fileItem;
         }
 
@@ -247,10 +245,7 @@ public static class APILocalIndex
                     Size = f.Length,
                     Index = f.FileUID,
                     Crc64 = f.ExtendedAttributes?["ltfs.hash.sha1sum"] ?? string.Empty,
-                    CreateTime = f.CreationTime.ToString(),
-                    ModifyTime = f.ModifyTime.ToString(),
-                    UpdateTime = f.ChangeTime.ToString(),
-                    BackupTime = f.BackupTime.ToString(),
+                    ModifyTime = ((DateTime)f.ModifyTime).ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
                 };
                 continue;
             }
@@ -261,8 +256,8 @@ public static class APILocalIndex
                 {
                     Type = "dir",
                     Name = d.Name.GetName(),
+                    Size = d.Count,
                     Index = d.FileUID,
-                    Count = d.Count,
                 };
             }
         }
@@ -278,14 +273,10 @@ public static class APILocalIndex
     {
         public string Type { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
-        public string? TaskType { get; set; }
+        public string? Task { get; set; }
         public object? Size { get; set; }
         public object? Index { get; set; }
         public string? Crc64 { get; set; }
-        public string? CreateTime { get; set; }
         public string? ModifyTime { get; set; }
-        public string? UpdateTime { get; set; }
-        public string? BackupTime { get; set; }
-        public int? Count { get; set; }
     }
 }

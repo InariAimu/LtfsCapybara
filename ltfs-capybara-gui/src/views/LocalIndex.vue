@@ -11,6 +11,7 @@ import { localTapeApi } from '@/api/modules/localtapes';
 import { taskApi } from '@/api/modules/tasks';
 import formatFileSize from '@/utils/formatFileSize';
 import { useFileStore } from '@/stores/fileStore';
+import { getPathName, normalizePath } from '@/utils/path';
 
 const store = useFileStore();
 const { t } = useI18n();
@@ -152,25 +153,6 @@ async function loadTaskGroups() {
     }
 }
 
-function normalizeFolderPath(path: string): string {
-    const trimmed = (path || '/').trim().replace(/\\/g, '/');
-    if (!trimmed || trimmed === '/') {
-        return '/';
-    }
-
-    const compact = trimmed.replace(/\/{2,}/g, '/');
-    return compact.startsWith('/') ? compact : `/${compact}`;
-}
-
-function localBasename(localPath: string): string {
-    const normalized = localPath
-        .replace(/\\/g, '/')
-        .replace(/\/{2,}/g, '/')
-        .replace(/\/$/, '');
-    const parts = normalized.split('/').filter(Boolean);
-    return parts[parts.length - 1] ?? normalized;
-}
-
 async function handleAddServerFolder(localPath: string) {
     const tapeName = store.currentTapeName;
     if (!tapeName) {
@@ -183,13 +165,13 @@ async function handleAddServerFolder(localPath: string) {
         return;
     }
 
-    const baseName = localBasename(localPath);
+    const baseName = getPathName(localPath);
     if (!baseName) {
         message.warning(t('task.addServerFolderFailed'));
         return;
     }
 
-    const parentTapePath = normalizeFolderPath(store.currentPath);
+    const parentTapePath = normalizePath(store.currentPath);
     const targetTapeRoot =
         parentTapePath === '/' ? `/${baseName}` : `${parentTapePath}/${baseName}`;
 
@@ -224,17 +206,6 @@ async function handleAddServerFolder(localPath: string) {
 onMounted(async () => {
     await loadTaskGroups();
 });
-
-function normalizePath(path: string): string {
-    const trimmed = (path || '/').trim();
-    if (!trimmed) {
-        return '/';
-    }
-
-    const withSlashes = trimmed.replace(/\\/g, '/');
-    const compact = withSlashes.replace(/\/{2,}/g, '/');
-    return compact.startsWith('/') ? compact : `/${compact}`;
-}
 </script>
 
 <template>

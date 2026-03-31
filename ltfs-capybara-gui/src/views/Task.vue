@@ -16,6 +16,13 @@ import type { TreeOption, DataTableColumns } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import { taskApi } from '@/api/modules/tasks';
 import { useFileStore } from '@/stores/fileStore';
+import {
+    getParentPath,
+    getPathName,
+    isDirectChild,
+    makeScopedPathKey,
+    normalizePath,
+} from '@/utils/path';
 
 const { t } = useI18n();
 const message = useMessage();
@@ -25,32 +32,6 @@ const isLoading = ref(false);
 const selectedKeys = ref<string[]>([]);
 const selectedTape = ref('');
 const selectedPath = ref('/');
-
-// ─── Path helpers ────────────────────────────────────────────────────────────
-
-function normalizePath(path: string): string {
-    const trimmed = (path || '/').trim().replace(/\\/g, '/');
-    if (!trimmed || trimmed === '/') return '/';
-    const compact = trimmed.replace(/\/{2,}/g, '/');
-    return compact.startsWith('/') ? compact : `/${compact}`;
-}
-
-function getParentPath(path: string): string {
-    const p = normalizePath(path);
-    if (p === '/') return '/';
-    const i = p.lastIndexOf('/');
-    return i <= 0 ? '/' : p.substring(0, i);
-}
-
-function getPathName(path: string): string {
-    const p = normalizePath(path);
-    if (p === '/') return '/';
-    return p.substring(p.lastIndexOf('/') + 1);
-}
-
-function isDirectChild(parent: string, child: string): boolean {
-    return getParentPath(normalizePath(child)) === normalizePath(parent);
-}
 
 // ─── Tree ────────────────────────────────────────────────────────────────────
 
@@ -89,7 +70,7 @@ function buildTree(groups: typeof store.taskGroups): TaskTreeNode[] {
 
         const nodeMap = new Map<string, TaskTreeNode>();
         const root: TaskTreeNode = {
-            key: `${group.tapeBarcode}::/`,
+            key: makeScopedPathKey(group.tapeBarcode, '/'),
             label: group.tapeBarcode,
             tapeName: group.tapeBarcode,
             path: '/',
@@ -102,7 +83,7 @@ function buildTree(groups: typeof store.taskGroups): TaskTreeNode[] {
             .sort((a, b) => a.split('/').length - b.split('/').length)
             .forEach(p => {
                 const node: TaskTreeNode = {
-                    key: `${group.tapeBarcode}::${p}`,
+                    key: makeScopedPathKey(group.tapeBarcode, p),
                     label: getPathName(p),
                     tapeName: group.tapeBarcode,
                     path: p,
@@ -173,6 +154,24 @@ interface TaskTableRow {
     taskId: string;
 }
 
+function createTaskRow(
+    task: { id: string; createdAtTicks: number },
+    itemType: TaskTableRow['itemType'],
+    fullPath: string,
+    taskAction: string,
+    name = itemType === 'format' ? t('task.typeFormat') : getPathName(fullPath),
+): TaskTableRow {
+    return {
+        key: task.id,
+        name,
+        fullPath,
+        itemType,
+        taskAction,
+        createdAtTicks: task.createdAtTicks,
+        taskId: task.id,
+    };
+}
+
 const tableRows = computed<TaskTableRow[]>(() => {
     if (!selectedTape.value) return [];
     const group = store.taskGroups.find(
@@ -185,48 +184,27 @@ const tableRows = computed<TaskTableRow[]>(() => {
     if (selectedPath.value === '/') {
         for (const task of group.tasks) {
             if (task.type === 'format') {
-                rows.push({
-                    key: task.id,
-                    name: t('task.typeFormat'),
-                    fullPath: '/',
-                    itemType: 'format',
-                    taskAction: 'format',
-                    createdAtTicks: task.createdAtTicks,
-                    taskId: task.id,
-                });
+                rows.push(createTaskRow(task, 'format', '/', 'format'));
             }
         }
     }
 
     for (const task of group.tasks) {
         const pathTask = task.pathTask;
-        if (pathTask?.isDirectory) {
-            const p = normalizePath(pathTask.path);
-            if (isDirectChild(selectedPath.value, p)) {
-                rows.push({
-                    key: task.id,
-                    name: getPathName(p),
-                    fullPath: p,
-                    itemType: 'folder',
-                    taskAction: pathTask.operation,
-                    createdAtTicks: task.createdAtTicks,
-                    taskId: task.id,
-                });
-            }
+        if (!pathTask) {
+            continue;
         }
-        if (pathTask && !pathTask.isDirectory) {
-            const p = normalizePath(pathTask.path);
-            if (isDirectChild(selectedPath.value, p)) {
-                rows.push({
-                    key: task.id,
-                    name: getPathName(p),
-                    fullPath: p,
-                    itemType: 'file',
-                    taskAction: pathTask.operation,
-                    createdAtTicks: task.createdAtTicks,
-                    taskId: task.id,
-                });
-            }
+
+        const taskPath = normalizePath(pathTask.path);
+        if (isDirectChild(selectedPath.value, taskPath)) {
+            rows.push(
+                createTaskRow(
+                    task,
+                    pathTask.isDirectory ? 'folder' : 'file',
+                    taskPath,
+                    pathTask.operation,
+                ),
+            );
         }
     }
 

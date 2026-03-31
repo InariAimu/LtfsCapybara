@@ -28,6 +28,7 @@
         name: 'Name',
         size: 'Size',
         index: 'Index',
+        task: 'Task',
         taskType: 'Task',
         crc64: 'CRC64',
         createTime: 'Create Time',

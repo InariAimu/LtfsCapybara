@@ -28,6 +28,7 @@ export default {
         name: '名称',
         size: '大小',
         index: '索引',
+        task: '任务',
         taskType: '任务',
         crc64: 'CRC64',
         createTime: '创建时间',

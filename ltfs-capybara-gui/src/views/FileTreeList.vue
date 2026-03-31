@@ -13,8 +13,13 @@ import {
 } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import { useFileStore } from '@/stores/fileStore';
-import { localTapeApi } from '@/api/modules/localtapes';
+import {
+    localTapeApi,
+    type LocalIndexDirectory,
+    type LocalIndexItem,
+} from '@/api/modules/localtapes';
 import formatFileSize from '@/utils/formatFileSize';
+import { makeScopedPathKey, normalizePath } from '@/utils/path';
 import { getLtoFormatStyle } from '@/utils/tapeFormatStyle';
 import { useMessage } from 'naive-ui';
 
@@ -34,7 +39,7 @@ interface LocalTreeNode {
     key: string;
     tapeName: string;
     path: string;
-    taskType?: string;
+    task?: string;
     isLeaf: boolean;
     children?: LocalTreeNode[];
     tapeSummary?: LocalTapeSummary | null;
@@ -115,25 +120,15 @@ const totalGradient = computed(() => {
     return `linear-gradient(90deg, #18a05855 0%, #18a05855 ${usedPercent}%, #fff5 ${usedPercent}%, #fff5 100%)`;
 });
 
-function normalizePath(path: string): string {
-    const trimmed = (path || '/').trim().replace(/\\/g, '/');
-    if (!trimmed || trimmed === '/') {
-        return '/';
-    }
-
-    const compact = trimmed.replace(/\/{2,}/g, '/');
-    return compact.startsWith('/') ? compact : `/${compact}`;
-}
-
 function makeLookupKey(tapeName: string, path: string): string {
-    return `${tapeName}::${normalizePath(path)}`;
+    return makeScopedPathKey(tapeName, path);
 }
 
 function makeNodeKey(tapeName: string, path: string): string {
-    return makeLookupKey(tapeName, path);
+    return makeScopedPathKey(tapeName, path);
 }
 
-function requestTapePath(tapeName: string, path: string): Promise<any> {
+function requestTapePath(tapeName: string, path: string): Promise<{ data: LocalIndexDirectory }> {
     const normalizedPath = normalizePath(path);
     const requestKey = makeLookupKey(tapeName, normalizedPath);
     const pending = pendingPathRequests.get(requestKey);
@@ -375,7 +370,7 @@ async function getData(node: TreeOption, fileOnly: boolean = false) {
         return;
     }
 
-    const mapDirectoryChildren = (items: any[]) => {
+    const mapDirectoryChildren = (items: LocalIndexItem[]) => {
         const parentPath = normalizePath((node as any).path || '/');
         return items.map((item: any) => {
             const childPath = parentPath === '/' ? `/${item.name}` : `${parentPath}/${item.name}`;
@@ -385,7 +380,7 @@ async function getData(node: TreeOption, fileOnly: boolean = false) {
                 isLeaf: false,
                 tapeName: tapeName,
                 path: childPath,
-                taskType: item.taskType,
+                task: item.task,
             };
         });
     };
@@ -403,21 +398,21 @@ async function getData(node: TreeOption, fileOnly: boolean = false) {
         }
 
         if (res && (res as any).data) {
-            const d = (res as any).data;
+            const d = res.data;
             // split items into directories and files
-            const dirs = (d.items || []).filter((item: any) => item.type !== 'file');
-            const files = (d.items || [])
-                .filter((item: any) => item.type === 'file')
-                .map((item: any) => ({
+            const items = d.items || [];
+            const dirs = items.filter(item => item.type !== 'file');
+            const files = items
+                .filter(item => item.type === 'file')
+                .map(item => ({
                     ...item,
                     key: item.index ?? `file:${currentPath}:${item.name}`,
                     size: formatFileSize(Number(item.size) || 0),
                 }));
-            const directories = dirs.map((item: any) => ({
+            const directories = dirs.map(item => ({
                 ...item,
                 key: item.index ?? `dir:${currentPath}:${item.name}`,
-                // For folders, show child item count in the table size column.
-                size: item.count ?? '-',
+                size: item.size ?? '-',
             }));
 
             // Keep both directories and files for the table view.
@@ -559,9 +554,9 @@ function renderLabel({ option }: { option: TreeOption }) {
     if (path === '/') {
         return h('span', { class: 'local-tree-root-label' }, String(option.label ?? ''));
     }
-    
-    const taskType = String((option as any).taskType || '').toLowerCase();
-    if (!taskType) {
+
+    const task = String((option as any).task || '').toLowerCase();
+    if (!task) {
         return option.label as string;
     }
 
@@ -574,9 +569,9 @@ function renderLabel({ option }: { option: TreeOption }) {
                     NTag,
                     {
                         size: 'tiny',
-                        type: taskType === 'delete' ? 'warning' : 'success',
+                        type: task === 'delete' ? 'warning' : 'success',
                     },
-                    { default: () => getShortTaskType(taskType) },
+                    { default: () => getShortTaskType(task) },
                 ),
                 h('span', String(option.label ?? '')),
             ],
