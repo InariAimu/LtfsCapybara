@@ -9,11 +9,11 @@ public static class APITapeDrive
         app.MapGet("/api/tapedrives", (ITapeDriveService tapeDriveService) =>
             Results.Ok(tapeDriveService.ScanAndSync()));
 
-        app.MapGet("/api/tapedrives/{id}/machine", (string id, ITapeMachineService tapeMachineService) =>
+        app.MapGet("/api/tapedrives/{id}/machine", (string id, ITapeDriveService tapeDriveService) =>
         {
             try
             {
-                return Results.Ok(tapeMachineService.GetSnapshot(id));
+                return Results.Ok(tapeDriveService.GetSnapshot(id));
             }
             catch (KeyNotFoundException ex)
             {
@@ -25,7 +25,7 @@ public static class APITapeDrive
             }
         });
 
-        app.MapPost("/api/tapedrives/{id}/machine/{action}", (string id, string action, ITapeMachineService tapeMachineService) =>
+        app.MapPost("/api/tapedrives/{id}/machine/{action}", (string id, string action, ITapeDriveService tapeDriveService) =>
         {
             if (!TryParseAction(action, out var parsedAction))
             {
@@ -34,7 +34,7 @@ public static class APITapeDrive
 
             try
             {
-                return Results.Ok(tapeMachineService.Execute(id, parsedAction));
+                return Results.Ok(tapeDriveService.Execute(id, parsedAction));
             }
             catch (KeyNotFoundException ex)
             {
@@ -51,18 +51,18 @@ public static class APITapeDrive
         });
     }
 
-    private static bool TryParseAction(string action, out TapeMachineAction parsedAction)
+    private static bool TryParseAction(string action, out TapeDriveAction parsedAction)
     {
         parsedAction = action.ToLowerInvariant() switch
         {
-            "thread" => TapeMachineAction.ThreadTape,
-            "load" => TapeMachineAction.LoadTape,
-            "unthread" => TapeMachineAction.UnthreadTape,
-            "eject" => TapeMachineAction.EjectTape,
-            "read-info" => TapeMachineAction.ReadInfo,
-            _ => (TapeMachineAction)(-1),
+            "thread" => TapeDriveAction.ThreadTape,
+            "load" => TapeDriveAction.LoadTape,
+            "unthread" => TapeDriveAction.UnthreadTape,
+            "eject" => TapeDriveAction.EjectTape,
+            "read-info" => TapeDriveAction.ReadInfo,
+            _ => (TapeDriveAction)(-1),
         };
 
-        return parsedAction is >= TapeMachineAction.ThreadTape and <= TapeMachineAction.ReadInfo;
+        return parsedAction is >= TapeDriveAction.ThreadTape and <= TapeDriveAction.ReadInfo;
     }
 }

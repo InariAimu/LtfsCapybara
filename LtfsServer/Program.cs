@@ -26,8 +26,8 @@ builder.Services.AddCors(options =>
 
 // Register tape drive registry as app-wide singleton
 builder.Services.AddSingleton<ITapeDriveRegistry, TapeDriveRegistry>();
-builder.Services.AddSingleton<ITapeDriveService, TapeDriveService>();
-builder.Services.AddSingleton<ITapeMachineService, TapeMachineService>();
+builder.Services.AddSingleton<TapeDriveService>();
+builder.Services.AddSingleton<ITapeDriveService>(sp => sp.GetRequiredService<TapeDriveService>());
 // Register local tape registry (scans AppData.Path/local)
 builder.Services.AddSingleton<ILocalTapeRegistry, LocalTapeRegistry>();
 // Register local filesystem tree service (local drives + LAN shares)
