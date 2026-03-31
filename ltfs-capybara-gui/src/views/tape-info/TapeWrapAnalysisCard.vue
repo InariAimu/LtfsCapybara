@@ -211,9 +211,9 @@ function createTitle(): ReturnType<typeof h> {
                         >{{ t('tapeInfo.wrap.overall') }} - {{ props.wrap.segments.length }}
                         {{ t('tapeInfo.wrap.wraps') }}</span
                     >
-                    <span class="colorbar-title" style="margin-left: auto"
-                        >{{ t('tapeInfo.wrap.vertical') }}</span
-                    >
+                    <span class="colorbar-title" style="margin-left: auto">{{
+                        t('tapeInfo.wrap.vertical')
+                    }}</span>
                     <n-switch v-model:value="orderedLayoutEnabled" size="small" />
                 </n-flex>
                 <div class="wrap-colorbar">

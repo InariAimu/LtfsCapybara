@@ -136,12 +136,16 @@ const renderLabel = ({ option }: { option: TreeOption }) => {
     if (!node.taskAction) return node.label as string;
     const type = node.taskAction === 'delete' ? 'error' : 'success';
     const text = node.taskAction === 'delete' ? t('task.actionRemove') : t('task.actionAdd');
-    return h(NFlex, { align: 'center', size: 4, wrap: false }, {
-        default: () => [
-            h(NText, null, { default: () => node.label as string }),
-            h(NTag, { size: 'tiny', type }, { default: () => text }),
-        ],
-    });
+    return h(
+        NFlex,
+        { align: 'center', size: 4, wrap: false },
+        {
+            default: () => [
+                h(NText, null, { default: () => node.label as string }),
+                h(NTag, { size: 'tiny', type }, { default: () => text }),
+            ],
+        },
+    );
 };
 
 function handleUpdateSelectedKeys(
@@ -378,12 +382,7 @@ onMounted(loadTaskGroups);
                 :description="t('task.selectNodeHint')"
                 style="margin-top: 40px"
             />
-            <n-data-table
-                v-else
-                :columns="columns"
-                :data="tableRows"
-                size="small"
-            />
+            <n-data-table v-else :columns="columns" :data="tableRows" size="small" />
         </n-layout>
     </n-layout>
 </template>

@@ -124,7 +124,6 @@
         addServerFolder: 'Add Server Folder',
         addLocalFiles: 'Add Local Files',
         addLocalFolder: 'Add Local Folder',
-        
     },
     tapeMachine: {
         selectDriveHint: 'Select a tape drive from the left panel to control it.',

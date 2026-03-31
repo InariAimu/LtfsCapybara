@@ -2,10 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { NButton, NCard, NForm, NFormItem, NInput, NSelect, useMessage } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
-import {
-    serverSettingsApi,
-    type ServerSettingsUpdateRequest,
-} from '@/api/modules/serversettings';
+import { serverSettingsApi, type ServerSettingsUpdateRequest } from '@/api/modules/serversettings';
 import { setAppLocale, type AppLocale } from '@/i18n';
 import { setAppThemeMode, type AppThemeMode, useAppTheme } from '@/theme';
 

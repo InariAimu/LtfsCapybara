@@ -46,7 +46,7 @@ const columns = computed<DataTableColumns<Row>>(() => [
 
             return h(
                 NTag,
-                { size: 'small', type: taskType === 'delete' ? 'warning' : 'success' },
+                { size: 'tiny', type: taskType === 'delete' ? 'warning' : 'success' },
                 { default: () => taskType },
             );
         },
@@ -56,11 +56,6 @@ const columns = computed<DataTableColumns<Row>>(() => [
         key: 'size',
         width: 100,
         render(row) {
-            const itemType = String(row.type || '').toLowerCase();
-            if (itemType && itemType !== 'file') {
-                return '-';
-            }
-
             return row.size ?? '-';
         },
     },
@@ -102,7 +97,7 @@ const store = useFileStore();
 </script>
 
 <template>
-    <n-data-table :size="'medium'" :columns="columns" :data="store.files" />
+    <n-data-table size="medium" :columns="columns" :data="store.files" />
 </template>
 
 <style>

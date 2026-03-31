@@ -22,9 +22,7 @@ const isRootNodeSelected = computed(
     () => Boolean(store.currentTapeName) && store.currentPath === '/',
 );
 const currentTapeGroup = computed(() =>
-    store.taskGroups.find(
-        g => g.tapeBarcode.toLowerCase() === store.currentTapeName.toLowerCase(),
-    ),
+    store.taskGroups.find(g => g.tapeBarcode.toLowerCase() === store.currentTapeName.toLowerCase()),
 );
 const currentTapeHasFormatTask = computed(() =>
     Boolean(currentTapeGroup.value?.tasks?.some(task => task.type === 'format')),
@@ -46,7 +44,7 @@ const isCurrentTapeEditable = computed(() => {
 });
 const showNoLtfsCard = computed(
     () =>
-    !showTapeInfo.value &&
+        !showTapeInfo.value &&
         isRootNodeSelected.value &&
         store.noLtfsFilesystem &&
         store.noLtfsTapeName.toLowerCase() === store.currentTapeName.toLowerCase() &&
@@ -83,7 +81,7 @@ async function navigateByPath(path: string) {
             return;
         }
 
-        const items = (((res as any).data.items || []) as any[]);
+        const items = ((res as any).data.items || []) as any[];
         const directories = items
             .filter((item: any) => item.type !== 'file')
             .map((item: any) => ({
@@ -165,7 +163,10 @@ function normalizeFolderPath(path: string): string {
 }
 
 function localBasename(localPath: string): string {
-    const normalized = localPath.replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/\/$/, '');
+    const normalized = localPath
+        .replace(/\\/g, '/')
+        .replace(/\/{2,}/g, '/')
+        .replace(/\/$/, '');
     const parts = normalized.split('/').filter(Boolean);
     return parts[parts.length - 1] ?? normalized;
 }

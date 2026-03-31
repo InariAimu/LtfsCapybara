@@ -416,7 +416,8 @@ async function getData(node: TreeOption, fileOnly: boolean = false) {
             const directories = dirs.map((item: any) => ({
                 ...item,
                 key: item.index ?? `dir:${currentPath}:${item.name}`,
-                size: '-',
+                // For folders, show child item count in the table size column.
+                size: item.count ?? '-',
             }));
 
             // Keep both directories and files for the table view.
@@ -465,9 +466,7 @@ async function getData(node: TreeOption, fileOnly: boolean = false) {
             const status = (err as any)?.response?.status;
             const error = (err as any)?.response?.data?.error;
             const isNoLtfsFilesystemError =
-                currentPath === '/' &&
-                status === 404 &&
-                error === 'No index files found for tape';
+                currentPath === '/' && status === 404 && error === 'No index files found for tape';
 
             if (isNoLtfsFilesystemError) {
                 store.setNoLtfsState(tapeName, true);
@@ -560,6 +559,7 @@ function renderLabel({ option }: { option: TreeOption }) {
     if (path === '/') {
         return h('span', { class: 'local-tree-root-label' }, String(option.label ?? ''));
     }
+    
     const taskType = String((option as any).taskType || '').toLowerCase();
     if (!taskType) {
         return option.label as string;
@@ -570,18 +570,29 @@ function renderLabel({ option }: { option: TreeOption }) {
         { align: 'center', style: { gap: '6px', minWidth: 0 } },
         {
             default: () => [
-                h('span', String(option.label ?? '')),
                 h(
                     NTag,
                     {
                         size: 'tiny',
                         type: taskType === 'delete' ? 'warning' : 'success',
                     },
-                    { default: () => taskType },
+                    { default: () => getShortTaskType(taskType) },
                 ),
+                h('span', String(option.label ?? '')),
             ],
         },
     );
+}
+
+function getShortTaskType(taskType: string): string {
+    const lower = taskType.toLowerCase();
+    if (lower === 'delete') {
+        return 'D';
+    }
+    if (lower === 'add') {
+        return 'A';
+    }
+    return taskType;
 }
 </script>
 

@@ -98,9 +98,12 @@ export const taskApi = {
     },
 
     renameGroup(tapeBarcode: string, name: string) {
-        return apiClient.post<TapeFsTaskGroup>(`/tasks/groups/${encodeURIComponent(tapeBarcode)}/rename`, {
-            name,
-        });
+        return apiClient.post<TapeFsTaskGroup>(
+            `/tasks/groups/${encodeURIComponent(tapeBarcode)}/rename`,
+            {
+                name,
+            },
+        );
     },
 
     addTask(tapeBarcode: string, request: TapeFsTaskCreateRequest) {
