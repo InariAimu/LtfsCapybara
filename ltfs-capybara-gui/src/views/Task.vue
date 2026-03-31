@@ -154,6 +154,12 @@ interface TaskTableRow {
     taskId: string;
 }
 
+function rowSortOrder(row: TaskTableRow): number {
+    if (row.itemType === 'format') return 0;
+    if (row.itemType === 'folder') return 1;
+    return 2;
+}
+
 function createTaskRow(
     task: { id: string; createdAtTicks: number },
     itemType: TaskTableRow['itemType'],
@@ -208,7 +214,12 @@ const tableRows = computed<TaskTableRow[]>(() => {
         }
     }
 
-    return rows;
+    return rows.sort((a, b) => {
+        const orderDiff = rowSortOrder(a) - rowSortOrder(b);
+        if (orderDiff !== 0) return orderDiff;
+        if (a.createdAtTicks !== b.createdAtTicks) return a.createdAtTicks - b.createdAtTicks;
+        return a.fullPath.localeCompare(b.fullPath);
+    });
 });
 
 function formatTimestamp(ticks: number): string {

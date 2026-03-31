@@ -23,6 +23,16 @@ public static class APILocalIndex
             return GetLocalDirectoryDto(tapeName, path, registry, taskService, appData);
         });
 
+        app.MapDelete("/api/local/{tapeName}", (string tapeName, ILocalTapeRegistry registry, ITaskGroupService taskService, AppData appData) =>
+        {
+            return DeleteLocalIndexPathDto(tapeName, "/", registry, taskService, appData);
+        });
+
+        app.MapDelete("/api/local/{tapeName}/{**path}", (string tapeName, string path, ILocalTapeRegistry registry, ITaskGroupService taskService, AppData appData) =>
+        {
+            return DeleteLocalIndexPathDto(tapeName, path, registry, taskService, appData);
+        });
+
         app.MapGet("/api/localcm/{tapeName}", (string tapeName, ILocalTapeRegistry registry, AppData appData) =>
         {
             var file = registry.GetFiles(tapeName)
@@ -54,6 +64,43 @@ public static class APILocalIndex
                     statusCode: StatusCodes.Status500InternalServerError);
             }
         });
+    }
+
+    private static IResult DeleteLocalIndexPathDto(
+        string tapeName,
+        string requestedPath,
+        ILocalTapeRegistry registry,
+        ITaskGroupService taskService,
+        AppData appData)
+    {
+        var normalizedPath = LocalIndexPath.NormalizePath(requestedPath);
+
+        LtfsDirectory? root = null;
+        var file = registry.GetFiles(tapeName)
+            .Where(HasXmlIndex)
+            .OrderByDescending(f => f.Index.Ticks)
+            .FirstOrDefault();
+
+        if (file is not null)
+        {
+            var indexPath = Path.Combine(appData.Path, "local", tapeName, file.Index.FileName);
+            var index = LtfsIndex.FromXmlFile(indexPath);
+            root = index?.Directory;
+        }
+
+        var targetDir = root is null
+            ? null
+            : normalizedPath == "/" ? root : LocalIndexPath.FindDirectoryByPath(root, normalizedPath);
+
+        try
+        {
+            var updatedGroup = taskService.DeleteLocalIndexPath(tapeName, normalizedPath, targetDir);
+            return Results.Ok(updatedGroup);
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
     }
 
     private static bool HasXmlIndex(TapeFileInfo file)
@@ -207,6 +254,15 @@ public static class APILocalIndex
             itemMap[childName] = fileItem;
         }
 
+        // If this directory (or any ancestor) has a delete task, mark every child as "delete".
+        if (IsDirectoryOrAncestorDeleted(normalizedPath, overlayState.FolderActions))
+        {
+            foreach (var item in itemMap.Values)
+            {
+                item.Task = "delete";
+            }
+        }
+
         var directoryName = directory?.Name.GetName() ??
             (normalizedPath == "/"
                 ? tapeName
@@ -225,6 +281,24 @@ public static class APILocalIndex
                 .ThenBy(i => i.Name, StringComparer.OrdinalIgnoreCase)
                 .ToArray(),
         };
+    }
+
+    /// <summary>
+    /// Returns true if <paramref name="normalizedPath"/> itself, or any ancestor directory,
+    /// has a "delete" folder action in the overlay.
+    /// </summary>
+    private static bool IsDirectoryOrAncestorDeleted(string normalizedPath, IReadOnlyDictionary<string, string> folderActions)
+    {
+        var path = normalizedPath;
+        while (true)
+        {
+            if (folderActions.TryGetValue(path, out var action) && action == "delete")
+                return true;
+            if (path == "/") break;
+            var lastSlash = path.LastIndexOf('/');
+            path = lastSlash <= 0 ? "/" : path[..lastSlash];
+        }
+        return false;
     }
 
     private static IEnumerable<LocalIndexItemDto> EnumerateIndexItems(LtfsDirectory? directory)

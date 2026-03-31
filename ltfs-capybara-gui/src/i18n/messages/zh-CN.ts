@@ -125,6 +125,9 @@ export default {
         addServerFolder: '添加服务器文件夹',
         addLocalFiles: '添加本地文件',
         addLocalFolder: '添加本地文件夹',
+        deleteDir: '删除',
+        deleteDirSuccess: '目录已删除。',
+        deleteDirFailed: '删除目录失败。',
     },
     tapeMachine: {
         selectDriveHint: '请先在左侧面板选择一个磁带机。',

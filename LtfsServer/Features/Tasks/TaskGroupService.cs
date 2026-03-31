@@ -1,6 +1,7 @@
 using System.Text.Json;
 
 using Ltfs;
+using Ltfs.Index;
 
 using LtfsServer.BootStrap;
 
@@ -156,9 +157,22 @@ public sealed class TaskGroupService : ITaskGroupService
             if (!_groups.TryGetValue(key, out var group))
                 throw new KeyNotFoundException($"Task group for tape '{key}' was not found.");
 
-            var removed = group.Tasks.RemoveAll(t => string.Equals(t.Id, normalizedTaskId, StringComparison.OrdinalIgnoreCase));
-            if (removed == 0)
+            var taskToRemove = group.Tasks.FirstOrDefault(t =>
+                string.Equals(t.Id, normalizedTaskId, StringComparison.OrdinalIgnoreCase));
+            if (taskToRemove is null)
                 throw new KeyNotFoundException($"Task '{normalizedTaskId}' was not found.");
+
+            group.Tasks.Remove(taskToRemove);
+
+            // If a directory task was deleted, also remove all tasks for its descendants.
+            if (taskToRemove.PathTask?.IsDirectory == true)
+            {
+                var dirPath = taskToRemove.PathTask.Path;
+                var prefix = dirPath == "/" ? "/" : dirPath + "/";
+                group.Tasks.RemoveAll(t =>
+                    t.PathTask is not null &&
+                    t.PathTask.Path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+            }
 
             group.UpdatedAtTicks = DateTime.UtcNow.Ticks;
             ValidateGroup(group, validateLocalPaths: false);
@@ -166,6 +180,79 @@ public sealed class TaskGroupService : ITaskGroupService
             return Clone(group);
         }
     }
+
+    public TapeFsTaskGroup DeleteLocalIndexPath(string tapeBarcode, string tapePath, LtfsDirectory? dirAtPath)
+    {
+        lock (_syncRoot)
+        {
+            var key = NormalizeBarcode(tapeBarcode);
+            var normalizedPath = string.IsNullOrWhiteSpace(tapePath) || tapePath.Trim() == "/"
+                ? "/"
+                : NormalizeFolderPath(tapePath);
+            var prefix = normalizedPath == "/" ? "/" : normalizedPath + "/";
+
+            var group = GetOrCreateGroupCore(key);
+
+            // Remove all existing tasks for this path and its descendants.
+            group.Tasks.RemoveAll(t =>
+            {
+                if (t.PathTask is null) return false;
+                var p = t.PathTask.Path ?? string.Empty;
+                return string.Equals(p, normalizedPath, StringComparison.OrdinalIgnoreCase)
+                    || p.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+            });
+
+            // Add delete tasks for every item that actually exists in the filesystem.
+            if (dirAtPath is not null)
+            {
+                if (normalizedPath != "/")
+                {
+                    group.Tasks.Add(NewDeletePathTask(key, normalizedPath, isDir: true));
+                }
+
+                AddDeleteTasksRecursive(group, key, dirAtPath, normalizedPath);
+            }
+
+            group.UpdatedAtTicks = DateTime.UtcNow.Ticks;
+            ValidateGroup(group, validateLocalPaths: false);
+            SaveToDisk();
+            return Clone(group);
+        }
+    }
+
+    private static void AddDeleteTasksRecursive(TapeFsTaskGroup group, string tapeBarcode, LtfsDirectory dir, string dirPath)
+    {
+        var prefix = dirPath == "/" ? "/" : dirPath + "/";
+        foreach (var item in dir.Contents)
+        {
+            if (item is LtfsDirectory subDir)
+            {
+                var subPath = prefix + subDir.Name.GetName();
+                group.Tasks.Add(NewDeletePathTask(tapeBarcode, subPath, isDir: true));
+                AddDeleteTasksRecursive(group, tapeBarcode, subDir, subPath);
+            }
+            else if (item is LtfsFile file)
+            {
+                var filePath = prefix + file.Name.GetName();
+                group.Tasks.Add(NewDeletePathTask(tapeBarcode, filePath, isDir: false));
+            }
+        }
+    }
+
+    private static TapeFsTask NewDeletePathTask(string tapeBarcode, string path, bool isDir) =>
+        new()
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Type = TapeFsTaskType.Delete,
+            TapeBarcode = tapeBarcode,
+            PathTask = new TapeFsPathTask
+            {
+                IsDirectory = isDir,
+                Operation = TapeFsTaskType.Delete,
+                Path = path,
+            },
+            CreatedAtTicks = DateTime.UtcNow.Ticks,
+        };
 
     private TapeFsTask BuildTask(TapeFsTaskGroup group, string type, TapeFsTaskCreateRequest request)
     {
@@ -584,12 +671,40 @@ public sealed class TaskGroupService : ITaskGroupService
     {
         var json = JsonSerializer.Serialize(group);
         var cloned = JsonSerializer.Deserialize<TapeFsTaskGroup>(json);
-        return cloned ?? new TapeFsTaskGroup
+        if (cloned is null)
         {
-            TapeBarcode = group.TapeBarcode,
-            Name = group.Name,
-            Tasks = [],
-            UpdatedAtTicks = group.UpdatedAtTicks,
-        };
+            return new TapeFsTaskGroup
+            {
+                TapeBarcode = group.TapeBarcode,
+                Name = group.Name,
+                Tasks = [],
+                UpdatedAtTicks = group.UpdatedAtTicks,
+            };
+        }
+
+        // Keep task responses deterministic for UI rendering:
+        // format task first, then directory entries, then file entries.
+        cloned.Tasks = cloned.Tasks
+            .OrderBy(GetResponseTaskSortOrder)
+            .ThenBy(t => t.CreatedAtTicks)
+            .ThenBy(t => t.PathTask?.Path ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(t => t.Id, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return cloned;
+    }
+
+    private static int GetResponseTaskSortOrder(TapeFsTask task)
+    {
+        if (string.Equals(task.Type, TapeFsTaskType.Format, StringComparison.OrdinalIgnoreCase))
+            return 0;
+
+        if (task.PathTask?.IsDirectory == true)
+            return 1;
+
+        if (task.PathTask is not null)
+            return 2;
+
+        return 3;
     }
 }

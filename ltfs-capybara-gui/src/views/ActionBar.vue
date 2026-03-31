@@ -11,11 +11,13 @@ const { showTapeInfoToggle, showTapeInfo, addDisabled } = defineProps<{
     showTapeInfoToggle: boolean;
     showTapeInfo: boolean;
     addDisabled?: boolean;
+    deleteDisabled?: boolean;
 }>();
 
 const emit = defineEmits<{
     (e: 'update:showTapeInfo', value: boolean): void;
     (e: 'add-server-folder', localPath: string): void;
+    (e: 'delete-task'): void;
 }>();
 
 const showFolderDialog = ref(false);
@@ -75,6 +77,9 @@ function updateShowTapeInfo(value: boolean) {
                 {{ t('task.add') }}
             </n-button>
         </n-dropdown>
+        <n-button size="small" type="error" :disabled="deleteDisabled" @click="emit('delete-task')">
+            {{ t('task.deleteTask') }}
+        </n-button>
 
         <directory-choose-dialog
             v-model:show="showFolderDialog"

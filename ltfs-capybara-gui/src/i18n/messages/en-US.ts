@@ -125,6 +125,9 @@
         addServerFolder: 'Add Server Folder',
         addLocalFiles: 'Add Local Files',
         addLocalFolder: 'Add Local Folder',
+        deleteDir: 'Delete',
+        deleteDirSuccess: 'Directory deleted.',
+        deleteDirFailed: 'Failed to delete directory.',
     },
     tapeMachine: {
         selectDriveHint: 'Select a tape drive from the left panel to control it.',

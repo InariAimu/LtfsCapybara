@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { DataTableColumns, DataTableInst } from 'naive-ui';
-import { NDataTable, NTag } from 'naive-ui';
+import { NButton, NDataTable } from 'naive-ui';
 import { computed, h, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useFileStore } from '@/stores/fileStore';
@@ -17,6 +17,14 @@ interface Row {
 }
 
 const { t } = useI18n();
+
+const props = defineProps<{
+    deletable?: boolean;
+}>();
+
+const emit = defineEmits<{
+    (e: 'delete-dir', name: string): void;
+}>();
 
 const columns = computed<DataTableColumns<Row>>(() => [
     {
@@ -71,6 +79,26 @@ const columns = computed<DataTableColumns<Row>>(() => [
         key: 'modifyTime',
         width: 160,
         ellipsis: true,
+    },
+    {
+        title: '',
+        key: '_actions',
+        width: 75,
+        render(row) {
+            if (row.type !== 'dir' || !props.deletable || row.task === 'delete') {
+                return h('span');
+            }
+            return h(
+                NButton,
+                {
+                    size: 'tiny',
+                    type: 'error',
+                    tertiary: true,
+                    onClick: () => emit('delete-dir', row.name),
+                },
+                { default: () => t('task.deleteDir') },
+            );
+        },
     },
 ]);
 

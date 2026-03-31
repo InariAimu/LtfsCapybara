@@ -25,6 +25,29 @@ const isRootNodeSelected = computed(
 const currentTapeGroup = computed(() =>
     store.taskGroups.find(g => g.tapeBarcode.toLowerCase() === store.currentTapeName.toLowerCase()),
 );
+const currentPathTask = computed(() => {
+    const tasks = currentTapeGroup.value?.tasks ?? [];
+    const targetPath = normalizePath(store.currentPath);
+
+    const matched = tasks.filter(task => {
+        const path = task.pathTask?.path;
+        if (!path) {
+            return false;
+        }
+        return normalizePath(path) === targetPath;
+    });
+
+    if (matched.length === 0) {
+        return null;
+    }
+
+    return matched.reduce((latest, task) =>
+        task.createdAtTicks > latest.createdAtTicks ? task : latest,
+    );
+});
+const canDeleteCurrentPathTask = computed(
+    () => Boolean(store.currentTapeName) && Boolean(currentPathTask.value),
+);
 const currentTapeHasFormatTask = computed(() =>
     Boolean(currentTapeGroup.value?.tasks?.some(task => task.type === 'format')),
 );
@@ -206,6 +229,43 @@ async function handleAddServerFolder(localPath: string) {
 onMounted(async () => {
     await loadTaskGroups();
 });
+
+async function handleDeleteDir(name: string) {
+    const tapeName = store.currentTapeName;
+    if (!tapeName) return;
+
+    const parentPath = normalizePath(store.currentPath);
+    const targetPath = parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
+
+    try {
+        const response = await localTapeApi.deleteLocalIndexPath(tapeName, targetPath);
+        store.upsertTaskGroup(response.data);
+        await navigateByPath(parentPath);
+        message.success(t('task.deleteDirSuccess'));
+    } catch (err) {
+        console.error('handleDeleteDir error', err);
+        message.error(t('task.deleteDirFailed'));
+    }
+}
+
+async function handleDeleteCurrentPathTask() {
+    const tapeName = store.currentTapeName;
+    const taskId = currentPathTask.value?.id;
+    if (!tapeName || !taskId) {
+        return;
+    }
+
+    try {
+        const response = await taskApi.deleteTask(tapeName, taskId);
+        store.upsertTaskGroup(response.data);
+        treeRefreshToken.value += 1;
+        await navigateByPath(store.currentPath);
+        message.success(t('task.deleteTaskSuccess'));
+    } catch (err) {
+        console.error('handleDeleteCurrentPathTask error', err);
+        message.error(t('task.deleteTaskFailed'));
+    }
+}
 </script>
 
 <template>
@@ -228,8 +288,10 @@ onMounted(async () => {
                         :show-tape-info-toggle="isRootNodeSelected"
                         :show-tape-info="showTapeInfo"
                         :add-disabled="!isCurrentTapeEditable"
+                        :delete-disabled="!canDeleteCurrentPathTask"
                         @update:show-tape-info="showTapeInfo = $event"
                         @add-server-folder="handleAddServerFolder"
+                        @delete-task="handleDeleteCurrentPathTask"
                     />
                     <div v-if="showNoLtfsCard" class="file-list-content no-ltfs-panel">
                         <n-card :title="t('task.noLtfsTitle')" size="small">
@@ -243,7 +305,7 @@ onMounted(async () => {
                         </n-card>
                     </div>
                     <tape-info v-else-if="showTapeInfo" class="file-list-content" />
-                    <file-list v-else class="file-list-content" />
+                    <file-list v-else class="file-list-content" :deletable="isCurrentTapeEditable" @delete-dir="handleDeleteDir" />
                 </div>
             </n-layout>
         </n-layout>

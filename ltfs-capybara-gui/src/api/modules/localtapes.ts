@@ -1,4 +1,5 @@
 import { apiClient } from '../client';
+import type { TapeFsTaskGroup } from './tasks';
 
 export interface LocalIndexItem {
     type: 'file' | 'dir';
@@ -39,6 +40,18 @@ export const localTapeApi = {
             );
         } catch (err) {
             console.error('localTapeApi.getPath error', err);
+            throw err;
+        }
+    },
+
+    async deleteLocalIndexPath(tapeName: string, path: string): Promise<{ data: TapeFsTaskGroup }> {
+        try {
+            const encoded = path === '/' ? '' : `/${encodeURI(path.replace(/^\//, ''))}`;
+            return await apiClient.delete<TapeFsTaskGroup>(
+                `/local/${encodeURIComponent(tapeName)}${encoded}`,
+            );
+        } catch (err) {
+            console.error('localTapeApi.deleteLocalIndexPath error', err);
             throw err;
         }
     },
