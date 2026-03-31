@@ -22,7 +22,7 @@ public static class APITasks
             }
         });
 
-        app.MapPost("/api/tasks/groups/{tapeBarcode}/rename", (string tapeBarcode, RenameTaskGroupRequest request, ITaskGroupService service) =>
+        app.MapPost("/api/tasks/groups/{tapeBarcode}/rename", (string tapeBarcode, RenameTapeFsTaskGroupRequest request, ITaskGroupService service) =>
         {
             try
             {
@@ -34,7 +34,7 @@ public static class APITasks
             }
         });
 
-        app.MapPost("/api/tasks/groups/{tapeBarcode}/tasks", (string tapeBarcode, LtfsTaskCreateRequest request, ITaskGroupService service) =>
+        app.MapPost("/api/tasks/groups/{tapeBarcode}/tasks", (string tapeBarcode, TapeFsTaskCreateRequest request, ITaskGroupService service) =>
         {
             try
             {
@@ -58,7 +58,7 @@ public static class APITasks
             }
         });
 
-        app.MapPost("/api/tasks/groups/{tapeBarcode}/tasks/server-folder", (string tapeBarcode, AddServerFolderTaskRequest request, ITaskGroupService service) =>
+        app.MapPost("/api/tasks/groups/{tapeBarcode}/tasks/server-folder", (string tapeBarcode, AddTapeFsServerFolderTaskRequest request, ITaskGroupService service) =>
         {
             try
             {
@@ -78,7 +78,7 @@ public static class APITasks
             }
         });
 
-        app.MapPost("/api/tasks/groups/{tapeBarcode}/tasks/format", (string tapeBarcode, AddFormatTaskRequest? request, ITaskGroupService service) =>
+        app.MapPost("/api/tasks/groups/{tapeBarcode}/tasks/format", (string tapeBarcode, AddTapeFsFormatTaskRequest? request, ITaskGroupService service) =>
         {
             try
             {
@@ -111,3 +111,4 @@ public static class APITasks
         });
     }
 }
+

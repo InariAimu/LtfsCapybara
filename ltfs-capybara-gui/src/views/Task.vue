@@ -67,18 +67,19 @@ function buildTree(groups: typeof store.taskGroups): TaskTreeNode[] {
         const sorted = [...group.tasks].sort((a, b) => a.createdAtTicks - b.createdAtTicks);
 
         for (const task of sorted) {
-            if (task.type === 'folder' && task.folderTask) {
-                const p = normalizePath(task.folderTask.path);
+            const pathTask = task.pathTask;
+            if (pathTask?.isDirectory) {
+                const p = normalizePath(pathTask.path);
                 dirPaths.add(p);
-                folderActionMap.set(p, task.folderTask.taskType);
+                folderActionMap.set(p, pathTask.operation);
                 let anc = getParentPath(p);
                 while (anc !== '/') {
                     dirPaths.add(anc);
                     anc = getParentPath(anc);
                 }
             }
-            if (task.writeTask) {
-                let dir = getParentPath(normalizePath(task.writeTask.targetPath));
+            if (pathTask && !pathTask.isDirectory) {
+                let dir = getParentPath(normalizePath(pathTask.path));
                 while (dir !== '/') {
                     dirPaths.add(dir);
                     dir = getParentPath(dir);
@@ -194,29 +195,30 @@ const tableRows = computed<TaskTableRow[]>(() => {
     }
 
     for (const task of group.tasks) {
-        if (task.type === 'folder' && task.folderTask) {
-            const p = normalizePath(task.folderTask.path);
+        const pathTask = task.pathTask;
+        if (pathTask?.isDirectory) {
+            const p = normalizePath(pathTask.path);
             if (isDirectChild(selectedPath.value, p)) {
                 rows.push({
                     key: task.id,
                     name: getPathName(p),
                     fullPath: p,
                     itemType: 'folder',
-                    taskAction: task.folderTask.taskType,
+                    taskAction: pathTask.operation,
                     createdAtTicks: task.createdAtTicks,
                     taskId: task.id,
                 });
             }
         }
-        if (task.writeTask) {
-            const p = normalizePath(task.writeTask.targetPath);
+        if (pathTask && !pathTask.isDirectory) {
+            const p = normalizePath(pathTask.path);
             if (isDirectChild(selectedPath.value, p)) {
                 rows.push({
                     key: task.id,
                     name: getPathName(p),
                     fullPath: p,
                     itemType: 'file',
-                    taskAction: task.type,
+                    taskAction: pathTask.operation,
                     createdAtTicks: task.createdAtTicks,
                     taskId: task.id,
                 });
@@ -240,10 +242,12 @@ function actionTagType(
     if (itemType === 'format') return 'warning';
     switch (action.toLowerCase()) {
         case 'add':
-        case 'write':
             return 'success';
-        case 'replace':
+        case 'rename':
             return 'info';
+        case 'replace':
+        case 'update':
+            return 'warning';
         case 'delete':
             return 'error';
         default:
@@ -258,9 +262,10 @@ function actionLabel(action: string, itemType: string): string {
             return t('task.actionAdd');
         case 'delete':
             return t('task.actionRemove');
-        case 'write':
-            return t('task.typeWrite');
+        case 'rename':
+            return 'rename';
         case 'replace':
+        case 'update':
             return t('task.typeReplace');
         default:
             return action;

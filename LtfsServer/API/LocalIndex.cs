@@ -71,16 +71,15 @@ public static class APILocalIndex
         ITaskGroupService taskService,
         AppData appData)
     {
-        var normalizedPath = NormalizePath(requestedPath);
-        var files = registry.GetFiles(tapeName)
+        var normalizedPath = LocalIndexPath.NormalizePath(requestedPath);
+        var file = registry.GetFiles(tapeName)
             .Where(HasXmlIndex)
             .OrderByDescending(f => f.Index.Ticks)
-            .ToArray();
+            .FirstOrDefault();
 
         LtfsDirectory? root = null;
-        if (files.Length > 0)
+        if (file is not null)
         {
-            var file = files[0];
             var indexPath = Path.Combine(appData.Path, "local", tapeName, file.Index.FileName);
             var index = LtfsIndex.FromXmlFile(indexPath);
             if (index is null)
@@ -93,51 +92,40 @@ public static class APILocalIndex
 
         var taskGroup = taskService.ListGroups()
             .FirstOrDefault(g => string.Equals(g.TapeBarcode, tapeName, StringComparison.OrdinalIgnoreCase));
-        var hasTasks = taskGroup?.Tasks?.Count > 0;
-        var hasFormatTask = taskGroup?.Tasks?.Any(t =>
-            string.Equals(t.Type, LtfsTaskType.Format, StringComparison.OrdinalIgnoreCase)) == true;
+        var overlayState = LocalIndexOverlay.BuildTaskOverlayState(taskGroup);
 
-        if (root is null && !hasTasks)
+        if (root is null && !overlayState.HasTasks)
         {
             return Results.NotFound(new { error = "No index files found for tape" });
         }
 
-        var target = root is null ? null : FindDirectoryByPath(root, normalizedPath);
-        if (target is null && root is not null && normalizedPath != "/" && !CanResolveTaskPath(normalizedPath, taskGroup))
+        var target = root is null ? null : LocalIndexPath.FindDirectoryByPath(root, normalizedPath);
+        if (target is null && normalizedPath != "/" && !LocalIndexPath.CanResolveTaskPath(normalizedPath, overlayState))
         {
             return Results.NotFound(new { error = "Path not found" });
         }
 
-        if (target is null && root is null && normalizedPath != "/" && !CanResolveTaskPath(normalizedPath, taskGroup))
-        {
-            return Results.NotFound(new { error = "Path not found" });
-        }
-
-        if (target is null && root is null && normalizedPath == "/" && !hasFormatTask && !CanResolveTaskPath("/", taskGroup))
-        {
-            return Results.NotFound(new { error = "No index files found for tape" });
-        }
-
-        var dto = BuildDirectoryDto(target, normalizedPath, taskGroup);
+        var dto = BuildDirectoryDto(target, normalizedPath, overlayState, tapeName);
         return Results.Ok(dto);
     }
 
     private static LocalIndexDirectoryDto BuildDirectoryDto(
         LtfsDirectory? directory,
         string normalizedPath,
-        LtfsTaskGroup? taskGroup)
+        TaskOverlayState overlayState,
+        string tapeName)
     {
         var itemMap = new Dictionary<string, LocalIndexItemDto>(StringComparer.OrdinalIgnoreCase);
+        var parentPrefix = normalizedPath == "/" ? "/" : normalizedPath + "/";
 
         foreach (var item in EnumerateIndexItems(directory))
         {
             itemMap[item.Name] = item;
         }
 
-        var folderActions = BuildFolderActionMap(taskGroup);
-        foreach (var action in folderActions)
+        foreach (var action in overlayState.FolderActions)
         {
-            var childName = GetDirectChildName(normalizedPath, action.Key);
+            var childName = LocalIndexPath.GetDirectChildName(normalizedPath, parentPrefix, action.Key);
             if (string.IsNullOrWhiteSpace(childName))
             {
                 continue;
@@ -173,12 +161,29 @@ public static class APILocalIndex
             itemMap[childName] = dirItem;
         }
 
-        var fileActions = BuildFileActionMap(taskGroup);
-        foreach (var action in fileActions)
+        foreach (var action in overlayState.FileActions)
         {
-            var childName = GetDirectChildName(normalizedPath, action.Key);
+            var childName = LocalIndexPath.GetDirectChildName(normalizedPath, parentPrefix, action.Key);
             if (string.IsNullOrWhiteSpace(childName))
             {
+                continue;
+            }
+
+            var isDirectChildFile = LocalIndexPath.IsDirectChildPath(normalizedPath, parentPrefix, action.Key);
+
+            if (!isDirectChildFile)
+            {
+                var dirItem = itemMap.TryGetValue(childName, out var current)
+                    ? current
+                    : new LocalIndexItemDto
+                    {
+                        Type = "dir",
+                        Name = childName,
+                        Count = 0,
+                    };
+
+                dirItem.Type = "dir";
+                itemMap[childName] = dirItem;
                 continue;
             }
 
@@ -202,7 +207,16 @@ public static class APILocalIndex
             itemMap[childName] = fileItem;
         }
 
-        var directoryName = directory?.Name.GetName() ?? (normalizedPath == "/" ? string.Empty : normalizedPath.Trim('/').Split('/').LastOrDefault() ?? string.Empty);
+        var directoryName = directory?.Name.GetName() ??
+            (normalizedPath == "/"
+                ? tapeName
+                : normalizedPath.Trim('/').Split('/').LastOrDefault() ?? string.Empty);
+
+        if (normalizedPath == "/" && string.IsNullOrWhiteSpace(directoryName))
+        {
+            directoryName = tapeName;
+        }
+
         return new LocalIndexDirectoryDto
         {
             Name = directoryName,
@@ -250,176 +264,6 @@ public static class APILocalIndex
                 };
             }
         }
-    }
-
-    private static Dictionary<string, string> BuildFolderActionMap(LtfsTaskGroup? taskGroup)
-    {
-        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        if (taskGroup?.Tasks is null)
-        {
-            return map;
-        }
-
-        foreach (var task in taskGroup.Tasks.OrderBy(t => t.CreatedAtTicks))
-        {
-            if (!string.Equals(task.Type, LtfsTaskType.Folder, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            var folderTask = task.FolderTask;
-            if (folderTask is null)
-            {
-                continue;
-            }
-
-            var path = NormalizePath(folderTask.Path);
-            var taskType = (folderTask.TaskType ?? string.Empty).Trim().ToLowerInvariant();
-            if (taskType is "add" or "delete")
-            {
-                map[path] = taskType;
-            }
-        }
-
-        return map;
-    }
-
-    private static Dictionary<string, string> BuildFileActionMap(LtfsTaskGroup? taskGroup)
-    {
-        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        if (taskGroup?.Tasks is null)
-        {
-            return map;
-        }
-
-        foreach (var task in taskGroup.Tasks.OrderBy(t => t.CreatedAtTicks))
-        {
-            if (task.WriteTask is null)
-            {
-                continue;
-            }
-
-            string? action = task.Type.ToLowerInvariant() switch
-            {
-                LtfsTaskType.Write => "add",
-                LtfsTaskType.Replace => "replace",
-                LtfsTaskType.Delete => "delete",
-                _ => null,
-            };
-
-            if (action is null)
-            {
-                continue;
-            }
-
-            var targetPath = NormalizePath(task.WriteTask.TargetPath);
-            if (targetPath == "/")
-            {
-                continue;
-            }
-
-            map[targetPath] = action;
-        }
-
-        return map;
-    }
-
-    private static bool CanResolveTaskPath(string normalizedPath, LtfsTaskGroup? taskGroup)
-    {
-        if (normalizedPath == "/")
-        {
-            return true;
-        }
-
-        var folderActions = BuildFolderActionMap(taskGroup);
-        if (folderActions.TryGetValue(normalizedPath, out var action) && action != "delete")
-        {
-            return true;
-        }
-
-        var prefix = normalizedPath == "/" ? "/" : normalizedPath + "/";
-        if (folderActions.Any(kvp => kvp.Value != "delete" && kvp.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
-        {
-            return true;
-        }
-
-        var fileActions = BuildFileActionMap(taskGroup);
-        if (fileActions.Any(kvp => kvp.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    private static string? GetDirectChildName(string parentPath, string candidatePath)
-    {
-        var normalizedParent = NormalizePath(parentPath);
-        var normalizedCandidate = NormalizePath(candidatePath);
-        if (normalizedCandidate == normalizedParent)
-        {
-            return null;
-        }
-
-        var parentPrefix = normalizedParent == "/" ? "/" : normalizedParent + "/";
-        if (!normalizedCandidate.StartsWith(parentPrefix, StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        var remain = normalizedCandidate[parentPrefix.Length..];
-        if (string.IsNullOrWhiteSpace(remain))
-        {
-            return null;
-        }
-
-        var segment = remain.Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-        return string.IsNullOrWhiteSpace(segment) ? null : segment;
-    }
-
-    private static string NormalizePath(string path)
-    {
-        var normalized = (path ?? string.Empty).Trim().Replace('\\', '/');
-        if (string.IsNullOrWhiteSpace(normalized) || normalized == "/")
-        {
-            return "/";
-        }
-
-        normalized = normalized.Trim('/');
-        normalized = "/" + normalized;
-        while (normalized.Contains("//", StringComparison.Ordinal))
-        {
-            normalized = normalized.Replace("//", "/", StringComparison.Ordinal);
-        }
-
-        return normalized;
-    }
-
-    private static LtfsDirectory? FindDirectoryByPath(LtfsDirectory root, string path)
-    {
-        if (string.IsNullOrWhiteSpace(path) || path == "/") return root;
-
-        // normalize and split
-        var trimmed = path.Trim('/');
-        var segments = trimmed.Split('/', StringSplitOptions.RemoveEmptyEntries);
-
-        LtfsDirectory? curr = root;
-        foreach (var seg in segments)
-        {
-            if (curr is null) return null;
-            object? next = curr[seg];
-            if (next is LtfsDirectory d)
-            {
-                curr = d;
-                continue;
-            }
-            else
-            {
-                return null;
-            }
-        }
-
-        return curr;
     }
 
     private sealed class LocalIndexDirectoryDto

@@ -329,6 +329,21 @@ async function getData(node: TreeOption, fileOnly: boolean = false) {
     // even when subsequent directory request fails (e.g. 404).
     store.setCurrentLocation(tapeName, currentPath);
 
+    const mapDirectoryChildren = (items: any[]) => {
+        const parentPath = normalizePath((node as any).path || '/');
+        return items.map((item: any) => {
+            const childPath = parentPath === '/' ? `/${item.name}` : `${parentPath}/${item.name}`;
+            return {
+                label: item.name,
+                key: makeNodeKey(tapeName, childPath),
+                isLeaf: false,
+                tapeName: tapeName,
+                path: childPath,
+                taskType: item.taskType,
+            };
+        });
+    };
+
     try {
         // If node has a `path`, request that path; otherwise request root for the tape
         let res: any = null;
@@ -371,24 +386,24 @@ async function getData(node: TreeOption, fileOnly: boolean = false) {
             }
 
             if (fileOnly) {
-                // if only files are requested, do not update tree nodes
+                // Root selection can be file-only, but still hydrate tree nodes when
+                // there are folders/tasks to show under an empty or previously failed root.
+                if (currentPath === '/') {
+                    const rootChildren = mapDirectoryChildren(dirs);
+                    treeNode.children = rootChildren;
+                    if ((treeNode as any).isLeaf && rootChildren.length > 0) {
+                        (treeNode as any).isLeaf = false;
+                    }
+                    updatePathIndex(data.value);
+                    syncSelectionFromStore();
+                    ensureRootNodesCollapsed();
+                    store.setLocalIndexTreeData(data.value);
+                }
                 return;
             }
 
             // only show directories in the tree; mark isLeaf always false
-            treeNode.children = dirs.map((item: any) => {
-                const parentPath = normalizePath((node as any).path || '/');
-                const childPath =
-                    parentPath === '/' ? `/${item.name}` : `${parentPath}/${item.name}`;
-                return {
-                    label: item.name,
-                    key: makeNodeKey(tapeName, childPath),
-                    isLeaf: false,
-                    tapeName: tapeName,
-                    path: childPath,
-                    taskType: item.taskType,
-                };
-            });
+            treeNode.children = mapDirectoryChildren(dirs);
 
             updatePathIndex(data.value);
             syncSelectionFromStore();
@@ -397,9 +412,6 @@ async function getData(node: TreeOption, fileOnly: boolean = false) {
         } else if (!fileOnly) {
             // Mark node as loaded even when API returned no payload to avoid repeated load retries.
             treeNode.children = [];
-            if (currentPath === '/') {
-                (treeNode as any).isLeaf = true;
-            }
             store.setLocalIndexTreeData(data.value);
         }
     } catch (err) {
@@ -430,9 +442,6 @@ async function getData(node: TreeOption, fileOnly: boolean = false) {
         if (!fileOnly) {
             // Mark node as loaded on failure (e.g. 404) so async tree does not keep requesting it.
             treeNode.children = [];
-            if (currentPath === '/') {
-                (treeNode as any).isLeaf = true;
-            }
             store.setLocalIndexTreeData(data.value);
         }
         console.error('Failed to load tape files', err);
