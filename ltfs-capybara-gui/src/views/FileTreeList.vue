@@ -60,6 +60,7 @@ const showDropdownRef = ref(false);
 const selectedKeys = ref<Array<string | number>>([]);
 const expandedKeys = ref<Array<string | number>>([]);
 const nodeChainIndex = new Map<string, Array<string | number>>();
+const pendingPathRequests = new Map<string, Promise<any>>();
 let latestSelectionRequest = 0;
 
 const filterGeneration = ref<number | null>(null);
@@ -130,6 +131,29 @@ function makeLookupKey(tapeName: string, path: string): string {
 
 function makeNodeKey(tapeName: string, path: string): string {
     return makeLookupKey(tapeName, path);
+}
+
+function requestTapePath(tapeName: string, path: string): Promise<any> {
+    const normalizedPath = normalizePath(path);
+    const requestKey = makeLookupKey(tapeName, normalizedPath);
+    const pending = pendingPathRequests.get(requestKey);
+    if (pending) {
+        return pending;
+    }
+
+    const request =
+        normalizedPath === '/'
+            ? localTapeApi.getRoot(tapeName)
+            : localTapeApi.getPath(tapeName, normalizedPath);
+
+    pendingPathRequests.set(requestKey, request);
+    request.finally(() => {
+        if (pendingPathRequests.get(requestKey) === request) {
+            pendingPathRequests.delete(requestKey);
+        }
+    });
+
+    return request;
 }
 
 function updatePathIndex(nodes: LocalTreeNode[]) {
@@ -300,7 +324,18 @@ onMounted(async () => {
 function nodeProps({ option }: { option: TreeOption }) {
     return {
         async onClick() {
-            //console.log('Node clicked:', option);
+            const tapeName = String((option as any).tapeName || (option.label as string) || '');
+            const path = normalizePath((option as any).path || '/');
+            const key = (option as any).key as string | number;
+
+            // When clicking an already-expanded tape root, treat it as a collapse intent
+            // and avoid re-fetching root payload that can immediately rehydrate descendants.
+            if (path === '/' && expandedKeys.value.includes(key)) {
+                store.setCurrentLocation(tapeName, path);
+                syncSelectionFromStore();
+                return;
+            }
+
             await getData(option, true);
         },
         onContextmenu(e: MouseEvent): void {
@@ -315,6 +350,10 @@ function nodeProps({ option }: { option: TreeOption }) {
 }
 
 async function handleLoad(node: TreeOption) {
+    const path = normalizePath((node as any).path || '/');
+    if (props.showTapeInfo && path === '/') {
+        return;
+    }
     await getData(node, false);
 }
 
@@ -328,6 +367,13 @@ async function getData(node: TreeOption, fileOnly: boolean = false) {
     // Persist clicked node context immediately so root selection can still drive UI mode
     // even when subsequent directory request fails (e.g. 404).
     store.setCurrentLocation(tapeName, currentPath);
+
+    // In Tape Info mode, selecting a tape root should not probe LTFS filesystem endpoints.
+    // This avoids 404-based no-LTFS state overriding the Tape Info panel.
+    if (props.showTapeInfo && fileOnly && currentPath === '/') {
+        syncSelectionFromStore();
+        return;
+    }
 
     const mapDirectoryChildren = (items: any[]) => {
         const parentPath = normalizePath((node as any).path || '/');
@@ -345,13 +391,8 @@ async function getData(node: TreeOption, fileOnly: boolean = false) {
     };
 
     try {
-        // If node has a `path`, request that path; otherwise request root for the tape
-        let res: any = null;
-        if (currentPath !== '/') {
-            res = await localTapeApi.getPath(tapeName, currentPath);
-        } else {
-            // root-level node
-            res = await localTapeApi.getRoot(tapeName);
+        const res = await requestTapePath(tapeName, currentPath);
+        if (currentPath === '/') {
             store.setNoLtfsState(tapeName, false);
         }
 
@@ -474,16 +515,44 @@ watch(
 );
 
 function handleExpandedKeys(keys: Array<string | number>) {
+    const previousExpanded = new Set(expandedKeys.value);
+    const nextExpanded = new Set(keys);
+    const collapsedRootKeys = getRootNodeKeys().filter(
+        key => previousExpanded.has(key) && !nextExpanded.has(key),
+    );
+
+    const descendantKeySet = new Set<string | number>();
+    if (collapsedRootKeys.length > 0) {
+        const collectDescendantKeys = (nodes: LocalTreeNode[]) => {
+            for (const node of nodes) {
+                descendantKeySet.add(node.key);
+                if (node.children && node.children.length > 0) {
+                    collectDescendantKeys(node.children);
+                }
+            }
+        };
+
+        for (const rootKey of collapsedRootKeys) {
+            const rootNode = data.value.find(node => node.key === rootKey);
+            if (rootNode?.children && rootNode.children.length > 0) {
+                collectDescendantKeys(rootNode.children);
+            }
+        }
+    }
+
+    const sanitizedKeys =
+        descendantKeySet.size > 0 ? keys.filter(key => !descendantKeySet.has(key)) : keys;
+
     if (props.showTapeInfo) {
         const rootKeySet = new Set(getRootNodeKeys());
-        const filtered = keys.filter(key => !rootKeySet.has(key));
+        const filtered = sanitizedKeys.filter(key => !rootKeySet.has(key));
         expandedKeys.value = filtered;
         store.setLocalIndexExpandedKeys(filtered);
         return;
     }
 
-    expandedKeys.value = keys;
-    store.setLocalIndexExpandedKeys(keys);
+    expandedKeys.value = sanitizedKeys;
+    store.setLocalIndexExpandedKeys(sanitizedKeys);
 }
 
 function renderLabel({ option }: { option: TreeOption }) {

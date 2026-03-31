@@ -46,6 +46,7 @@ const isCurrentTapeEditable = computed(() => {
 });
 const showNoLtfsCard = computed(
     () =>
+    !showTapeInfo.value &&
         isRootNodeSelected.value &&
         store.noLtfsFilesystem &&
         store.noLtfsTapeName.toLowerCase() === store.currentTapeName.toLowerCase() &&
@@ -82,15 +83,23 @@ async function navigateByPath(path: string) {
             return;
         }
 
-        const files = (((res as any).data.items || []) as any[])
+        const items = (((res as any).data.items || []) as any[]);
+        const directories = items
+            .filter((item: any) => item.type !== 'file')
+            .map((item: any) => ({
+                ...item,
+                key: item.index ?? `dir:${targetPath}:${item.name}`,
+                size: '-',
+            }));
+        const files = items
             .filter((item: any) => item.type === 'file')
             .map((item: any) => ({
                 ...item,
-                key: item.index,
+                key: item.index ?? `file:${targetPath}:${item.name}`,
                 size: formatFileSize(Number(item.size) || 0),
             }));
 
-        store.setFiles(files);
+        store.setFiles([...directories, ...files]);
         store.setCurrentPath(targetPath);
     } catch (err) {
         console.error('navigateByPath error', err);
