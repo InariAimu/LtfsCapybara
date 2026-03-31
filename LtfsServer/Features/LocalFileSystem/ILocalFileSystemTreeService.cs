@@ -1,4 +1,4 @@
-﻿namespace LtfsServer.Services;
+﻿namespace LtfsServer.Features.LocalFileSystem;
 
 public sealed record LocalFsNode(
     string Id,

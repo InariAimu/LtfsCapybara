@@ -1,4 +1,4 @@
-namespace LtfsServer.Services;
+namespace LtfsServer.BootStrap;
 
 public class AppData
 {

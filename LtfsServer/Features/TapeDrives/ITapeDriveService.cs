@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace LtfsServer.Services;
+namespace LtfsServer.Features.TapeDrives;
 
 public interface ITapeDriveService
 {

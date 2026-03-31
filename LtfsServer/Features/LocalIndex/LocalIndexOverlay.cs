@@ -1,6 +1,6 @@
-using LtfsServer.Services;
+using LtfsServer.Features.Tasks;
 
-namespace LtfsServer.API;
+namespace LtfsServer.Features.LocalIndex;
 
 internal static class LocalIndexOverlay
 {

@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
-namespace LtfsServer.Services;
+namespace LtfsServer.Features.LocalTapes;
 
 public interface ILocalTapeRegistry
 {

@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace LtfsServer.Services;
+namespace LtfsServer.Features.ServerSettings;
 
 public interface IServerSettingsService
 {

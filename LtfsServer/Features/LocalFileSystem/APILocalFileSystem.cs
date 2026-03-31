@@ -1,6 +1,4 @@
-﻿using LtfsServer.Services;
-
-namespace LtfsServer.API;
+﻿namespace LtfsServer.Features.LocalFileSystem;
 
 public static class APILocalFileSystem
 {

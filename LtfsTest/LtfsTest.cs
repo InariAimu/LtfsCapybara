@@ -8,8 +8,8 @@ using Microsoft.VisualStudio.TestPlatform.Utilities;
 using Ltfs.Label;
 using Ltfs;
 using Ltfs.Index;
-using LtfsServer.Services;
 using Microsoft.Extensions.Logging.Abstractions;
+using LtfsServer.Features.LocalTapes;
 
 namespace LtfsTest;
 

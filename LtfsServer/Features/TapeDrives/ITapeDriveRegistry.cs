@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using TapeDrive;
 
-namespace LtfsServer.Services;
+namespace LtfsServer.Features.TapeDrives;
 
 public sealed record TapeDriveInfo(string Id, string DevicePath, string DisplayName, bool IsFake);
 

@@ -1,6 +1,6 @@
 using Ltfs.Index;
 
-namespace LtfsServer.API;
+namespace LtfsServer.Features.LocalIndex;
 
 internal static class LocalIndexPath
 {

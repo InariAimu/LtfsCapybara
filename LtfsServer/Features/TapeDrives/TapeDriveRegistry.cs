@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using TapeDrive;
 
-namespace LtfsServer.Services;
+namespace LtfsServer.Features.TapeDrives;
 
 public class TapeDriveRegistry : ITapeDriveRegistry, IDisposable
 {

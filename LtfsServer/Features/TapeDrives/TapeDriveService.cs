@@ -2,11 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
+
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+
 using TapeDrive;
 
-namespace LtfsServer.Services;
+namespace LtfsServer.Features.TapeDrives;
 
 public class TapeDriveService : ITapeDriveService
 {
@@ -77,9 +79,7 @@ public class TapeDriveService : ITapeDriveService
         var drives = new List<DiscoveredDrive>();
 
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
             return drives;
-        }
 
         for (var i = 0; i < MaxTapeDeviceCount; i++)
         {
@@ -97,9 +97,7 @@ public class TapeDriveService : ITapeDriveService
                     var product = drive.Product.Trim();
                     var details = string.Join(" ", new[] { vendor, product }.Where(s => !string.IsNullOrWhiteSpace(s)));
                     if (!string.IsNullOrWhiteSpace(details))
-                    {
                         displayName = details;
-                    }
                 }
 
                 drives.Add(new DiscoveredDrive($"tape{i}", devicePath, displayName, false, drive));

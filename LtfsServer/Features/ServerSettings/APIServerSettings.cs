@@ -1,6 +1,4 @@
-using LtfsServer.Services;
-
-namespace LtfsServer.API;
+namespace LtfsServer.Features.ServerSettings;
 
 public static class APIServerSettings
 {

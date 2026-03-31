@@ -1,11 +1,17 @@
 using System;
 using System.Collections.Concurrent;
 using System.IO;
+
+using LtfsServer.BootStrap;
+using LtfsServer.Features.LocalTapes;
+
 using LtoTape;
+
 using Microsoft.Extensions.Logging;
+
 using TapeDrive;
 
-namespace LtfsServer.Services;
+namespace LtfsServer.Features.TapeDrives;
 
 public class TapeMachineService : ITapeMachineService
 {

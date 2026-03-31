@@ -1,6 +1,6 @@
 ﻿using System.Runtime.InteropServices;
 
-namespace LtfsServer.Services;
+namespace LtfsServer.Features.LocalFileSystem;
 
 public sealed class LocalFileSystemTreeService : ILocalFileSystemTreeService
 {
@@ -94,9 +94,7 @@ public sealed class LocalFileSystemTreeService : ILocalFileSystemTreeService
 
             var name = Path.GetFileName(child.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
             if (string.IsNullOrEmpty(name))
-            {
                 name = child;
-            }
 
             var hasChildren = false;
             var available = true;
@@ -178,9 +176,7 @@ public sealed class LocalFileSystemTreeService : ILocalFileSystemTreeService
     {
         var snapshot = GetNetworkCacheIfFresh();
         if (snapshot is not null)
-        {
             return snapshot;
-        }
 
         try
         {
@@ -201,9 +197,7 @@ public sealed class LocalFileSystemTreeService : ILocalFileSystemTreeService
         lock (_networkCacheLock)
         {
             if (DateTime.UtcNow - _networkCacheAtUtc <= TimeSpan.FromMinutes(NetworkCacheMinutes))
-            {
                 return _networkCache.ToList();
-            }
 
             return null;
         }
@@ -239,9 +233,7 @@ public sealed class LocalFileSystemTreeService : ILocalFileSystemTreeService
         {
             var path = NormalizeDriveRootPath(drive.Name);
             if (!discoveredPaths.Add(path))
-            {
                 continue;
-            }
 
             nodes.Add(new LocalFsNode(
                 MakeNodeId(path),
@@ -255,9 +247,7 @@ public sealed class LocalFileSystemTreeService : ILocalFileSystemTreeService
         }
 
         if (!OperatingSystem.IsWindows())
-        {
             return nodes;
-        }
 
         // Enumerate servers with timeout - NetServerEnum can block indefinitely
         IReadOnlyList<string> servers;
@@ -285,9 +275,7 @@ public sealed class LocalFileSystemTreeService : ILocalFileSystemTreeService
         }
 
         if (servers.Count > 0)
-        {
             _logger.LogDebug("Discovered servers: {Servers}", string.Join(", ", servers));
-        }
 
         foreach (var server in servers.Take(MaxServers))
         {
@@ -315,9 +303,7 @@ public sealed class LocalFileSystemTreeService : ILocalFileSystemTreeService
 
                 shares = sharesTask.Result;
                 if (shares.Count > 0)
-                {
                     _logger.LogDebug("Found {ShareCount} shares on {Server}: {Shares}", shares.Count, server, string.Join(", ", shares));
-                }
             }
             catch (OperationCanceledException)
             {
@@ -333,9 +319,7 @@ public sealed class LocalFileSystemTreeService : ILocalFileSystemTreeService
             foreach (var sharePath in shares ?? Array.Empty<string>())
             {
                 if (!discoveredPaths.Add(sharePath))
-                {
                     continue;
-                }
 
                 var label = sharePath.StartsWith("\\\\", StringComparison.Ordinal)
                     ? sharePath[2..]
@@ -357,14 +341,10 @@ public sealed class LocalFileSystemTreeService : ILocalFileSystemTreeService
     private static string NormalizeDriveRootPath(string path)
     {
         if (string.IsNullOrWhiteSpace(path))
-        {
             return path;
-        }
 
         if (path.Length == 2 && char.IsLetter(path[0]) && path[1] == ':')
-        {
             return path + @"\";
-        }
 
         return path;
     }
@@ -372,15 +352,11 @@ public sealed class LocalFileSystemTreeService : ILocalFileSystemTreeService
     private static string NormalizeAndValidatePath(string rawPath)
     {
         if (string.IsNullOrWhiteSpace(rawPath))
-        {
             throw new ArgumentException("Path is required.", nameof(rawPath));
-        }
 
         var decoded = Uri.UnescapeDataString(rawPath.Trim());
         if (decoded.Length == 2 && char.IsLetter(decoded[0]) && decoded[1] == ':')
-        {
             decoded += @"\";
-        }
 
         var candidate = decoded.StartsWith("\\\\", StringComparison.Ordinal)
             ? decoded
@@ -397,9 +373,7 @@ public sealed class LocalFileSystemTreeService : ILocalFileSystemTreeService
         }
 
         if (!Directory.Exists(normalized))
-        {
             throw new DirectoryNotFoundException($"Path does not exist: {normalized}");
-        }
 
         return normalized;
     }
@@ -412,7 +386,7 @@ public sealed class LocalFileSystemTreeService : ILocalFileSystemTreeService
     private static IReadOnlyList<string> EnumerateLanServers()
     {
         var servers = new List<string>();
-        IntPtr buffer = IntPtr.Zero;
+        nint buffer = nint.Zero;
         try
         {
             var entriesRead = 0;
@@ -431,38 +405,32 @@ public sealed class LocalFileSystemTreeService : ILocalFileSystemTreeService
                 ref resumeHandle);
 
             if (result != NERR_Success && result != ERROR_MORE_DATA)
-            {
                 // NetServerEnum failed - this is common if Browse service is not running
                 // or if the computer is not part of a workgroup/domain
                 return servers;
-            }
 
             var structSize = Marshal.SizeOf<SERVER_INFO_100>();
             for (var i = 0; i < entriesRead; i++)
             {
-                var current = IntPtr.Add(buffer, i * structSize);
+                var current = nint.Add(buffer, i * structSize);
                 var serverInfo = Marshal.PtrToStructure<SERVER_INFO_100>(current);
                 if (!string.IsNullOrWhiteSpace(serverInfo.sv100_name))
-                {
                     servers.Add(serverInfo.sv100_name);
-                }
             }
 
             return servers;
         }
         finally
         {
-            if (buffer != IntPtr.Zero)
-            {
+            if (buffer != nint.Zero)
                 NetApiBufferFree(buffer);
-            }
         }
     }
 
     private static IReadOnlyList<string> EnumerateDiskShares(string serverName, int limit)
     {
         var shares = new List<string>();
-        IntPtr buffer = IntPtr.Zero;
+        nint buffer = nint.Zero;
 
         try
         {
@@ -485,28 +453,22 @@ public sealed class LocalFileSystemTreeService : ILocalFileSystemTreeService
                 ref resumeHandle);
 
             if (result != NERR_Success && result != ERROR_MORE_DATA)
-            {
                 // Common error codes:
                 // 5 = ERROR_ACCESS_DENIED
                 // 53 = ERROR_BAD_NETPATH (network path not found)
                 // 124 = ERROR_INVALID_LEVEL
                 return shares;
-            }
 
             var structSize = Marshal.SizeOf<SHARE_INFO_1>();
             for (var i = 0; i < entriesRead && shares.Count < limit; i++)
             {
-                var current = IntPtr.Add(buffer, i * structSize);
+                var current = nint.Add(buffer, i * structSize);
                 var shareInfo = Marshal.PtrToStructure<SHARE_INFO_1>(current);
                 if (shareInfo.shi1_type != STYPE_DISKTREE)
-                {
                     continue;
-                }
 
                 if (string.IsNullOrWhiteSpace(shareInfo.shi1_netname) || shareInfo.shi1_netname.EndsWith("$", StringComparison.Ordinal))
-                {
                     continue;
-                }
 
                 shares.Add($"{uncServerName}\\{shareInfo.shi1_netname}");
             }
@@ -515,10 +477,8 @@ public sealed class LocalFileSystemTreeService : ILocalFileSystemTreeService
         }
         finally
         {
-            if (buffer != IntPtr.Zero)
-            {
+            if (buffer != nint.Zero)
                 NetApiBufferFree(buffer);
-            }
         }
     }
 
@@ -548,7 +508,7 @@ public sealed class LocalFileSystemTreeService : ILocalFileSystemTreeService
     private static extern int NetServerEnum(
         string? servername,
         int level,
-        out IntPtr bufptr,
+        out nint bufptr,
         int prefmaxlen,
         ref int entriesread,
         ref int totalentries,
@@ -560,12 +520,12 @@ public sealed class LocalFileSystemTreeService : ILocalFileSystemTreeService
     private static extern int NetShareEnum(
         string? servername,
         int level,
-        out IntPtr bufptr,
+        out nint bufptr,
         int prefmaxlen,
         ref int entriesread,
         ref int totalentries,
         ref int resume_handle);
 
     [DllImport("Netapi32.dll")]
-    private static extern int NetApiBufferFree(IntPtr buffer);
+    private static extern int NetApiBufferFree(nint buffer);
 }

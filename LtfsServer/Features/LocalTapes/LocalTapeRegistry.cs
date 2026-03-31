@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using LtoTape;
 
-namespace LtfsServer.Services;
+namespace LtfsServer.Features.LocalTapes;
 
 public sealed class LocalTapeRegistry : ILocalTapeRegistry
 {

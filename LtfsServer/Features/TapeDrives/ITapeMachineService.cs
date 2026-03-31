@@ -1,6 +1,6 @@
 using LtoTape;
 
-namespace LtfsServer.Services;
+namespace LtfsServer.Features.TapeDrives;
 
 public enum TapeMachineState
 {

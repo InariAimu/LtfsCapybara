@@ -1,118 +1,10 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
+
 using Ltfs;
 
-namespace LtfsServer.Services;
+using LtfsServer.BootStrap;
 
-public interface ITaskGroupService
-{
-    IReadOnlyList<TapeFsTaskGroup> ListGroups();
-    TapeFsTaskGroup GetOrCreateGroup(string tapeBarcode);
-    TapeFsTaskGroup RenameGroup(string tapeBarcode, string name);
-    TapeFsTaskGroup AddTask(string tapeBarcode, TapeFsTaskCreateRequest request);
-    TapeFsTaskGroup AddServerFolderTask(string tapeBarcode, AddTapeFsServerFolderTaskRequest request);
-    TapeFsTaskGroup AddFormatTask(string tapeBarcode, FormatTask? formatTask = null);
-    TapeFsTaskGroup DeleteTask(string tapeBarcode, string taskId);
-}
-
-public static class TapeFsTaskType
-{
-    public const string Add = "add";
-    public const string Rename = "rename";
-    public const string Update = "update";
-    public const string Delete = "delete";
-    public const string Read = "read";
-    public const string Format = "format";
-
-    public static bool IsValid(string type)
-    {
-        return type is Add or Rename or Update or Delete or Read or Format;
-    }
-}
-
-public static class TapeFsLegacyTaskType
-{
-    public const string Write = "write";
-    public const string Replace = "replace";
-    public const string Folder = "folder";
-}
-
-public sealed class TapeFsPathTask
-{
-    public bool IsDirectory { get; set; }
-    public string Operation { get; set; } = TapeFsTaskType.Add;
-    public string Path { get; set; } = "/";
-    public string? NewPath { get; set; }
-    public string LocalPath { get; set; } = string.Empty;
-}
-
-public sealed class TapeFsTaskGroup
-{
-    public string TapeBarcode { get; set; } = string.Empty;
-    public string Name { get; set; } = string.Empty;
-    public List<TapeFsTask> Tasks { get; set; } = [];
-    public long UpdatedAtTicks { get; set; }
-}
-
-public sealed class TapeFsTask
-{
-    public string Id { get; set; } = Guid.NewGuid().ToString("N");
-    public string Type { get; set; } = string.Empty;
-    public string TapeBarcode { get; set; } = string.Empty;
-    public TapeFsPathTask? PathTask { get; set; }
-    public ReadTask? ReadTask { get; set; }
-    public FormatTask? FormatTask { get; set; }
-    public long CreatedAtTicks { get; set; } = DateTime.UtcNow.Ticks;
-
-    // Legacy fields are kept for backward-compatible loading of persisted JSON.
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public WriteTask? WriteTask { get; set; }
-
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public TapeFsDirectoryTask? FolderTask { get; set; }
-}
-
-public sealed class TapeFsWriteTaskRequest
-{
-    public string? TaskType { get; set; }
-    public string LocalPath { get; set; } = string.Empty;
-    public string TargetPath { get; set; } = string.Empty;
-}
-
-public sealed class TapeFsDirectoryTask
-{
-    public string TaskType { get; set; } = TapeFsTaskType.Add;
-    public string Path { get; set; } = "/";
-}
-
-public sealed class TapeFsTaskCreateRequest
-{
-    public string Type { get; set; } = string.Empty;
-    public string TapeBarcode { get; set; } = string.Empty;
-    public TapeFsPathTask? PathTask { get; set; }
-    public ReadTask? ReadTask { get; set; }
-    public FormatTask? FormatTask { get; set; }
-
-    // Legacy request payloads for compatibility with existing clients.
-    public TapeFsWriteTaskRequest? WriteTask { get; set; }
-    public TapeFsDirectoryTask? FolderTask { get; set; }
-}
-
-public sealed class AddTapeFsServerFolderTaskRequest
-{
-    public string LocalPath { get; set; } = string.Empty;
-    public string TargetPath { get; set; } = string.Empty;
-}
-
-public sealed class RenameTapeFsTaskGroupRequest
-{
-    public string Name { get; set; } = string.Empty;
-}
-
-public sealed class AddTapeFsFormatTaskRequest
-{
-    public FormatTask? FormatTask { get; set; }
-}
+namespace LtfsServer.Features.Tasks;
 
 public sealed class TaskGroupService : ITaskGroupService
 {
@@ -162,9 +54,7 @@ public sealed class TaskGroupService : ITaskGroupService
             var key = NormalizeBarcode(tapeBarcode);
             var normalizedName = (name ?? string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(normalizedName))
-            {
                 throw new ArgumentException("Task group name is required.");
-            }
 
             var group = GetOrCreateGroupCore(key);
             group.Name = normalizedName;
@@ -235,9 +125,7 @@ public sealed class TaskGroupService : ITaskGroupService
                 FormatParam = new FormatParam(),
             };
             if (string.IsNullOrWhiteSpace(safeFormatTask.FormatParam.Barcode))
-            {
                 safeFormatTask.FormatParam.Barcode = key;
-            }
 
             var task = new TapeFsTask
             {
@@ -263,20 +151,14 @@ public sealed class TaskGroupService : ITaskGroupService
             var key = NormalizeBarcode(tapeBarcode);
             var normalizedTaskId = (taskId ?? string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(normalizedTaskId))
-            {
                 throw new ArgumentException("Task id is required.");
-            }
 
             if (!_groups.TryGetValue(key, out var group))
-            {
                 throw new KeyNotFoundException($"Task group for tape '{key}' was not found.");
-            }
 
             var removed = group.Tasks.RemoveAll(t => string.Equals(t.Id, normalizedTaskId, StringComparison.OrdinalIgnoreCase));
             if (removed == 0)
-            {
                 throw new KeyNotFoundException($"Task '{normalizedTaskId}' was not found.");
-            }
 
             group.UpdatedAtTicks = DateTime.UtcNow.Ticks;
             ValidateGroup(group, validateLocalPaths: false);
@@ -308,9 +190,7 @@ public sealed class TaskGroupService : ITaskGroupService
                 FormatParam = new FormatParam(),
             };
             if (string.IsNullOrWhiteSpace(formatTask.FormatParam.Barcode))
-            {
                 formatTask.FormatParam.Barcode = group.TapeBarcode;
-            }
 
             task.FormatTask = formatTask;
             return task;
@@ -323,75 +203,10 @@ public sealed class TaskGroupService : ITaskGroupService
 
     private static TapeFsPathTask BuildPathTask(string type, TapeFsTaskCreateRequest request)
     {
-        var pathTask = request.PathTask ?? BuildLegacyPathTask(type, request.WriteTask, request.FolderTask);
-        if (pathTask is null)
-        {
+        if (request.PathTask is null)
             throw new ArgumentException("Path task payload is required.");
-        }
 
-        return pathTask;
-    }
-
-    private static TapeFsPathTask? BuildLegacyPathTask(string type, TapeFsWriteTaskRequest? writeTask, TapeFsDirectoryTask? folderTask)
-    {
-        if (folderTask is not null)
-        {
-            return new TapeFsPathTask
-            {
-                IsDirectory = true,
-                Operation = folderTask.TaskType,
-                Path = folderTask.Path,
-            };
-        }
-
-        if (writeTask is null)
-        {
-            return null;
-        }
-
-        return new TapeFsPathTask
-        {
-            IsDirectory = false,
-            Operation = ResolveLegacyWriteOperation(type, writeTask.TaskType),
-            Path = writeTask.TargetPath,
-            LocalPath = writeTask.LocalPath,
-        };
-    }
-
-    private static string ResolveLegacyWriteOperation(string type, string? writeTaskType)
-    {
-        var operation = type switch
-        {
-            TapeFsLegacyTaskType.Write => TapeFsTaskType.Add,
-            TapeFsLegacyTaskType.Replace => TapeFsTaskType.Update,
-            TapeFsTaskType.Delete => TapeFsTaskType.Delete,
-            _ => type,
-        };
-
-        if (string.IsNullOrWhiteSpace(writeTaskType))
-        {
-            return operation;
-        }
-
-        if (!Enum.TryParse<FileTaskType>(writeTaskType.Trim(), true, out var parsed))
-        {
-            throw new ArgumentException($"Unsupported write taskType '{writeTaskType}'.");
-        }
-
-        var fromWriteTaskType = parsed switch
-        {
-            FileTaskType.Write => TapeFsTaskType.Add,
-            FileTaskType.Replace => TapeFsTaskType.Update,
-            FileTaskType.Delete => TapeFsTaskType.Delete,
-            _ => throw new ArgumentException($"Unsupported write taskType '{writeTaskType}'."),
-        };
-
-        if (!string.Equals(fromWriteTaskType, operation, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new ArgumentException($"Write taskType '{writeTaskType}' does not match task type '{type}'.");
-        }
-
-        return operation;
+        return request.PathTask;
     }
 
     private static TapeFsPathTask NormalizePathTask(TapeFsPathTask pathTask, string expectedType, bool validateLocalPath)
@@ -402,9 +217,7 @@ public sealed class TaskGroupService : ITaskGroupService
         {
             pathTask.Path = NormalizeFolderPath(pathTask.Path);
             if (pathTask.Operation == TapeFsTaskType.Rename)
-            {
                 pathTask.NewPath = NormalizeFolderPath(pathTask.NewPath ?? string.Empty);
-            }
             else
             {
                 pathTask.NewPath = null;
@@ -414,9 +227,7 @@ public sealed class TaskGroupService : ITaskGroupService
                 ? string.Empty
                 : NormalizeLocalPathLoose(pathTask.LocalPath);
             if (pathTask.Operation == TapeFsTaskType.Update)
-            {
                 pathTask.Operation = TapeFsTaskType.Rename;
-            }
             return pathTask;
         }
 
@@ -498,9 +309,7 @@ public sealed class TaskGroupService : ITaskGroupService
     private TapeFsTaskGroup GetOrCreateGroupCore(string tapeBarcode)
     {
         if (_groups.TryGetValue(tapeBarcode, out var existing))
-        {
             return existing;
-        }
 
         var now = DateTime.UtcNow.Ticks;
         var group = new TapeFsTaskGroup
@@ -518,9 +327,7 @@ public sealed class TaskGroupService : ITaskGroupService
     private static void EnsureNoFormatTask(TapeFsTaskGroup group)
     {
         if (group.Tasks.Any(t => string.Equals(t.Type, TapeFsTaskType.Format, StringComparison.OrdinalIgnoreCase)))
-        {
             throw new InvalidOperationException("Format task already exists for this tape.");
-        }
     }
 
     private static bool IsPathTaskType(string type)
@@ -532,9 +339,7 @@ public sealed class TaskGroupService : ITaskGroupService
     {
         var normalized = (tapeBarcode ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(normalized))
-        {
             throw new ArgumentException("Tape barcode is required.");
-        }
 
         return normalized;
     }
@@ -551,9 +356,7 @@ public sealed class TaskGroupService : ITaskGroupService
         };
 
         if (!TapeFsTaskType.IsValid(normalized))
-        {
             throw new ArgumentException($"Unsupported task type '{type}'.");
-        }
 
         return normalized;
     }
@@ -562,14 +365,10 @@ public sealed class TaskGroupService : ITaskGroupService
     {
         var normalized = NormalizeTaskType(operation);
         if (!string.Equals(normalized, expectedType, StringComparison.OrdinalIgnoreCase))
-        {
             throw new ArgumentException($"Path task operation '{operation}' does not match task type '{expectedType}'.");
-        }
 
         if (!IsPathTaskType(normalized))
-        {
             throw new ArgumentException($"Task type '{expectedType}' does not support path task payload.");
-        }
 
         return normalized;
     }
@@ -578,9 +377,7 @@ public sealed class TaskGroupService : ITaskGroupService
     {
         var normalized = (path ?? string.Empty).Trim().Replace('\\', '/');
         if (string.IsNullOrWhiteSpace(normalized))
-        {
             throw new ArgumentException("Folder path is required.");
-        }
 
         normalized = normalized == "/" ? "/" : normalized.Trim('/');
         normalized = normalized == "/" ? "/" : "/" + normalized;
@@ -597,9 +394,7 @@ public sealed class TaskGroupService : ITaskGroupService
     {
         var normalized = NormalizeFolderPath(path);
         if (normalized == "/")
-        {
             throw new ArgumentException("File target path cannot be root.");
-        }
 
         return normalized;
     }
@@ -608,15 +403,11 @@ public sealed class TaskGroupService : ITaskGroupService
     {
         var trimmed = (path ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(trimmed))
-        {
             throw new ArgumentException("Local directory path is required.");
-        }
 
         var normalized = Path.GetFullPath(trimmed);
         if (!Directory.Exists(normalized))
-        {
             throw new DirectoryNotFoundException($"Directory '{trimmed}' was not found.");
-        }
 
         return normalized;
     }
@@ -625,15 +416,11 @@ public sealed class TaskGroupService : ITaskGroupService
     {
         var trimmed = (path ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(trimmed))
-        {
             throw new ArgumentException("Local file path is required.");
-        }
 
         var normalized = Path.GetFullPath(trimmed);
         if (!File.Exists(normalized))
-        {
             throw new FileNotFoundException($"File '{trimmed}' was not found.", normalized);
-        }
 
         return normalized;
     }
@@ -648,9 +435,7 @@ public sealed class TaskGroupService : ITaskGroupService
     {
         var trimmed = (path ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(trimmed))
-        {
             throw new ArgumentException("Local file path is required.");
-        }
 
         return Path.GetFullPath(trimmed);
     }
@@ -660,9 +445,7 @@ public sealed class TaskGroupService : ITaskGroupService
         var normalizedParent = NormalizeFolderPath(parentPath);
         var trimmedChild = (childName ?? string.Empty).Trim().Replace('\\', '/').Trim('/');
         if (string.IsNullOrWhiteSpace(trimmedChild))
-        {
             throw new ArgumentException("Path segment is required.");
-        }
 
         return normalizedParent == "/" ? "/" + trimmedChild : normalizedParent + "/" + trimmedChild;
     }
@@ -680,9 +463,7 @@ public sealed class TaskGroupService : ITaskGroupService
         }
 
         if (task.WriteTask is null)
-        {
             return null;
-        }
 
         var operation = task.WriteTask.TaskType switch
         {
@@ -710,21 +491,15 @@ public sealed class TaskGroupService : ITaskGroupService
             .ToArray();
 
         if (formatIndexes.Length > 1)
-        {
             throw new InvalidOperationException("Format task must be unique in a tape task group.");
-        }
 
         if (formatIndexes.Length == 1 && formatIndexes[0] != 0)
-        {
             throw new InvalidOperationException("Format task must be the first task in the tape task group.");
-        }
 
         foreach (var task in group.Tasks)
         {
             if (!string.Equals(task.TapeBarcode, group.TapeBarcode, StringComparison.OrdinalIgnoreCase))
-            {
                 throw new InvalidOperationException("Task barcode must match task group barcode.");
-            }
 
             task.Type = NormalizeTaskType(task.Type);
 
@@ -736,9 +511,7 @@ public sealed class TaskGroupService : ITaskGroupService
             }
 
             if (task.Type == TapeFsTaskType.Read)
-            {
                 task.ReadTask ??= new ReadTask();
-            }
 
             if (task.Type == TapeFsTaskType.Format)
             {
@@ -747,9 +520,7 @@ public sealed class TaskGroupService : ITaskGroupService
                     FormatParam = new FormatParam(),
                 };
                 if (string.IsNullOrWhiteSpace(task.FormatTask.FormatParam.Barcode))
-                {
                     task.FormatTask.FormatParam.Barcode = group.TapeBarcode;
-                }
             }
 
             task.WriteTask = null;
@@ -762,29 +533,21 @@ public sealed class TaskGroupService : ITaskGroupService
         lock (_syncRoot)
         {
             if (!File.Exists(_storePath))
-            {
                 return;
-            }
 
             var json = File.ReadAllText(_storePath);
             if (string.IsNullOrWhiteSpace(json))
-            {
                 return;
-            }
 
             var groups = JsonSerializer.Deserialize<List<TapeFsTaskGroup>>(json);
             if (groups is null)
-            {
                 return;
-            }
 
             _groups.Clear();
             foreach (var group in groups)
             {
                 if (string.IsNullOrWhiteSpace(group.TapeBarcode))
-                {
                     continue;
-                }
 
                 group.TapeBarcode = NormalizeBarcode(group.TapeBarcode);
                 group.Name = string.IsNullOrWhiteSpace(group.Name) ? group.TapeBarcode : group.Name.Trim();

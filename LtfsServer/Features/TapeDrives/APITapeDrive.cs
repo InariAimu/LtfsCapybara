@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Builder;
-using LtfsServer.Services;
 
-namespace LtfsServer.API;
+namespace LtfsServer.Features.TapeDrives;
 
 public static class APITapeDrive
 {

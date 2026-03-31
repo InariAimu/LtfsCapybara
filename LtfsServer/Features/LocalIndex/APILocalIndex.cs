@@ -1,10 +1,12 @@
 using Microsoft.AspNetCore.Builder;
-using LtfsServer.Services;
 using Ltfs;
 using Ltfs.Index;
 using LtoTape;
+using LtfsServer.Features.LocalTapes;
+using LtfsServer.Features.Tasks;
+using LtfsServer.BootStrap;
 
-namespace LtfsServer.API;
+namespace LtfsServer.Features.LocalIndex;
 
 public static class APILocalIndex
 {
