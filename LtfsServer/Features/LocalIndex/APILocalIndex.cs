@@ -54,7 +54,7 @@ public static class APILocalIndex
                     cartridgeMemory.FromBinaryFile(cmPath);
                 else
                     cartridgeMemory.FromLcgCmFile(cmPath);
-                return Results.Ok(cartridgeMemory);
+                return Results.Ok(CartridgeMemoryDto.From(cartridgeMemory));
             }
             catch (Exception ex)
             {

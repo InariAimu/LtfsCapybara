@@ -2,13 +2,14 @@
 import type { MenuOption } from 'naive-ui';
 import type { Component } from 'vue';
 import {
-    HomeOutline,
+    Home,
     SettingsOutline,
     FileTrayFullSharp,
     FileTraySharp,
     FileTrayStackedSharp,
     SwapVerticalOutline,
     DocumentTextSharp,
+    Fish,
 } from '@vicons/ionicons5';
 import { NIcon, NMenu, NLayoutSider } from 'naive-ui';
 import { h, ref, computed, onMounted } from 'vue';
@@ -69,7 +70,7 @@ const menuOptions = computed<MenuOption[]>(() => [
     {
         label: t('menu.overview'),
         key: 'overview',
-        icon: renderIcon(HomeOutline),
+        icon: renderIcon(Home),
     },
     {
         label: t('menu.tapeMachine'),
@@ -97,6 +98,11 @@ const menuOptions = computed<MenuOption[]>(() => [
         label: t('menu.task'),
         key: 'task',
         icon: renderIcon(SwapVerticalOutline),
+    },
+    {
+        label: t('menu.aiChat'),
+        key: 'ai-chat',
+        icon: renderIcon(Fish),
     },
     {
         label: t('menu.settings'),

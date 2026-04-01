@@ -16,6 +16,7 @@
         ltfs: 'LTFS',
         localIndex: 'Local Index',
         task: 'Task',
+        aiChat: 'AI Chat',
         settings: 'Settings',
     },
     messages: {

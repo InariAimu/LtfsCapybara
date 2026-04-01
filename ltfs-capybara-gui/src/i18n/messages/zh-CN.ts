@@ -16,6 +16,7 @@ export default {
         ltfs: 'LTFS',
         localIndex: '本地索引',
         task: '任务',
+        aiChat: 'AI 对话',
         settings: '设置',
     },
     messages: {

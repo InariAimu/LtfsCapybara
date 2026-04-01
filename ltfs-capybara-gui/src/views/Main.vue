@@ -11,6 +11,7 @@ import TapeMachine from './TapeMachine.vue';
 import TapeLibrary from './TapeLibrary.vue';
 import Ltfs from './Ltfs.vue';
 import Task from './Task.vue';
+import AIChat from './AIChat.vue';
 
 const { t } = useI18n();
 const selectedMenuKey = ref<string>('overview');
@@ -36,6 +37,8 @@ const currentPageComponent = computed(() => {
             return LocalIndex;
         case 'task':
             return Task;
+        case 'ai-chat':
+            return AIChat;
         case 'tape-library':
             return TapeLibrary;
         case 'ltfs':
