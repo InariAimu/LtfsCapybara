@@ -8,6 +8,7 @@ using LtfsServer.Features.LocalIndex;
 using LtfsServer.Features.LocalFileSystem;
 using LtfsServer.Features.ServerSettings;
 using LtfsServer.Features.Tasks;
+using LtfsServer.Features.AI;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -35,6 +36,9 @@ builder.Services.AddSingleton<ILocalFileSystemTreeService, LocalFileSystemTreeSe
 // Register server settings service (read/write appsettings.json)
 builder.Services.AddSingleton<IServerSettingsService, ServerSettingsService>();
 builder.Services.AddSingleton<ITaskGroupService, TaskGroupService>();
+builder.Services.AddHttpClient("AiServerProxy");
+builder.Services.AddSingleton<IAiToolCallService, AiToolCallService>();
+builder.Services.AddSingleton<IAiChatProxyService, AiChatProxyService>();
 
 var app = builder.Build();
 
@@ -76,6 +80,8 @@ app.MapLocalFileSystemApi();
 app.MapServerSettingsApi();
 // Register task group API endpoints
 app.MapTasksApi();
+// Register AI chat proxy API endpoints
+app.MapAiApi();
 
 // Initialize local tape registry from AppData.Path/local before starting
 var localRegistry = app.Services.GetRequiredService<ILocalTapeRegistry>();

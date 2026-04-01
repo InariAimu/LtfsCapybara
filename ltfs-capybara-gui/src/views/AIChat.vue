@@ -1,51 +1,416 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, nextTick, ref } from 'vue';
 import { marked } from 'marked';
-import { NButton, NCard, NInput, NSelect, NScrollbar, NTag } from 'naive-ui';
+import { NButton, NCard, NInput, NSelect, NScrollbar, NTag, NSpin } from 'naive-ui';
 
 type ChatRole = 'assistant' | 'user';
+type DeltaType = 'reasoning' | 'answering' | 'tool';
 
 interface ChatMessage {
     id: number;
     role: ChatRole;
     content: string;
     html?: string;
+    isStreaming?: boolean;
+    blobType?: DeltaType;
+    isCollapsed?: boolean;
+}
+
+interface OpenAiMessage {
+    role: 'assistant' | 'user';
+    content: string;
+}
+
+interface OpenAiStreamChunk {
+    choices?: Array<{
+        delta?: {
+            content?: string;
+            reasoning?: string;
+            reasoning_content?: string;
+            tool_calls?: OpenAiToolCallDelta[];
+        };
+    }>;
+}
+
+interface OpenAiToolCallDelta {
+    index?: number;
+    id?: string;
+    type?: string;
+    function?: {
+        name?: string;
+        arguments?: string;
+    };
+}
+
+interface ParsedSseEvent {
+    dataLines: string[];
+}
+
+type StreamRaw = OpenAiStreamChunk & {
+    id: string;
+    object: string;
+    created: number;
+    model: string;
+    system_fingerprint?: string;
+    logprobs?: unknown;
+    finish_reason?: string;
+};
+
+interface StreamUpdate {
+    raw?: StreamRaw;
+    deltaText?: string;
+    deltaType?: DeltaType;
+    done?: boolean;
 }
 
 const modelOptions = [
+    { label: 'DeepSeek Chat', value: 'deepseek-chat' },
     { label: 'GPT-5.3-Codex', value: 'gpt-5.3-codex' },
     { label: 'GPT-4.1', value: 'gpt-4.1' },
     { label: 'o4-mini', value: 'o4-mini' },
 ];
 
-const selectedModel = ref('gpt-5.3-codex');
+const selectedModel = ref('deepseek-chat');
 const prompt = ref('');
 const isSending = ref(false);
-const nextMessageId = ref(2);
-const messages = ref<ChatMessage[]>([
-    {
-        id: 1,
-        role: 'assistant',
-        content: 'AI Chat is ready. Request and result parsing are currently placeholder logic.',
-    },
-]);
+const nextMessageId = ref(0);
+const messages = ref<ChatMessage[]>([]);
+const chatEndRef = ref<HTMLElement | null>(null);
 
 const canSend = computed(() => prompt.value.trim().length > 0 && !isSending.value);
+const canResend = computed(() => findLastUserMessage() !== null && !isSending.value);
+const showPendingAssistantBubble = computed(() => {
+    if (!isSending.value) {
+        return false;
+    }
 
-function buildRequestPayload(input: string) {
+    return !messages.value.some(item => item.role === 'assistant' && item.isStreaming);
+});
+
+function getAssistantBlobTitle(blobType?: DeltaType) {
+    switch (blobType) {
+        case 'reasoning':
+            return 'Reasoning';
+        case 'tool':
+            return 'Tool Calling';
+        case 'answering':
+            return 'Answer';
+        default:
+            return 'Assistant';
+    }
+}
+
+function getAssistantBlobClass(blobType?: DeltaType) {
+    switch (blobType) {
+        case 'reasoning':
+            return 'blob-reasoning';
+        case 'tool':
+            return 'blob-tool';
+        case 'answering':
+            return 'blob-answer';
+        default:
+            return 'blob-default';
+    }
+}
+
+function isCollapsibleBlob(message: ChatMessage) {
+    return message.role === 'assistant' && (message.blobType === 'reasoning' || message.blobType === 'tool');
+}
+
+function toggleBlobCollapse(message: ChatMessage) {
+    if (!isCollapsibleBlob(message)) {
+        return;
+    }
+
+    message.isCollapsed = !message.isCollapsed;
+}
+
+function scrollChatToBottom() {
+    nextTick(() => {
+        chatEndRef.value?.scrollIntoView({ block: 'end' });
+    });
+}
+
+function buildRequestPayload(sourceMessages: OpenAiMessage[]) {
     return {
         model: selectedModel.value,
-        input,
-        context: messages.value,
+        messages: sourceMessages,
+        thinking: {
+            type: 'enabled',
+        },
+        stream: true,
     };
 }
 
-const markdown = ref('');
+function toOpenAiMessages(chatMessages: ChatMessage[]): OpenAiMessage[] {
+    return chatMessages.map(item => ({
+        role: item.role,
+        content: item.content,
+    }));
+}
 
-function parseAssistantResult(rawResponse: unknown): string {
-    void rawResponse;
-    markdown.value = "placeholder";
-    return marked.parse(markdown.value, { async: false }) as string;
+function findLastUserMessage() {
+    for (let i = messages.value.length - 1; i >= 0; i -= 1) {
+        if (messages.value[i].role === 'user') {
+            return messages.value[i];
+        }
+    }
+
+    return null;
+}
+
+function parseSseEvents(buffer: string) {
+    const chunks = buffer.split(/\r?\n\r?\n/);
+    const pending = chunks.pop() ?? '';
+
+    return {
+        pending,
+        events: chunks,
+    };
+}
+
+function parseSseEvent(eventText: string): ParsedSseEvent {
+    const lines = eventText.split(/\r?\n/);
+    const dataLines: string[] = [];
+
+    for (const raw of lines) {
+        const line = raw.replace(/\r$/, '');
+        if (!line) {
+            continue;
+        }
+
+        if (line.startsWith('data:')) {
+            const data = line.slice(5);
+            dataLines.push(data.startsWith(' ') ? data.slice(1) : data);
+        }
+    }
+
+    return { dataLines };
+}
+
+function readUpdatesFromEvent(eventText: string): StreamUpdate[] {
+    const parsedEvent = parseSseEvent(eventText);
+    const updates: StreamUpdate[] = [];
+
+    for (const payload of parsedEvent.dataLines) {
+        if (!payload) {
+            continue;
+        }
+
+        if (payload === '[DONE]') {
+            updates.push({ done: true });
+            continue;
+        }
+
+        let chunk: StreamRaw | null = null;
+        try {
+            chunk = JSON.parse(payload) as StreamRaw;
+        } catch {
+            // Some providers emit plain text chunks in data lines.
+            updates.push({ deltaText: payload });
+            continue;
+        }
+
+        const delta = chunk.choices?.[0]?.delta;
+        if (!delta) {
+            continue;
+        }
+
+        const reasoningText =
+            typeof delta.reasoning_content === 'string'
+                ? delta.reasoning_content
+                : typeof delta.reasoning === 'string'
+                  ? delta.reasoning
+                  : '';
+        if (reasoningText.length > 0) {
+            updates.push({ raw: chunk, deltaText: reasoningText, deltaType: 'reasoning' });
+        }
+
+        if (Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0) {
+            updates.push({
+                raw: chunk,
+                deltaText: renderToolCallDelta(delta.tool_calls),
+                deltaType: 'tool',
+            });
+        }
+
+        if (typeof delta.content === 'string' && delta.content.length > 0) {
+            updates.push({ raw: chunk, deltaText: delta.content, deltaType: 'answering' });
+        }
+    }
+
+    return updates;
+}
+
+function renderToolCallDelta(toolCalls: OpenAiToolCallDelta[]) {
+    const rows: string[] = [];
+
+    for (const item of toolCalls) {
+        const indexLabel = (item.index ?? 0) + 1;
+        const callId = item.id ? ` id=${item.id}` : '';
+        const nameDelta = item.function?.name ?? '';
+        const argsDelta = item.function?.arguments ?? '';
+        const detail = [nameDelta ?? '', argsDelta ?? ''].filter(Boolean).join();
+        rows.push(`${detail ? `${detail}` : ''}`);
+    }
+    return rows.join();
+}
+
+function createAssistantMessage(blobType?: DeltaType) {
+    const message: ChatMessage = {
+        id: ++nextMessageId.value,
+        role: 'assistant',
+        content: '',
+        html: '',
+        isStreaming: true,
+        blobType,
+        isCollapsed: false,
+    };
+    messages.value.push(message);
+    // Return the reactive proxy Vue created when the object was pushed,
+    // not the original plain object — mutations must go through the proxy.
+    return messages.value[messages.value.length - 1];
+}
+
+function parseMarkdown(content: string) {
+    return marked.parse(content, { async: false }) as string;
+}
+
+function finalizeAssistantMessage(message: ChatMessage | null) {
+    if (!message) {
+        return;
+    }
+
+    message.isStreaming = false;
+    message.html = parseMarkdown(message.content);
+}
+
+async function streamChat(
+    payload: ReturnType<typeof buildRequestPayload>,
+    onUpdate: (update: StreamUpdate) => void,
+) {
+    const response = await fetch('http://localhost:5003/api/ai/resend', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `Request failed (${response.status})`);
+    }
+
+    if (!response.body) {
+        throw new Error('Missing response body from AI stream');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let sseBuffer = '';
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+            break;
+        }
+
+        sseBuffer += decoder.decode(value, { stream: true });
+        const parsed = parseSseEvents(sseBuffer);
+        sseBuffer = parsed.pending;
+
+        for (const eventText of parsed.events) {
+            const updates = readUpdatesFromEvent(eventText);
+            for (const update of updates) {
+                onUpdate(update);
+            }
+        }
+    }
+
+    sseBuffer += decoder.decode();
+    if (sseBuffer.trim()) {
+        const updates = readUpdatesFromEvent(sseBuffer);
+        for (const update of updates) {
+            onUpdate(update);
+        }
+    }
+}
+
+async function sendWithContext(baseContext: ChatMessage[], userInput?: string) {
+    if (isSending.value) {
+        return;
+    }
+
+    if (userInput) {
+        messages.value.push({
+            id: ++nextMessageId.value,
+            role: 'user',
+            content: userInput,
+        });
+        scrollChatToBottom();
+    }
+
+    const allBlobs: ChatMessage[] = [];
+    isSending.value = true;
+
+    try {
+        const source = [...baseContext];
+        if (userInput) {
+            source.push({
+                id: -1,
+                role: 'user',
+                content: userInput,
+            });
+        }
+
+        // Tracks the last (type, blob) per stream ID to detect type transitions.
+        const streamState = new Map<string, { type: DeltaType; blob: ChatMessage }>();
+
+        const payload = buildRequestPayload(toOpenAiMessages(source));
+        await streamChat(payload, update => {
+            if (update.deltaText && update.deltaType) {
+                const rawId = update.raw?.id ?? '__default__';
+                const current = streamState.get(rawId);
+                if (!current || current.type !== update.deltaType) {
+                    const blob = createAssistantMessage(update.deltaType);
+                    streamState.set(rawId, { type: update.deltaType, blob });
+                    allBlobs.push(blob);
+                }
+
+                if (update.deltaType === 'tool') {
+                    console.log('Received tool call delta:', update.raw);
+                }
+
+                streamState.get(rawId)!.blob.content += update.deltaText;
+                scrollChatToBottom();
+            }
+        });
+
+        for (const blob of allBlobs) {
+            finalizeAssistantMessage(blob);
+        }
+
+        if (allBlobs.length === 0) {
+            const fallback = createAssistantMessage();
+            fallback.content = 'No content returned from AI server.';
+            fallback.isStreaming = false;
+            fallback.html = parseMarkdown(fallback.content);
+            scrollChatToBottom();
+        }
+    } catch (error) {
+        for (const blob of allBlobs) {
+            finalizeAssistantMessage(blob);
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        const failure = createAssistantMessage();
+        failure.content = `Request failed: ${message}`;
+        failure.isStreaming = false;
+        failure.html = parseMarkdown(failure.content);
+        scrollChatToBottom();
+    } finally {
+        isSending.value = false;
+    }
 }
 
 async function handleSend() {
@@ -54,44 +419,30 @@ async function handleSend() {
         return;
     }
 
-    messages.value.push({
-        id: ++nextMessageId.value,
-        role: 'user',
-        content: input,
-    });
-
+    const context = [...messages.value];
     prompt.value = '';
-    isSending.value = true;
+    await sendWithContext(context, input);
+}
 
-    try {
-        const payload = buildRequestPayload(input);
-        void payload;
-
-        await new Promise(resolve => setTimeout(resolve, 450));
-
-        const placeholderRaw = { ok: true, data: null };
-        const parsed = parseAssistantResult(placeholderRaw);
-
-        messages.value.push({
-            id: ++nextMessageId.value,
-            role: 'assistant',
-            content: markdown.value,
-            html: parsed,
-        });
-    } finally {
-        isSending.value = false;
+async function handleResend() {
+    const lastUser = findLastUserMessage();
+    if (!lastUser || isSending.value) {
+        return;
     }
+
+    const lastUserIndex = messages.value.findIndex(item => item.id === lastUser.id);
+    if (lastUserIndex < 0) {
+        return;
+    }
+
+    const context = messages.value.slice(0, lastUserIndex + 1);
+    await sendWithContext(context);
 }
 
 function handleClear() {
-    messages.value = [
-        {
-            id: 1,
-            role: 'assistant',
-            content: 'Conversation cleared. Request and parser are still placeholders.',
-        },
-    ];
-    nextMessageId.value = 1;
+    messages.value = [];
+    nextMessageId.value = 0;
+    scrollChatToBottom();
 }
 </script>
 
@@ -103,7 +454,9 @@ function handleClear() {
                     <span class="title-dot" />
                     <div>
                         <div class="title">AI Chat</div>
-                        <div class="subtitle">Design placeholder with request and parser stubs</div>
+                        <div class="subtitle">
+                            OpenAI-style request and streamed response via LtfsServer
+                        </div>
                     </div>
                 </div>
                 <div class="head-actions">
@@ -113,6 +466,9 @@ function handleClear() {
                         size="small"
                         class="model-select"
                     />
+                    <n-button size="small" quaternary :disabled="!canResend" @click="handleResend"
+                        >Resend</n-button
+                    >
                     <n-button size="small" quaternary @click="handleClear">Clear</n-button>
                 </div>
             </div>
@@ -120,18 +476,64 @@ function handleClear() {
             <div class="chat-body">
                 <n-scrollbar class="chat-scroll">
                     <div class="chat-list">
+                        <div v-if="messages.length === 0" class="empty-chat">
+                            Send a message to start an OpenAI-style streamed chat.
+                        </div>
                         <div
                             v-for="item in messages"
                             :key="item.id"
                             class="message-row"
                             :class="item.role"
                         >
-                            <n-tag size="small" round :bordered="false" class="role-tag">
-                                {{ item.role === 'assistant' ? 'Assistant' : 'You' }}
-                            </n-tag>
-                            <div v-if="item.role === 'assistant'" class="bubble" v-html="item.html || item.content" />
+                            <div class="message-meta">
+                                <n-tag size="small" round :bordered="false" class="role-tag">
+                                    {{
+                                        item.role === 'assistant'
+                                            ? getAssistantBlobTitle(item.blobType)
+                                            : 'You'
+                                    }}
+                                </n-tag>
+                                <button
+                                    v-if="isCollapsibleBlob(item)"
+                                    type="button"
+                                    class="collapse-toggle"
+                                    @click="toggleBlobCollapse(item)"
+                                >
+                                    {{ item.isCollapsed ? 'Expand' : 'Collapse' }}
+                                </button>
+                            </div>
+                            <div
+                                v-if="item.role === 'assistant' && item.isStreaming"
+                                class="bubble bubble-text"
+                                :class="getAssistantBlobClass(item.blobType)"
+                            >
+                                {{ item.isCollapsed ? `${getAssistantBlobTitle(item.blobType)} hidden` : item.content }}
+                            </div>
+                            <div
+                                v-else-if="item.role === 'assistant' && item.isCollapsed"
+                                class="bubble"
+                                :class="getAssistantBlobClass(item.blobType)"
+                            >
+                                {{ getAssistantBlobTitle(item.blobType) }} hidden
+                            </div>
+                            <div
+                                v-else-if="item.role === 'assistant'"
+                                class="bubble"
+                                :class="getAssistantBlobClass(item.blobType)"
+                                v-html="item.html || item.content"
+                            />
                             <div v-else class="bubble">{{ item.content }}</div>
                         </div>
+                        <div v-if="showPendingAssistantBubble" class="message-row assistant">
+                            <n-tag size="small" round :bordered="false" class="role-tag">
+                                Assistant
+                            </n-tag>
+                            <div class="bubble loading-bubble">
+                                <n-spin size="small" />
+                                <span class="thinking-text">thinking</span>
+                            </div>
+                        </div>
+                        <div ref="chatEndRef" class="chat-end-anchor" />
                     </div>
                 </n-scrollbar>
             </div>
@@ -146,7 +548,12 @@ function handleClear() {
                 />
                 <div class="compose-bar">
                     <div class="hint">Enter to send, Shift+Enter for new line</div>
-                    <n-button type="primary" :disabled="!canSend" :loading="isSending" @click="handleSend">
+                    <n-button
+                        type="primary"
+                        :disabled="!canSend"
+                        :loading="isSending"
+                        @click="handleSend"
+                    >
                         Send
                     </n-button>
                 </div>
@@ -156,6 +563,11 @@ function handleClear() {
 </template>
 
 <style scoped>
+.ai-chat-page {
+    /* height: 100%; */
+    min-height: 0;
+}
+
 .chat-card {
     --chat-card-color: var(--n-color, #1f2937);
     --chat-card-color-embedded: var(--n-color-embedded, #111827);
@@ -165,7 +577,6 @@ function handleClear() {
     --chat-text-color-3: var(--n-text-color-3, #94a3b8);
 
     height: 100%;
-    border-radius: 16px;
     background: var(--chat-card-color);
     border: 1px solid var(--chat-border-color);
     box-shadow:
@@ -240,6 +651,16 @@ function handleClear() {
     padding: 12px;
 }
 
+.chat-end-anchor {
+    height: 1px;
+}
+
+.empty-chat {
+    color: var(--chat-text-color-3);
+    font-size: 13px;
+    line-height: 1.4;
+}
+
 .message-row {
     display: flex;
     flex-direction: column;
@@ -261,6 +682,26 @@ function handleClear() {
     font-size: 11px;
 }
 
+.message-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.collapse-toggle {
+    border: none;
+    background: transparent;
+    color: var(--chat-text-color-3);
+    font-size: 11px;
+    line-height: 1;
+    padding: 0;
+    cursor: pointer;
+}
+
+.collapse-toggle:hover {
+    color: var(--chat-text-color);
+}
+
 .bubble {
     border-radius: 12px;
     padding: 10px 12px;
@@ -268,6 +709,10 @@ function handleClear() {
     color: var(--chat-text-color);
     word-break: break-word;
     box-shadow: 0 3px 14px rgb(0 0 0 / 16%);
+}
+
+.bubble-text {
+    white-space: pre-wrap;
 }
 
 .bubble :deep(h1),
@@ -305,6 +750,36 @@ function handleClear() {
     border: 1px solid var(--chat-border-color);
 }
 
+.message-row.assistant .bubble.blob-reasoning {
+    background: color-mix(in srgb, #f59e0b 16%, var(--chat-card-color));
+    border-color: color-mix(in srgb, #f59e0b 40%, var(--chat-border-color));
+    font-size: 12px;
+}
+
+.message-row.assistant .bubble.blob-tool {
+    background: color-mix(in srgb, #06b6d4 15%, var(--chat-card-color));
+    border-color: color-mix(in srgb, #06b6d4 40%, var(--chat-border-color));
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+        'Courier New', monospace;
+    font-size: 12px;
+}
+
+.message-row.assistant .bubble.blob-answer {
+    background: color-mix(in srgb, #22c55e 12%, var(--chat-card-color));
+    border-color: color-mix(in srgb, #22c55e 34%, var(--chat-border-color));
+}
+
+.loading-bubble {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.thinking-text {
+    color: var(--chat-text-color-3);
+    font-style: italic;
+}
+
 .message-row.user .bubble {
     background: var(--chat-card-color-embedded);
     border: 1px solid var(--chat-border-color);
@@ -315,6 +790,11 @@ function handleClear() {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    padding: 10px;
+    border-radius: 12px;
+    border: 1px solid var(--chat-border-color);
+    background: var(--n-color-embedded);
+    box-shadow: var(--n-box-shadow);
 }
 
 .compose-bar {

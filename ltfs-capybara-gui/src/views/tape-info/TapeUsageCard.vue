@@ -78,7 +78,7 @@ function updateHideSensitive(value: boolean) {
                     <td>
                         {{ props.usage.fveText }}
                     </td>
-                    </tr>
+                </tr>
                 <tr>
                     <td>{{ t('tapeInfo.usage.rwRetries') }}</td>
                     <td>
