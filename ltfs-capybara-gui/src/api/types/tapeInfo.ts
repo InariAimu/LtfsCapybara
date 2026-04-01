@@ -2,6 +2,9 @@ export interface TapePhysicInfo {
     nWraps: number;
     setsPerWrap: number;
     tapDirLength: number;
+    kBytesPerSet: number;
+
+    lifeInFVE: number;
 }
 
 export interface Manufacturer {
@@ -16,7 +19,6 @@ export interface Manufacturer {
     particleType: number;
     isCleaningTape: boolean;
     tapePhysicInfo: TapePhysicInfo;
-    kBytesPerSet: number;
 }
 
 export interface MediaManufacturer {

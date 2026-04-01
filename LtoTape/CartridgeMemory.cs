@@ -254,7 +254,7 @@ public class CartridgeMemory
             uint lastId = 0;
             uint lastSetId = 0;
 
-            var info = TapeInfo.GetPhysicInfoByGeneration(Manufacturer.Gen);
+            var info = TapeInfo.GetPhysicInfo(Manufacturer.Gen);
             for (int index = 0; index < info.NWraps; index++)
             {
                 WrapInfo w = new();
@@ -298,7 +298,7 @@ public class CartridgeMemory
 
         // Build logical partitions from contiguous non-guard wraps.
         int setsPerWrap = Manufacturer.TapePhysicInfo.SetsPerWrap;
-        long bytesPerSet = Manufacturer.KBytesPerSet * 1024L;
+        long bytesPerSet = Manufacturer.TapePhysicInfo.KBytesPerSet * 1024L;
 
         PartitionInfo? currentPartition = null;
         bool stopLossCount = false;

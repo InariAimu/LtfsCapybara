@@ -23,44 +23,6 @@ public enum ServoBandID
     Non_UDIM,
 }
 
-public class TapePhysicInfo
-{
-    public int NWraps { get; set; } = 0;
-    public int SetsPerWrap { get; set; } = 0;
-    public int TapDirLength { get; set; } = 0;
-}
-
-public class TapeInfo
-{
-    public static TapePhysicInfo GetPhysicInfoByGeneration(int generation)
-    {
-        return (generation) switch
-        {
-            1 => new TapePhysicInfo { NWraps = 48, SetsPerWrap = 5500, TapDirLength = 16 },
-            5 => new TapePhysicInfo { NWraps = 80, SetsPerWrap = 7800, TapDirLength = 32 },
-            6 => new TapePhysicInfo { NWraps = 136, SetsPerWrap = 7805, TapDirLength = 32 },
-            _ => new TapePhysicInfo()
-        };
-    }
-
-    public static int GetKBytesPerSetByGeneration(int generation)
-    {
-        return (generation) switch
-        {
-            1 => 404,
-            2 => 404,
-            3 => 1617,
-            4 => 1590,
-            5 => 2473,
-            6 => 2473,
-            7 => 5032,
-            8 => 5032,
-            9 => 9806,
-            _ => 0
-        };
-    }
-}
-
 public class Manufacturer
 {
     public string TapeVendor { get; set; } = "";
@@ -81,8 +43,8 @@ public class Manufacturer
     public bool IsCleaningTape { get => Gen == 0; }
 
 
-    public TapePhysicInfo TapePhysicInfo => TapeInfo.GetPhysicInfoByGeneration(Gen);
-    public int KBytesPerSet => TapeInfo.GetKBytesPerSetByGeneration(Gen);
+    public TapePhysicInfo TapePhysicInfo => TapeInfo.GetPhysicInfo(Gen);
+
 
     public void Parse(byte[] data, int startOffset)
     {

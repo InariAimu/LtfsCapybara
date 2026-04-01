@@ -71,10 +71,14 @@ function updateHideSensitive(value: boolean) {
                         <span style="margin: 0 16px 0 8px">{{
                             formatFileSize(props.usage.totalWrite)
                         }}</span>
-                        <n-tag :type="'info'" :size="'tiny'">{{ t('tapeInfo.usage.fve') }}</n-tag>
-                        <span style="margin: 0 16px 0 8px">{{ props.usage.fveText }}</span>
                     </td>
                 </tr>
+                <tr>
+                    <td>{{ t('tapeInfo.usage.fve') }}</td>
+                    <td>
+                        {{ props.usage.fveText }}
+                    </td>
+                    </tr>
                 <tr>
                     <td>{{ t('tapeInfo.usage.rwRetries') }}</td>
                     <td>

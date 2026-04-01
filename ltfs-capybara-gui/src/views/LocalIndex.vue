@@ -51,6 +51,15 @@ const canDeleteCurrentPathTask = computed(
 const currentTapeHasFormatTask = computed(() =>
     Boolean(currentTapeGroup.value?.tasks?.some(task => task.type === 'format')),
 );
+const currentTapeTaskRevision = computed(() => {
+    const group = currentTapeGroup.value;
+    if (!group) {
+        return '';
+    }
+
+    const taskIds = group.tasks.map(task => task.id).join('|');
+    return `${group.updatedAtTicks}:${group.tasks.length}:${taskIds}`;
+});
 const isCurrentTapeEditable = computed(() => {
     if (!store.currentTapeName) {
         return false;
@@ -79,6 +88,15 @@ watch(isRootNodeSelected, isRoot => {
     if (!isRoot) {
         showTapeInfo.value = false;
     }
+});
+
+watch(currentTapeTaskRevision, async (nextRevision, previousRevision) => {
+    if (!store.currentTapeName || !nextRevision || !previousRevision) {
+        return;
+    }
+
+    treeRefreshToken.value += 1;
+    await navigateByPath(store.currentPath);
 });
 
 async function navigateByPath(path: string) {
@@ -305,7 +323,12 @@ async function handleDeleteCurrentPathTask() {
                         </n-card>
                     </div>
                     <tape-info v-else-if="showTapeInfo" class="file-list-content" />
-                    <file-list v-else class="file-list-content" :deletable="isCurrentTapeEditable" @delete-dir="handleDeleteDir" />
+                    <file-list
+                        v-else
+                        class="file-list-content"
+                        :deletable="isCurrentTapeEditable"
+                        @delete-dir="handleDeleteDir"
+                    />
                 </div>
             </n-layout>
         </n-layout>

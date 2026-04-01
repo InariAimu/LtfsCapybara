@@ -81,10 +81,11 @@ const usageMetrics = computed(() => {
         };
     }
 
-    const totalWrite = usageInfo.lifeSetsWritten * info.manufacturer.kBytesPerSet * 1024;
-    const totalRead = usageInfo.lifeSetsRead * info.manufacturer.kBytesPerSet * 1024;
+    const totalWrite =
+        usageInfo.lifeSetsWritten * info.manufacturer.tapePhysicInfo.kBytesPerSet * 1024;
+    const totalRead = usageInfo.lifeSetsRead * info.manufacturer.tapePhysicInfo.kBytesPerSet * 1024;
     const fullVolumeSize =
-        info.manufacturer.kBytesPerSet *
+        info.manufacturer.tapePhysicInfo.kBytesPerSet *
         1024 *
         info.manufacturer.tapePhysicInfo.nWraps *
         info.manufacturer.tapePhysicInfo.setsPerWrap;
@@ -94,7 +95,7 @@ const usageMetrics = computed(() => {
             ? '0.00'
             : (() => {
                   const fveSize = (totalWrite + totalRead) / fullVolumeSize;
-                  return `${fveSize.toFixed(2)} ( ${((fveSize / 260) * 100).toFixed(2)}% )`;
+                  return `${fveSize.toFixed(2)} / ${info.manufacturer.tapePhysicInfo.lifeInFVE} ( ${((fveSize / info.manufacturer.tapePhysicInfo.lifeInFVE) * 100).toFixed(2)}% )`;
               })();
 
     return {
