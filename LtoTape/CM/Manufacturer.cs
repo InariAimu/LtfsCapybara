@@ -31,7 +31,11 @@ public class Manufacturer
     public string Format { get; set; } = "";
     public int Gen { get; set; } = 0;
     public string MfgDate { get; set; } = "";
-    public int TapeLength { get; set; }
+
+    // _tapeLength unit is 0.25 meter
+    public int TapeLength => _tapeLength / 4;
+    int _tapeLength =0;
+
     public int MediaCode { get; set; }
 
     public Particle ParticleType { get; set; } = Particle.Unknown;
@@ -52,7 +56,7 @@ public class Manufacturer
         CartridgeSN = Encoding.ASCII.GetString(data, startOffset + 12, 10);
         CartridgeType = BigEndianBitConverter.ToUInt16(data, startOffset + 22);
         MfgDate = Encoding.ASCII.GetString(data, startOffset + 24, 8);
-        TapeLength = BigEndianBitConverter.ToUInt16(data, startOffset + 32);
+        _tapeLength = BigEndianBitConverter.ToUInt16(data, startOffset + 32);
         MediaCode = BigEndianBitConverter.ToUInt16(data, startOffset + 46);
 
         byte pageRevision = data[startOffset];

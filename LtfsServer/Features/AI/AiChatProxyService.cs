@@ -383,10 +383,28 @@ public sealed class AiChatProxyService : IAiChatProxyService
             }
         }
 
-        var builtInName = _toolCallService.GetToolName();
-        if (!existingNames.Contains(builtInName))
+        foreach (var builtInTool in _toolCallService.GetToolDefinitions())
         {
-            requestedTools.Add(_toolCallService.GetToolDefinition());
+            var toolDef = builtInTool as JsonObject;
+            if (toolDef is null)
+            {
+                continue;
+            }
+
+            var builtInName = toolDef["function"]?["name"]?.ToString();
+            if (string.IsNullOrWhiteSpace(builtInName) || existingNames.Contains(builtInName))
+            {
+                continue;
+            }
+
+            var cloned = toolDef.DeepClone();
+            if (cloned is null)
+            {
+                continue;
+            }
+
+            requestedTools.Add(cloned);
+            existingNames.Add(builtInName);
         }
     }
 

@@ -4,6 +4,11 @@ public static class APIAI
 {
     public static void MapAiApi(this WebApplication app)
     {
+        app.MapGet("api/ai/tools", (IAiToolCallService toolCallService) =>
+        {
+            return Results.Ok(toolCallService.GetAllAITools());
+        });
+
         app.MapPost("api/ai/chat/completions", async (
             HttpContext context,
             IAiChatProxyService aiChatProxyService,

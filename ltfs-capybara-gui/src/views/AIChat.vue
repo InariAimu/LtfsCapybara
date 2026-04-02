@@ -246,8 +246,6 @@ function renderToolCallDelta(toolCalls: OpenAiToolCallDelta[]) {
     const rows: string[] = [];
 
     for (const item of toolCalls) {
-        const indexLabel = (item.index ?? 0) + 1;
-        const callId = item.id ? ` id=${item.id}` : '';
         const nameDelta = item.function?.name ?? '';
         const argsDelta = item.function?.arguments ?? '';
         const detail = [nameDelta ?? '', argsDelta ?? ''].filter(Boolean).join();
@@ -503,26 +501,20 @@ function handleClear() {
                                 </button>
                             </div>
                             <div
-                                v-if="item.role === 'assistant' && item.isStreaming"
+                                v-if="item.role === 'assistant' && item.isStreaming && !item.isCollapsed"
                                 class="bubble bubble-text"
                                 :class="getAssistantBlobClass(item.blobType)"
                             >
-                                {{ item.isCollapsed ? `${getAssistantBlobTitle(item.blobType)} hidden` : item.content }}
+                                {{ item.content }}
                             </div>
                             <div
-                                v-else-if="item.role === 'assistant' && item.isCollapsed"
-                                class="bubble"
-                                :class="getAssistantBlobClass(item.blobType)"
-                            >
-                                {{ getAssistantBlobTitle(item.blobType) }} hidden
-                            </div>
-                            <div
-                                v-else-if="item.role === 'assistant'"
+                                v-else-if="item.role === 'assistant' && !item.isCollapsed"
                                 class="bubble"
                                 :class="getAssistantBlobClass(item.blobType)"
                                 v-html="item.html || item.content"
                             />
-                            <div v-else class="bubble">{{ item.content }}</div>
+                            <div v-else-if="item.role === 'user'" class="bubble"><p>{{ item.content }}</p></div>
+                            <div v-else></div>
                         </div>
                         <div v-if="showPendingAssistantBubble" class="message-row assistant">
                             <n-tag size="small" round :bordered="false" class="role-tag">
@@ -703,8 +695,8 @@ function handleClear() {
 }
 
 .bubble {
-    border-radius: 12px;
-    padding: 10px 12px;
+    border-radius: 8px;
+    padding: 0px 10px;
     line-height: 1.45;
     color: var(--chat-text-color);
     word-break: break-word;

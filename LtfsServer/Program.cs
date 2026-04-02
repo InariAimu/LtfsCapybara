@@ -9,6 +9,7 @@ using LtfsServer.Features.LocalFileSystem;
 using LtfsServer.Features.ServerSettings;
 using LtfsServer.Features.Tasks;
 using LtfsServer.Features.AI;
+using LtfsServer.Features.AI.Tools;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -36,7 +37,11 @@ builder.Services.AddSingleton<ILocalFileSystemTreeService, LocalFileSystemTreeSe
 // Register server settings service (read/write appsettings.json)
 builder.Services.AddSingleton<IServerSettingsService, ServerSettingsService>();
 builder.Services.AddSingleton<ITaskGroupService, TaskGroupService>();
+builder.Services.AddSingleton<ILocalIndexQueryService, LocalIndexQueryService>();
+
 builder.Services.AddHttpClient("AiServerProxy");
+builder.Services.AddAiToolModules(typeof(Program).Assembly);
+
 builder.Services.AddSingleton<IAiToolCallService, AiToolCallService>();
 builder.Services.AddSingleton<IAiChatProxyService, AiChatProxyService>();
 
