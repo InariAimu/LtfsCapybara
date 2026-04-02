@@ -30,6 +30,11 @@ public static class StartupConfig
 
         Directory.CreateDirectory(dataPath);
 
+        // Load runtime overrides from {Data.Path}/config.json (e.g., AI credentials).
+        // Added after appsettings so values here take precedence.
+        var runtimeConfigPath = Path.Combine(dataPath, "config.json");
+        builder.Configuration.AddJsonFile(runtimeConfigPath, optional: true, reloadOnChange: true);
+
         // Register resolved data path for DI consumers
         builder.Services.AddSingleton(new AppData { Path = dataPath });
     }

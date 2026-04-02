@@ -146,7 +146,7 @@ public sealed class AiChatProxyService : IAiChatProxyService
 
         if (string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(apiKey))
         {
-            throw new InvalidOperationException("AI config is missing. Please set AI.base_url and AI.api_key in appsettings.json.");
+            throw new InvalidOperationException("AI config is missing. Please set AI.base_url and AI.api_key in {Data.Path}/config.json.");
         }
 
         var endpoint = ResolveChatCompletionsEndpoint(baseUrl);
