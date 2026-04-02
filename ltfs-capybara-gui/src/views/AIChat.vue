@@ -3,6 +3,7 @@ import { computed, nextTick, ref } from 'vue';
 import { marked } from 'marked';
 import { NButton, NCard, NInput, NSelect, NScrollbar, NTag, NSpin } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
+import { API_BASE } from '../api/baseurl';
 
 defineOptions({
     name: 'AIChat',
@@ -320,7 +321,7 @@ async function streamChat(
     payload: ReturnType<typeof buildRequestPayload>,
     onUpdate: (update: StreamUpdate) => void,
 ) {
-    const response = await fetch('http://localhost:5003/api/ai/resend', {
+    const response = await fetch(`${API_BASE}api/ai/resend`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',

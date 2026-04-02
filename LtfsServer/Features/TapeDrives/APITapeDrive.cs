@@ -27,7 +27,7 @@ public static class APITapeDrive
 
         app.MapPost("/api/tapedrives/{id}/machine/{action}", (string id, string action, ITapeDriveService tapeDriveService) =>
         {
-            if (!TryParseAction(action, out var parsedAction))
+            if (!TapeDriveActionParser.TryParseAction(action, out var parsedAction))
             {
                 return Results.BadRequest(new { message = $"Unsupported tape machine action '{action}'." });
             }
@@ -49,20 +49,5 @@ public static class APITapeDrive
                 return Results.BadRequest(new { message = ex.Message });
             }
         });
-    }
-
-    private static bool TryParseAction(string action, out TapeDriveAction parsedAction)
-    {
-        parsedAction = action.ToLowerInvariant() switch
-        {
-            "thread" => TapeDriveAction.ThreadTape,
-            "load" => TapeDriveAction.LoadTape,
-            "unthread" => TapeDriveAction.UnthreadTape,
-            "eject" => TapeDriveAction.EjectTape,
-            "read-info" => TapeDriveAction.ReadInfo,
-            _ => (TapeDriveAction)(-1),
-        };
-
-        return parsedAction is >= TapeDriveAction.ThreadTape and <= TapeDriveAction.ReadInfo;
     }
 }
