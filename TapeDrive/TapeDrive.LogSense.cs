@@ -37,7 +37,7 @@ public partial class LTOTapeDrive : IDisposable
     {
         byte[] header = ScsiRead(
             [0x1c, 0x01, 0x88, 0, 0x04, 0], 4);
-        
+
         if (header.Length != 4)
             return [];
 
@@ -49,12 +49,23 @@ public partial class LTOTapeDrive : IDisposable
 
         byte[] pageData = ScsiRead(
             [0x1c, 0x01, 0x88, (byte)((pageLength >> 8) & 0xff), (byte)(pageLength & 0xff), 0], pageLength);
-        
+
         return pageData;
     }
 
-    private int[] LastC1Err = new int[32];
-    private int[] LastNoCCPs = new int[32];
+    public int[] LastC1Err = new int[32];
+    public int[] LastNoCCPs = new int[32];
+    public float[] LastChannelErrRate = new float[32];
+
+    public string GetReadableChannelErrorRates()
+    {
+        StringBuilder sb = new();
+        for (int i = 0; i < LastChannelErrRate.Length / 2; i++)
+        {
+            sb.Append($"{LastChannelErrRate[i]:F2} ");
+        }
+        return sb.ToString();
+    }
 
     public double ReadErrorRate()
     {
@@ -66,8 +77,9 @@ public partial class LTOTapeDrive : IDisposable
                 .Split(['\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries);
 
         List<double> allResult = new();
+        bool brokenChannel = false;
 
-        for (int ch = 4; ch < werlData.Length; ch+=5)
+        for (int ch = 4; ch < werlData.Length; ch += 5)
         {
             int channel = (ch - 4) / 5;
             int c1Err = int.Parse(werlData[ch + 0], NumberStyles.HexNumber);
@@ -81,7 +93,7 @@ public partial class LTOTapeDrive : IDisposable
                 double errRateLog = 0;
                 try
                 {
-                    errRateLog = Math.Log10((c1Err - LastC1Err[channel]) / (noCCPs - LastNoCCPs[channel]) / 2 / 1920);
+                    errRateLog = Math.Log10((double)(c1Err - LastC1Err[channel]) / (noCCPs - LastNoCCPs[channel]) / 2 / 1920);
                 }
                 catch (Exception ex)
                 {
@@ -93,10 +105,20 @@ public partial class LTOTapeDrive : IDisposable
                 {
                     result = Math.Max(result, errRateLog);
                 }
+
+                LastChannelErrRate[channel] = (float)errRateLog;
+            }
+            else
+            {
+                brokenChannel = true;
+                LastChannelErrRate[channel] = -2.98f;
             }
 
             LastC1Err[channel] = c1Err;
             LastNoCCPs[channel] = noCCPs;
+
+            if (brokenChannel)
+                result = Math.Max(result, -2.98);
         }
 
         if (result < -10)

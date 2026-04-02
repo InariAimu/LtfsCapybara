@@ -1,5 +1,8 @@
 ﻿
+using System;
+using System.Threading;
 using Ltfs;
+using TapeDrive;
 
 Ltfs.Ltfs lt = new();
 
@@ -9,38 +12,36 @@ Log.SetLogger(new ConsoleLogger { Level = LogLevel.Info });
 Logger.Info("Loading LTFS from tape...");
 lt.LoadTape();
 
-//lt.Format(new LtfsFormatParam()
-//{
-//    Barcode = "G00124L6",
-//    VolumeName = "TESTVOL",
-//    BlockSize = 524288,
-//});
+var randomData = new byte[1048576]; // 1 MiB of random data
+new Random().NextBytes(randomData);
 
-Logger.Info("Reading LTFS Index...");
-lt.ReadLtfs();
+var drive = lt.TapeDrive! as LTOTapeDrive;
+drive.Locate(0, 0, locateType: TapeDrive.LocateType.EOD);
+var pos = drive.ReadPosition();
+Logger.Info($"Current tape position: {pos}");
 
-var srcFile = "";
-var ltfsFile = "";
+// write 12 wraps of data, every 1 second, use TapeDrive.ReadErrorRate() to log the error rate
+var dt = DateTime.Now;
+var pi = LtoTape.CM.TapeInfo.GetPhysicInfo(5);
+long wrapsize = pi.KBytesPerSet * 1024L * pi.SetsPerWrap;
+long speed = 0;
 
-//lt.AddFile(srcFile, ltfsFile);
+for (long i = 0; i <= wrapsize * 12;)
+{
+    bool success = drive.BufferedWrite(randomData, 0x080000);
 
-//lt.AddDirectory("\\\\NekoHouse\\video\\Anime\\葬送的芙莉莲.Sousou.no.Frieren.S01.2023.1080p.CR.WEB-DL.H264.AAC-RLWeb", "/Anime/葬送的芙莉莲.Sousou.no.Frieren.S01.2023.1080p.CR.WEB-DL.H264.AAC-RLWeb");
+    i += randomData.Length;
+    speed += randomData.Length;
 
-//\\NekoHouse\video\Anime\[ANK-Raws] CANAAN (BDrip 1920x1080 x264 FLAC Hi10P ver)
-
-string folder = "[Skytree][名侦探柯南][Detective_Conan][638-720][GB_JP][X264_AAC][720P]";
-//lt.AddDirectory("\\\\NekoHouse\\video\\Anime\\" + folder, "/Anime/" + folder);
-
-lt.AddDirectory("\\\\NekoHouse\\video\\Anime", "/Anime");
-
-
-Logger.Info("Writing files to tape...");
-await lt.PerformWriteTasks();
-
-Logger.Info("Writing LTFS Index...");
-lt.WriteLtfsIndex();
-
-Logger.Info("Done.");
-lt.TapeDrive?.Dispose();
+    var now = DateTime.Now;
+    var elapsed = now - dt;
+    if (elapsed > TimeSpan.FromSeconds(1))
+    {
+        drive.ReadErrorRate(); // update error rate
+        dt = now; // reset the timer
+        Logger.Info($"+{speed / elapsed.TotalSeconds / 1024 / 1024:F2} MB: {drive.GetReadableChannelErrorRates()}");
+        speed = 0; // reset speed counter
+    }
+}
 
 Console.ReadKey();
