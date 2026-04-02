@@ -15,6 +15,7 @@ import AIChat from './AIChat.vue';
 
 const { t } = useI18n();
 const selectedMenuKey = ref<string>('overview');
+const keepAliveInclude = ['LocalIndex', 'AIChat'];
 
 function handleMenuSelect(key: string) {
     selectedMenuKey.value = key;
@@ -42,8 +43,6 @@ const currentPageComponent = computed(() => {
         case 'tape-library':
             return TapeLibrary;
         case 'ltfs':
-        case 'ltfs01l6':
-        case 'ltfs01l7':
             return Ltfs;
         default:
             return Overview;
@@ -58,6 +57,10 @@ const selectedTapeDriveId = computed(() => {
 
     return key.substring('tape-machine:'.length);
 });
+
+const currentPageProps = computed(() =>
+    currentPageComponent.value === TapeMachine ? { tapeDriveId: selectedTapeDriveId.value } : {},
+);
 </script>
 
 <template>
@@ -65,13 +68,8 @@ const selectedTapeDriveId = computed(() => {
         <left-panel :selected-key="selectedMenuKey" @select="handleMenuSelect" />
         <n-layout>
             <n-layout position="absolute" style="top: 0; bottom: 32px">
-                <keep-alive include="LocalIndex">
-                    <component
-                        v-if="currentPageComponent === TapeMachine"
-                        :is="currentPageComponent"
-                        :tape-drive-id="selectedTapeDriveId"
-                    />
-                    <component v-else :is="currentPageComponent" />
+                <keep-alive :include="keepAliveInclude">
+                    <component :is="currentPageComponent" v-bind="currentPageProps" />
                 </keep-alive>
             </n-layout>
             <n-layout-footer bordered position="absolute" style="height: 32px; padding: 5px">

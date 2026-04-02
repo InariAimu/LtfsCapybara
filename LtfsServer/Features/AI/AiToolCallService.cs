@@ -8,6 +8,8 @@ namespace LtfsServer.Features.AI;
 public interface IAiToolCallService
 {
     JsonArray GetToolDefinitions();
+    JsonArray GetToolDefinitionsByName(IEnumerable<string> toolNames);
+    IReadOnlyList<string> GetAllToolNames();
     JsonObject GetAllAITools();
     Task<string> ExecuteAsync(string toolName, string argumentsJson, CancellationToken cancellationToken);
 }
@@ -48,6 +50,32 @@ public sealed class AiToolCallService : IAiToolCallService
         }
 
         return result;
+    }
+
+    public JsonArray GetToolDefinitionsByName(IEnumerable<string> toolNames)
+    {
+        var result = new JsonArray();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var toolName in toolNames)
+        {
+            if (string.IsNullOrWhiteSpace(toolName) || !seen.Add(toolName))
+            {
+                continue;
+            }
+
+            if (_tools.TryGetValue(toolName, out var tool))
+            {
+                result.Add(tool.Definition.DeepClone());
+            }
+        }
+
+        return result;
+    }
+
+    public IReadOnlyList<string> GetAllToolNames()
+    {
+        return _tools.Keys.OrderBy(x => x, StringComparer.Ordinal).ToArray();
     }
 
     public JsonObject GetAllAITools()

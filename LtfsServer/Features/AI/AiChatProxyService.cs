@@ -16,17 +16,20 @@ public sealed class AiChatProxyService : IAiChatProxyService
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _configuration;
     private readonly IAiToolCallService _toolCallService;
+    private readonly IAiToolSelectionService _toolSelectionService;
     private readonly ILogger<AiChatProxyService> _logger;
 
     public AiChatProxyService(
         IHttpClientFactory httpClientFactory,
         IConfiguration configuration,
         IAiToolCallService toolCallService,
+        IAiToolSelectionService toolSelectionService,
         ILogger<AiChatProxyService> logger)
     {
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
         _toolCallService = toolCallService;
+        _toolSelectionService = toolSelectionService;
         _logger = logger;
     }
 
@@ -55,15 +58,15 @@ public sealed class AiChatProxyService : IAiChatProxyService
             requestNode["model"] = model;
         }
 
-        EnsureToolPresent(requestNode);
-        requestNode["stream"] = true;
-
         context.Response.StatusCode = StatusCodes.Status200OK;
         context.Response.Headers.CacheControl = "no-cache";
         context.Response.Headers.Connection = "keep-alive";
         context.Response.Headers["X-Accel-Buffering"] = "no";
         context.Response.ContentType = "text/event-stream";
         context.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
+
+        await _toolSelectionService.PrepareRequestAsync(requestNode, model, context.Response, cancellationToken);
+        requestNode["stream"] = true;
 
         await StreamWithToolsAsync(context.Response, requestNode, cancellationToken);
     }
@@ -361,51 +364,6 @@ public sealed class AiChatProxyService : IAiChatProxyService
         }
 
         return new UpstreamTurnResult(model, assistantMessage);
-    }
-
-    private void EnsureToolPresent(JsonObject requestNode)
-    {
-        var requestedTools = requestNode["tools"] as JsonArray;
-        if (requestedTools is null)
-        {
-            requestedTools = new JsonArray();
-            requestNode["tools"] = requestedTools;
-        }
-
-        var existingNames = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var toolNode in requestedTools)
-        {
-            var tool = toolNode as JsonObject;
-            var name = tool?["function"]?["name"]?.GetValue<string>();
-            if (!string.IsNullOrWhiteSpace(name))
-            {
-                existingNames.Add(name);
-            }
-        }
-
-        foreach (var builtInTool in _toolCallService.GetToolDefinitions())
-        {
-            var toolDef = builtInTool as JsonObject;
-            if (toolDef is null)
-            {
-                continue;
-            }
-
-            var builtInName = toolDef["function"]?["name"]?.ToString();
-            if (string.IsNullOrWhiteSpace(builtInName) || existingNames.Contains(builtInName))
-            {
-                continue;
-            }
-
-            var cloned = toolDef.DeepClone();
-            if (cloned is null)
-            {
-                continue;
-            }
-
-            requestedTools.Add(cloned);
-            existingNames.Add(builtInName);
-        }
     }
 
     private static async Task WriteSseRawDataAsync(HttpResponse response, string payload, CancellationToken cancellationToken)

@@ -2,9 +2,16 @@
 import { computed, nextTick, ref } from 'vue';
 import { marked } from 'marked';
 import { NButton, NCard, NInput, NSelect, NScrollbar, NTag, NSpin } from 'naive-ui';
+import { useI18n } from 'vue-i18n';
+
+defineOptions({
+    name: 'AIChat',
+});
+
+const { t } = useI18n();
 
 type ChatRole = 'assistant' | 'user';
-type DeltaType = 'reasoning' | 'answering' | 'tool';
+type DeltaType = 'reasoning' | 'answering' | 'tool' | 'selecting';
 
 interface ChatMessage {
     id: number;
@@ -51,6 +58,7 @@ type StreamRaw = OpenAiStreamChunk & {
     object: string;
     created: number;
     model: string;
+    ltfs_stage?: string;
     system_fingerprint?: string;
     logprobs?: unknown;
     finish_reason?: string;
@@ -89,19 +97,23 @@ const showPendingAssistantBubble = computed(() => {
 
 function getAssistantBlobTitle(blobType?: DeltaType) {
     switch (blobType) {
+        case 'selecting':
+            return t('aiChat.blobs.selecting');
         case 'reasoning':
-            return 'Reasoning';
+            return t('aiChat.blobs.reasoning');
         case 'tool':
-            return 'Tool Calling';
+            return t('aiChat.blobs.tool');
         case 'answering':
-            return 'Answer';
+            return t('aiChat.blobs.answering');
         default:
-            return 'Assistant';
+            return t('aiChat.blobs.assistant');
     }
 }
 
 function getAssistantBlobClass(blobType?: DeltaType) {
     switch (blobType) {
+        case 'selecting':
+            return 'blob-selecting';
         case 'reasoning':
             return 'blob-reasoning';
         case 'tool':
@@ -114,7 +126,11 @@ function getAssistantBlobClass(blobType?: DeltaType) {
 }
 
 function isCollapsibleBlob(message: ChatMessage) {
-    return message.role === 'assistant' && (message.blobType === 'reasoning' || message.blobType === 'tool');
+    return (
+        message.blobType === 'reasoning' ||
+            message.blobType === 'tool' ||
+            message.blobType === 'selecting'
+    );
 }
 
 function toggleBlobCollapse(message: ChatMessage) {
@@ -123,6 +139,10 @@ function toggleBlobCollapse(message: ChatMessage) {
     }
 
     message.isCollapsed = !message.isCollapsed;
+}
+
+function getCollapseIcon(message: ChatMessage) {
+    return message.isCollapsed ? '\u25BC' : '\u25B2';
 }
 
 function scrollChatToBottom() {
@@ -216,6 +236,8 @@ function readUpdatesFromEvent(eventText: string): StreamUpdate[] {
             continue;
         }
 
+        const isToolSelectionStage = chunk.ltfs_stage === 'tool_selection';
+
         const reasoningText =
             typeof delta.reasoning_content === 'string'
                 ? delta.reasoning_content
@@ -223,10 +245,14 @@ function readUpdatesFromEvent(eventText: string): StreamUpdate[] {
                   ? delta.reasoning
                   : '';
         if (reasoningText.length > 0) {
-            updates.push({ raw: chunk, deltaText: reasoningText, deltaType: 'reasoning' });
+            updates.push({
+                raw: chunk,
+                deltaText: reasoningText,
+                deltaType: isToolSelectionStage ? 'selecting' : 'reasoning',
+            });
         }
 
-        if (Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0) {
+        if (!isToolSelectionStage && Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0) {
             updates.push({
                 raw: chunk,
                 deltaText: renderToolCallDelta(delta.tool_calls),
@@ -235,7 +261,11 @@ function readUpdatesFromEvent(eventText: string): StreamUpdate[] {
         }
 
         if (typeof delta.content === 'string' && delta.content.length > 0) {
-            updates.push({ raw: chunk, deltaText: delta.content, deltaType: 'answering' });
+            updates.push({
+                raw: chunk,
+                deltaText: delta.content,
+                deltaType: isToolSelectionStage ? 'selecting' : 'answering',
+            });
         }
     }
 
@@ -266,7 +296,7 @@ function createAssistantMessage(blobType?: DeltaType) {
     };
     messages.value.push(message);
     // Return the reactive proxy Vue created when the object was pushed,
-    // not the original plain object — mutations must go through the proxy.
+    // not the original plain object; mutations must go through the proxy.
     return messages.value[messages.value.length - 1];
 }
 
@@ -281,6 +311,9 @@ function finalizeAssistantMessage(message: ChatMessage | null) {
 
     message.isStreaming = false;
     message.html = parseMarkdown(message.content);
+    if (isCollapsibleBlob(message)) {
+        message.isCollapsed = true;
+    }
 }
 
 async function streamChat(
@@ -301,7 +334,7 @@ async function streamChat(
     }
 
     if (!response.body) {
-        throw new Error('Missing response body from AI stream');
+        throw new Error(t('aiChat.errors.missingResponseBody'));
     }
 
     const reader = response.body.getReader();
@@ -367,10 +400,21 @@ async function sendWithContext(baseContext: ChatMessage[], userInput?: string) {
 
         const payload = buildRequestPayload(toOpenAiMessages(source));
         await streamChat(payload, update => {
+            if (update.done) {
+                for (const { blob } of streamState.values()) {
+                    finalizeAssistantMessage(blob);
+                }
+                streamState.clear();
+                return;
+            }
+
             if (update.deltaText && update.deltaType) {
                 const rawId = update.raw?.id ?? '__default__';
                 const current = streamState.get(rawId);
                 if (!current || current.type !== update.deltaType) {
+                    if (current) {
+                        finalizeAssistantMessage(current.blob);
+                    }
                     const blob = createAssistantMessage(update.deltaType);
                     streamState.set(rawId, { type: update.deltaType, blob });
                     allBlobs.push(blob);
@@ -386,12 +430,14 @@ async function sendWithContext(baseContext: ChatMessage[], userInput?: string) {
         });
 
         for (const blob of allBlobs) {
-            finalizeAssistantMessage(blob);
+            if (blob.isStreaming) {
+                finalizeAssistantMessage(blob);
+            }
         }
 
         if (allBlobs.length === 0) {
             const fallback = createAssistantMessage();
-            fallback.content = 'No content returned from AI server.';
+            fallback.content = t('aiChat.errors.noContentReturned');
             fallback.isStreaming = false;
             fallback.html = parseMarkdown(fallback.content);
             scrollChatToBottom();
@@ -402,7 +448,7 @@ async function sendWithContext(baseContext: ChatMessage[], userInput?: string) {
         }
         const message = error instanceof Error ? error.message : String(error);
         const failure = createAssistantMessage();
-        failure.content = `Request failed: ${message}`;
+        failure.content = t('aiChat.errors.requestFailed', { message });
         failure.isStreaming = false;
         failure.html = parseMarkdown(failure.content);
         scrollChatToBottom();
@@ -451,10 +497,8 @@ function handleClear() {
                 <div class="title-wrap">
                     <span class="title-dot" />
                     <div>
-                        <div class="title">AI Chat</div>
-                        <div class="subtitle">
-                            OpenAI-style request and streamed response via LtfsServer
-                        </div>
+                        <div class="title">{{ t('aiChat.title') }}</div>
+                        <div class="subtitle">{{ t('aiChat.subtitle') }}</div>
                     </div>
                 </div>
                 <div class="head-actions">
@@ -465,9 +509,11 @@ function handleClear() {
                         class="model-select"
                     />
                     <n-button size="small" quaternary :disabled="!canResend" @click="handleResend"
-                        >Resend</n-button
+                        >{{ t('aiChat.actions.resend') }}</n-button
                     >
-                    <n-button size="small" quaternary @click="handleClear">Clear</n-button>
+                    <n-button size="small" quaternary @click="handleClear">{{
+                        t('aiChat.actions.clear')
+                    }}</n-button>
                 </div>
             </div>
 
@@ -475,7 +521,7 @@ function handleClear() {
                 <n-scrollbar class="chat-scroll">
                     <div class="chat-list">
                         <div v-if="messages.length === 0" class="empty-chat">
-                            Send a message to start an OpenAI-style streamed chat.
+                            {{ t('aiChat.emptyState') }}
                         </div>
                         <div
                             v-for="item in messages"
@@ -488,16 +534,26 @@ function handleClear() {
                                     {{
                                         item.role === 'assistant'
                                             ? getAssistantBlobTitle(item.blobType)
-                                            : 'You'
+                                            : t('aiChat.blobs.you')
                                     }}
                                 </n-tag>
                                 <button
                                     v-if="isCollapsibleBlob(item)"
                                     type="button"
                                     class="collapse-toggle"
+                                    :aria-label="
+                                        item.isCollapsed
+                                            ? t('aiChat.actions.expandSection')
+                                            : t('aiChat.actions.collapseSection')
+                                    "
+                                    :title="
+                                        item.isCollapsed
+                                            ? t('aiChat.actions.expand')
+                                            : t('aiChat.actions.collapse')
+                                    "
                                     @click="toggleBlobCollapse(item)"
                                 >
-                                    {{ item.isCollapsed ? 'Expand' : 'Collapse' }}
+                                    {{ getCollapseIcon(item) }}
                                 </button>
                             </div>
                             <div
@@ -518,11 +574,11 @@ function handleClear() {
                         </div>
                         <div v-if="showPendingAssistantBubble" class="message-row assistant">
                             <n-tag size="small" round :bordered="false" class="role-tag">
-                                Assistant
+                                {{ t('aiChat.blobs.assistant') }}
                             </n-tag>
                             <div class="bubble loading-bubble">
                                 <n-spin size="small" />
-                                <span class="thinking-text">thinking</span>
+                                <span class="thinking-text">{{ t('aiChat.status.thinking') }}</span>
                             </div>
                         </div>
                         <div ref="chatEndRef" class="chat-end-anchor" />
@@ -535,18 +591,18 @@ function handleClear() {
                     v-model:value="prompt"
                     type="textarea"
                     :autosize="{ minRows: 3, maxRows: 6 }"
-                    placeholder="Describe what to build"
+                    :placeholder="t('aiChat.promptPlaceholder')"
                     @keydown.enter.exact.prevent="handleSend"
                 />
                 <div class="compose-bar">
-                    <div class="hint">Enter to send, Shift+Enter for new line</div>
+                    <div class="hint">{{ t('aiChat.sendHint') }}</div>
                     <n-button
                         type="primary"
                         :disabled="!canSend"
                         :loading="isSending"
                         @click="handleSend"
                     >
-                        Send
+                        {{ t('aiChat.actions.send') }}
                     </n-button>
                 </div>
             </div>
@@ -684,14 +740,17 @@ function handleClear() {
     border: none;
     background: transparent;
     color: var(--chat-text-color-3);
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1;
-    padding: 0;
+    padding: 2px 4px;
     cursor: pointer;
+    border-radius: 4px;
+    min-width: 20px;
 }
 
 .collapse-toggle:hover {
     color: var(--chat-text-color);
+    background: rgb(255 255 255 / 6%);
 }
 
 .bubble {
@@ -746,6 +805,13 @@ function handleClear() {
     background: color-mix(in srgb, #f59e0b 16%, var(--chat-card-color));
     border-color: color-mix(in srgb, #f59e0b 40%, var(--chat-border-color));
     font-size: 12px;
+}
+
+.message-row.assistant .bubble.blob-selecting {
+    background: color-mix(in srgb, #7c3aed 16%, var(--chat-card-color));
+    border-color: color-mix(in srgb, #7c3aed 40%, var(--chat-border-color));
+    font-size: 12px;
+    white-space: pre-wrap;
 }
 
 .message-row.assistant .bubble.blob-tool {

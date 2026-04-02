@@ -43,6 +43,7 @@ builder.Services.AddHttpClient("AiServerProxy");
 builder.Services.AddAiToolModules(typeof(Program).Assembly);
 
 builder.Services.AddSingleton<IAiToolCallService, AiToolCallService>();
+builder.Services.AddSingleton<IAiToolSelectionService, AiToolSelectionService>();
 builder.Services.AddSingleton<IAiChatProxyService, AiChatProxyService>();
 
 var app = builder.Build();

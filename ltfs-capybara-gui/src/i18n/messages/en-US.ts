@@ -82,6 +82,38 @@
         serverSettingsSaveSuccess: 'Server settings saved.',
         serverSettingsSaveFailed: 'Failed to save server settings.',
     },
+    aiChat: {
+        title: 'Chat with LtfsCapybara',
+        subtitle: 'Provide natural language instructions to analyze LTFS tapes, generate tasks, and more.',
+        emptyState: 'Send a message to start chat.',
+        promptPlaceholder: 'Ask anything about the tape, e.g. "What is on this tape?", "Analyze the tape and generate some tasks for me.", "What are the health status and remaining lifespan of this tape?"',
+        sendHint: 'Enter to send, Shift+Enter for new line',
+        blobs: {
+            selecting: 'Tool Selection',
+            reasoning: 'Reasoning',
+            tool: 'Tool Calling',
+            answering: 'Answer',
+            assistant: 'Assistant',
+            you: 'User',
+        },
+        status: {
+            thinking: 'thinking',
+        },
+        actions: {
+            resend: 'Resend',
+            clear: 'Clear',
+            send: 'Send',
+            expand: 'Expand',
+            collapse: 'Collapse',
+            expandSection: 'Expand section',
+            collapseSection: 'Collapse section',
+        },
+        errors: {
+            missingResponseBody: 'Missing response body from AI stream',
+            noContentReturned: 'No content returned from AI server.',
+            requestFailed: 'Request failed: {message}',
+        },
+    },
     pages: {
         comingSoon: 'This page is coming soon.',
     },
