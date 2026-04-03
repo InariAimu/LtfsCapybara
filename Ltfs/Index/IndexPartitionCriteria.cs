@@ -10,7 +10,7 @@ namespace Ltfs.Index;
 public partial class IndexPartitionCriteria
 {
     [XmlElement("name", Form = XmlSchemaForm.Unqualified)]
-    public NameType[] Names { get; set; }
+    public NameType[] Names { get; set; } = [];
 
 
     [XmlElement("size", Form = XmlSchemaForm.Unqualified)]

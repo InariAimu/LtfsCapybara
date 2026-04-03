@@ -86,8 +86,6 @@ public partial class LTOTapeDrive
                             (byte)((pageID >> 8) & 0xff), (byte)(pageID & 0xff),
                             (byte)format, dataLen[2], dataLen[3]];
         var succ = ScsiWrite(cdb, [.. param, .. data]);
-
-        var msg = LTOTapeDrive.ParseSenseData(Sense);
         return succ;
     }
 

@@ -105,6 +105,9 @@ public partial class LTOTapeDrive
 
     public override bool IOCtlDirect(byte[] cdb, IntPtr dataBuffer, uint bufferLength, byte dataIn = SCSI_IOCTL_DATA_OUT, uint timeoutSeconds = 600)
     {
+        if (_handle is null || _handle.IsInvalid)
+            return false;
+
         _sptwb.spt.CdbLength = (byte)cdb.Length;
         _sptwb.spt.DataIn = dataIn;
         _sptwb.spt.DataTransferLength = bufferLength;

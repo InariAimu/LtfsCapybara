@@ -1,11 +1,32 @@
 using TapeDrive.Utils;
 using TapeDrive.SCSICommands;
+using System.Text;
 
 namespace TapeDrive;
+
+public enum SenseErrorLevel
+{
+    None, Information, Warning, Critical
+}
+
+
+public class SenseInfo
+{
+    public DateTime Timestamp { get; init; } = DateTime.Now;
+    public SenseErrorLevel ErrorLevel { get; set; } = SenseErrorLevel.None;
+    public bool Deferred { get; init; }
+
+    public required FixedFormatSenseData SenseData { get; init; }
+
+    public string Description { get; set; } = string.Empty;
+    public string AdvisedAction { get; set; } = string.Empty;
+}
 
 
 public partial class LTOTapeDrive : IDisposable
 {
+    public List<SenseInfo> SenseHistory { get; } = [];
+
     public FixedFormatSenseData? ParsedSense { get; private set; }
 
     public void ParseFixedFormatSense()
@@ -25,14 +46,99 @@ public partial class LTOTapeDrive : IDisposable
         if (ParsedSense is null)
             return;
 
+        StringBuilder sb = new StringBuilder();
+
+        if (ParsedSense.ErrorCode == 0x70)
+        {
+            sb.AppendLine("Current error:");
+        }
+        else if (ParsedSense.ErrorCode == 0x71)
+        {
+            sb.AppendLine("Deferred error:");
+        }
+        else
+        {
+            return;
+        }
+
+        SenseInfo info = new()
+        {
+            Timestamp = DateTime.Now,
+            Deferred = ParsedSense.ErrorCode == 0x71,
+            SenseData = ParsedSense
+        };
+
+        if (ParsedSense.Mark)
+            sb.AppendLine("Filemark detected.");
+
+        if (ParsedSense.EOM)
+            sb.AppendLine("End of Media detected.");
+
+        if (ParsedSense.ILI)
+            sb.AppendLine("Blocklen mismatch detected.");
+
+        sb.AppendLine(GetSenseKeyDescription(ParsedSense.SenseKey));
+
+        if (ParsedSense.Valid)
+            sb.AppendLine("Info bytes: " + String.Join(' ', ParsedSense.InformationBytes.Select(b => b.ToString("x2"))));
+
+        ushort additionalSenseCode = (ushort)((ParsedSense.AdditionalSenseCode << 8) | ParsedSense.AdditionalSenseCodeQualifier);
+
+        if (ParsedSense.SKSV)
+        {
+            if (ParsedSense.SenseKey == 0x05) // ILLEGAL REQUEST
+            {
+                sb.AppendLine($"Error code: {ParsedSense.FieldPointerOrDriveErrorCode:X}");
+                sb.AppendLine($"Bit pointer: {ParsedSense.BitPointer}");
+                sb.AppendLine($"CPE: {ParsedSense.CPE}");
+                sb.AppendLine($"BPV: {ParsedSense.BPV}");
+            }
+            else if (
+                ParsedSense.SenseKey == 0x02 ||    // NOT READY
+                ParsedSense.SenseKey == 0x03       // MEDIUM ERROR
+            )
+            {
+                sb.AppendLine($"Progress: {ParsedSense.FieldPointerOrDriveErrorCode:X}");
+            }
+        }
+        else
+        {
+            sb.AppendLine($"Drive error code: {ParsedSense.FieldPointerOrDriveErrorCode:X}");
+        }
+
+        if (ParsedSense.CLN)
+        {
+            sb.AppendLine("Cleaning required.");
+        }
+
+        sb.AppendLine(GetAdditionalSenseCodeDescription(additionalSenseCode));
+
+        StringBuilder consoleMessage = new StringBuilder();
+
         switch (ParsedSense.SenseKey)
         {
             case 0x00: // NO SENSE
+                info.ErrorLevel = SenseErrorLevel.Information;
                 break;
+
             case 0x01: // RECOVERED ERROR
+                info.ErrorLevel = SenseErrorLevel.Information;
+                switch (additionalSenseCode)
+                {
+                    case 0x3700: // Rounded parameter
+                        break;
+                    case 0x5d00: // Failure prediction threshold exceeded
+                        break;
+                    case 0x5dff: // Failure prediction threshold exceeded (false)
+                        break;
+                }
                 break;
+
             case 0x02: // NOT READY
+                info.ErrorLevel = SenseErrorLevel.Information;
+                consoleMessage.AppendLine("Drive not ready - media access not possible");
                 break;
+
             case 0x03: // MEDIUM ERROR
                 break;
             case 0x04: // HARDWARE ERROR
@@ -60,6 +166,11 @@ public partial class LTOTapeDrive : IDisposable
             default:
                 break;
         }
+
+        info.Description = sb.ToString();
+        info.AdvisedAction = consoleMessage.ToString();
+
+        SenseHistory.Add(info);
     }
 
     public static string GetSenseKeyDescription(byte senseKey)
@@ -85,7 +196,7 @@ public partial class LTOTapeDrive : IDisposable
         };
     }
 
-    public static string ParseAdditionalSenseCode(ushort addCode)
+    public static string GetAdditionalSenseCodeDescription(ushort addCode)
     {
         string msg = addCode switch
         {
