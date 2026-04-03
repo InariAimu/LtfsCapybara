@@ -1,4 +1,4 @@
-using TapeDrive.SCSICommands;
+using TapeDrive.Utils;
 
 namespace TapeDrive.SCSICommands;
 
@@ -13,7 +13,7 @@ public class ReceiveDiagnosticResults
 
 
     [Byte(2)]
-    [Metadata("Identifier for the diagnostic information page to be returned.70h returns the Self-Test page.")]
+    [Metadata("Page Code", "Identifier for the diagnostic information page to be returned.70h returns the Self-Test page.")]
     public byte PageCode = 0;
 
     [Word(3)]

@@ -25,6 +25,7 @@ public class StructMetadataField
     public StructMetadataValueDescription[] ValueDescriptions { get; init; } = [];
     public bool IsReserved { get; init; }
     public StructMetadataLocation Location { get; init; } = new();
+    public StructMetadataListLayout? ListLayout { get; init; }
 }
 
 public class StructMetadataLocation
@@ -41,4 +42,18 @@ public class StructMetadataValueDescription
     public string Value { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;
     public bool IsCurrent { get; init; }
+}
+
+public class StructMetadataListLayout
+{
+    public string LengthSource { get; init; } = string.Empty;
+    public string LengthEncoding { get; init; } = string.Empty;
+    public string? LengthFieldMemberName { get; init; }
+    public int LengthByteIndex { get; init; }
+    public int LengthEndByteIndex { get; init; }
+    public int LengthByteLength { get; init; }
+    public bool? IsLengthMSBFirst { get; init; }
+    public int ValueByteIndex { get; init; }
+    public int ValueEndByteIndex { get; init; }
+    public int ValueByteLength { get; init; }
 }

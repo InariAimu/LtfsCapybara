@@ -12,6 +12,19 @@ export interface StructMetadataValueDescription {
     isCurrent: boolean;
 }
 
+export interface StructMetadataListLayout {
+    lengthSource: string;
+    lengthEncoding: string;
+    lengthFieldMemberName?: string | null;
+    lengthByteIndex: number;
+    lengthEndByteIndex: number;
+    lengthByteLength: number;
+    isLengthMSBFirst?: boolean | null;
+    valueByteIndex: number;
+    valueEndByteIndex: number;
+    valueByteLength: number;
+}
+
 export interface StructMetadataField {
     memberName: string;
     displayName: string;
@@ -26,6 +39,7 @@ export interface StructMetadataField {
     valueDescriptions: StructMetadataValueDescription[];
     isReserved: boolean;
     location: StructMetadataLocation;
+    listLayout?: StructMetadataListLayout | null;
 }
 
 export interface StructMetadataDocument {

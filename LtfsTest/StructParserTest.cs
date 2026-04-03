@@ -1,4 +1,5 @@
 using TapeDrive;
+using TapeDrive.SCSICommands;
 using TapeDrive.SCSICommands.LogSensePages;
 using TapeDrive.Utils;
 using System.Text.Json;
@@ -120,6 +121,8 @@ public class StructParserTest
                 0x00,
                 0x00,
                 0b0000_1000,
+                0x00,
+                0x00,
             },
             bytes
         );
@@ -157,8 +160,8 @@ public class StructParserTest
         var document = StructParser.ToMetadataDocument(sense);
 
         Assert.Equal(nameof(FixedFormatSenseData), document.TypeName);
-        Assert.Equal(22, document.ByteLength);
-        Assert.Equal("F0 00 EA 12 34 56 78 10 9A BC DE F0 5A C3 7E C5 11 22 00 00 00 08", document.RawHex);
+        Assert.Equal(24, document.ByteLength);
+        Assert.Equal("F0 00 EA 12 34 56 78 10 9A BC DE F0 5A C3 7E C5 11 22 00 00 00 08 00 00", document.RawHex);
 
         var validField = Assert.Single(document.Fields.Where(field => field.MemberName == nameof(FixedFormatSenseData.Valid)));
         Assert.Equal("Valid", validField.DisplayName);
@@ -231,7 +234,110 @@ public class StructParserTest
         Assert.Equal(1, payloadField.Location.ByteIndex);
         Assert.Equal(4, payloadField.Location.ByteLength);
         Assert.Equal("AA BB CC", payloadField.FormattedValue);
+        Assert.NotNull(payloadField.ListLayout);
+        Assert.Equal("prefix", payloadField.ListLayout!.LengthSource);
+        Assert.Equal("byte", payloadField.ListLayout.LengthEncoding);
+        Assert.Equal(1, payloadField.ListLayout.LengthByteIndex);
+        Assert.Equal(2, payloadField.ListLayout.ValueByteIndex);
+        Assert.Equal(3, payloadField.ListLayout.ValueByteLength);
         Assert.DoesNotContain(document.Fields, field => field.IsReserved);
+    }
+
+    [Fact]
+    public void Parse_SupportsRefByteListAttribute()
+    {
+        byte[] bytes =
+        [
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x12, 0x34,
+            0x00,
+            0x02,
+            0x5A,
+            0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x03,
+            0x00, 0x00, 0x00, 0x02,
+            0xDE, 0xAD,
+            0x70, 0x00, 0x05,
+        ];
+
+        var parsed = StructParser.Parse<SenseResponse>(bytes);
+
+        Assert.Equal((ushort)0x1234, parsed.StatusQualifier);
+        Assert.Equal((byte)0x02, parsed.DATAPRES);
+        Assert.Equal((byte)0x5A, parsed.Status);
+        Assert.Equal((uint)3, parsed.SenseDataLength);
+        Assert.Equal((uint)2, parsed.ResponseDataLength);
+        Assert.Equal(new byte[] { 0xDE, 0xAD }, parsed.ResponseData);
+        Assert.Equal(new byte[] { 0x70, 0x00, 0x05 }, parsed.SenseData);
+    }
+
+    [Fact]
+    public void ToBytes_SynchronizesReferencedByteListLengths()
+    {
+        var response = new SenseResponse
+        {
+            StatusQualifier = 0x1234,
+            DATAPRES = 0x02,
+            Status = 0x5A,
+            ResponseData = [0xDE, 0xAD],
+            SenseData = [0x70, 0x00, 0x05],
+        };
+
+        var bytes = StructParser.ToBytes(response);
+
+        Assert.Equal((uint)2, response.ResponseDataLength);
+        Assert.Equal((uint)3, response.SenseDataLength);
+        Assert.Equal(
+            new byte[]
+            {
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x12, 0x34,
+                0x00,
+                0x02,
+                0x5A,
+                0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x03,
+                0x00, 0x00, 0x00, 0x02,
+                0xDE, 0xAD,
+                0x70, 0x00, 0x05,
+            },
+            bytes
+        );
+    }
+
+    [Fact]
+    public void ToMetadataDocument_ExportsReferencedByteListLayout()
+    {
+        var response = new SenseResponse
+        {
+            StatusQualifier = 0x1234,
+            DATAPRES = 0x02,
+            Status = 0x5A,
+            ResponseData = [0xDE, 0xAD],
+            SenseData = [0x70, 0x00, 0x05],
+        };
+
+        var document = StructParser.ToMetadataDocument(response);
+
+        var responseDataField = Assert.Single(document.Fields.Where(field => field.MemberName == nameof(SenseResponse.ResponseData)));
+        Assert.Equal("refByteList", responseDataField.Encoding);
+        Assert.Equal("DE AD", responseDataField.FormattedValue);
+        Assert.NotNull(responseDataField.ListLayout);
+        Assert.Equal("member", responseDataField.ListLayout!.LengthSource);
+        Assert.Equal("dword", responseDataField.ListLayout.LengthEncoding);
+        Assert.Equal(nameof(SenseResponse.ResponseDataLength), responseDataField.ListLayout.LengthFieldMemberName);
+        Assert.Equal(20, responseDataField.ListLayout.LengthByteIndex);
+        Assert.Equal(24, responseDataField.ListLayout.ValueByteIndex);
+        Assert.Equal(2, responseDataField.ListLayout.ValueByteLength);
+
+        var senseDataField = Assert.Single(document.Fields.Where(field => field.MemberName == nameof(SenseResponse.SenseData)));
+        Assert.Equal(26, senseDataField.Location.ByteIndex);
+        Assert.Equal(3, senseDataField.Location.ByteLength);
+        Assert.NotNull(senseDataField.ListLayout);
+        Assert.Equal(nameof(SenseResponse.SenseDataLength), senseDataField.ListLayout!.LengthFieldMemberName);
+        Assert.Equal(16, senseDataField.ListLayout.LengthByteIndex);
+        Assert.Equal(26, senseDataField.ListLayout.ValueByteIndex);
+        Assert.Equal(3, senseDataField.ListLayout.ValueByteLength);
     }
 
     [MSBFirstStruct]

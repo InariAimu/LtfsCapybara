@@ -1,4 +1,4 @@
-using TapeDrive.SCSICommands;
+using TapeDrive.Utils;
 
 namespace TapeDrive.SCSICommands;
 

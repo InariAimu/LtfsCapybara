@@ -53,6 +53,7 @@ public static partial class StructParser
         var structAttribute = EnsureStructType(type);
 
         var layouts = GetFieldLayouts(type, structAttribute, instance: instance).ToArray();
+        SynchronizeReferencedByteListLengths(instance, layouts);
         var bytes = new byte[GetStructByteLength(layouts, structAttribute)];
 
         foreach (var layout in layouts)

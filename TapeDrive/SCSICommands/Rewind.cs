@@ -1,6 +1,6 @@
-using TapeDrive.SCSICommands;
+using TapeDrive.Utils;
 
-namespace TapeDrive;
+namespace TapeDrive.SCSICommands;
 
 [MSBFirstStruct("If the rewind is successful, unsolicited positional sense will indicate that the tape is at BOM by theEOD bit being set and an additional sense code of 0004h (BOP).", ExplicitByteLength = 6)]
 public class Rewind

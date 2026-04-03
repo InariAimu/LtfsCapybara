@@ -1,85 +1,69 @@
+namespace TapeDrive.Utils;
+
 [AttributeUsage(AttributeTargets.Class)]
-public class MSBFirstStructAttribute : Attribute
+public class MSBFirstStructAttribute(
+    string description = "",
+    int explicitByteLength = 0,
+    bool emptySpaceAsReserved = true,
+    bool reservedSpacesFillZero = true) : Attribute
 {
-    public string Description { get; init; }
+    public string Description { get; init; } = description;
 
-    public int ExplicitByteLength { get; init; }
+    public int ExplicitByteLength { get; init; } = explicitByteLength;
 
-    public bool EmptySpaceAsReserved { get; init; }
-    public bool ReservedSpacesFillZero { get; init; }
-
-    public MSBFirstStructAttribute(string description = "", int explicitByteLength = 0, bool emptySpaceAsReserved = true, bool reservedSpacesFillZero = true)
-    {
-        Description = description;
-        ExplicitByteLength = explicitByteLength;
-        EmptySpaceAsReserved = emptySpaceAsReserved;
-        ReservedSpacesFillZero = reservedSpacesFillZero;
-    }
+    public bool EmptySpaceAsReserved { get; init; } = emptySpaceAsReserved;
+    public bool ReservedSpacesFillZero { get; init; } = reservedSpacesFillZero;
 }
 
 [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
-public class BitAttribute : Attribute
+public class BitAttribute(int byteIndex, int bitIndex) : Attribute
 {
-    public int ByteIndex { get; init; }
-    public int BitIndex { get; init; }
-
-    public BitAttribute(int byteIndex, int bitIndex)
-    {
-        ByteIndex = byteIndex;
-        BitIndex = bitIndex;
-    }
+    public int ByteIndex { get; init; } = byteIndex;
+    public int BitIndex { get; init; } = bitIndex;
 }
 
 [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
-public class ByteAttribute : Attribute
+public class ByteAttribute(int byteIndex, int bitIndex = 0, int length = 8) : Attribute
 {
-    public int ByteIndex { get; init; }
-    public int BitIndex { get; init; }
-    public int BitLength { get; init; }
-
-    public ByteAttribute(int byteIndex, int bitIndex = 0, int length = 8)
-    {
-        ByteIndex = byteIndex;
-        BitIndex = bitIndex;
-        BitLength = length;
-    }
+    public int ByteIndex { get; init; } = byteIndex;
+    public int BitIndex { get; init; } = bitIndex;
+    public int BitLength { get; init; } = length;
 }
 
 [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
-public class BytesAttribute : Attribute
+public class BytesAttribute(int byteIndex, int length) : Attribute
 {
-    public int ByteIndex { get; init; }
-    public int Length { get; init; }
-
-    public BytesAttribute(int byteIndex, int length)
-    {
-        ByteIndex = byteIndex;
-        Length = length;
-    }
+    public int ByteIndex { get; init; } = byteIndex;
+    public int Length { get; init; } = length;
 }
 
 [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
-public class WordAttribute : Attribute
+public class WordAttribute(int byteIndex) : Attribute
 {
-    public int ByteIndex { get; init; }
-
-    public WordAttribute(int byteIndex)
-    {
-        ByteIndex = byteIndex;
-    }
+    public int ByteIndex { get; init; } = byteIndex;
 }
 
 [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
-public class DWordAttribute : Attribute
+public class DWordAttribute(int byteIndex) : Attribute
 {
-    public int ByteIndex { get; init; }
-
-    public DWordAttribute(int byteIndex)
-    {
-        ByteIndex = byteIndex;
-    }
+    public int ByteIndex { get; init; } = byteIndex;
 }
 
+
+
+[AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
+public class RefByteListAttribute(int byteIndex, string refField) : Attribute
+{
+    /// <summary>
+    /// -1 means the byte index is automatically determined based on the end of the previous field
+    /// </summary>
+    public int ByteIndex { get; init; } = byteIndex;
+
+    /// <summary>
+    /// name of the field/property that indicates the length of the list
+    /// </summary>
+    public string RefField { get; init; } = refField;
+}
 
 public enum LengthType
 {
@@ -87,39 +71,25 @@ public enum LengthType
 }
 
 [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
-public class ByteListAttribute : Attribute
+public class ByteListAttribute(int byteIndex, LengthType lengthType, bool isLengthMSBFirst = true) : Attribute
 {
     /// <summary>
     /// -1 means the byte index is automatically determined based on the end of the previous field
     /// </summary>
-    public int ByteIndex { get; init; }
-    
+    public int ByteIndex { get; init; } = byteIndex;
+
     /// <summary>
     /// first byte/word/dword indicates the length of the list, followed by that many bytes of data
     /// </summary>
-    public LengthType LengthType { get; init; }
+    public LengthType LengthType { get; init; } = lengthType;
 
-    public bool IsLengthMSBFirst { get; init; } = true;
-
-    public ByteListAttribute(int byteIndex, LengthType lengthType, bool isLengthMSBFirst = true)
-    {
-        ByteIndex = byteIndex;
-        LengthType = lengthType;
-        IsLengthMSBFirst = isLengthMSBFirst;
-    }
+    public bool IsLengthMSBFirst { get; init; } = isLengthMSBFirst;
 }
 
 [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
-public class MetadataAttribute : Attribute
+public class MetadataAttribute(string name, string description, string[]? valueDescriptions = null) : Attribute
 {
-    public string Name { get; init; }
-    public string Description { get; init; }
-    public string[]? ValueDescriptions { get; init; }
-
-    public MetadataAttribute(string name, string description, string[]? valueDescriptions = null)
-    {
-        Name = name;
-        Description = description;
-        ValueDescriptions = valueDescriptions;
-    }
+    public string Name { get; init; } = name;
+    public string Description { get; init; } = description;
+    public string[]? ValueDescriptions { get; init; } = valueDescriptions;
 }

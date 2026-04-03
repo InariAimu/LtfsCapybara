@@ -1,4 +1,6 @@
-﻿namespace TapeDrive.SCSICommands.LogSensePages;
+﻿using TapeDrive.Utils;
+
+namespace TapeDrive.SCSICommands.LogSensePages;
 
 [MSBFirstStruct()]
 public class LogSenseSupportedPage

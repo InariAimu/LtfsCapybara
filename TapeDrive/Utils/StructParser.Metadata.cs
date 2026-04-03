@@ -33,6 +33,29 @@ public static partial class StructParser
                 BitIndex = layout.BitIndex,
                 BitLength = layout.BitLength,
             },
+            ListLayout = CreateListLayout(layout),
+        };
+    }
+
+    private static StructMetadataListLayout? CreateListLayout(StructFieldLayout layout)
+    {
+        if (layout.ByteListAttribute is null && layout.RefByteListAttribute is null)
+        {
+            return null;
+        }
+
+        return new StructMetadataListLayout
+        {
+            LengthSource = layout.LengthSource ?? string.Empty,
+            LengthEncoding = layout.LengthFieldEncoding ?? string.Empty,
+            LengthFieldMemberName = layout.LengthFieldMemberName,
+            LengthByteIndex = layout.LengthFieldByteIndex,
+            LengthEndByteIndex = layout.LengthFieldByteIndex + layout.LengthFieldByteLength - 1,
+            LengthByteLength = layout.LengthFieldByteLength,
+            IsLengthMSBFirst = layout.IsLengthMSBFirst,
+            ValueByteIndex = layout.ValueByteIndex,
+            ValueEndByteIndex = layout.ValueByteIndex + layout.ValueByteLength - 1,
+            ValueByteLength = layout.ValueByteLength,
         };
     }
 

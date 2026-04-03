@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { NAlert, NCard, NCode, NEmpty, NTag } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
-import type { StructMetadataDocument, StructMetadataField } from '@/api/types/structMetadata';
+import type { StructMetadataDocument, StructMetadataField, StructMetadataListLayout } from '@/api/types/structMetadata';
 
 interface Props {
     payload: StructMetadataDocument | string | null;
@@ -181,6 +181,33 @@ function formatLocation(row: StructMetadataField): string {
     return `${byteLabel}${endByteLabel}, ${t('structInspector.location.bytes')} ${location.byteLength}${bitLabel}`;
 }
 
+function formatByteRange(startByteIndex: number, endByteIndex: number, byteLength: number): string {
+    const byteLabel = `${t('structInspector.location.byte')} ${startByteIndex}`;
+    const endByteLabel = endByteIndex !== startByteIndex ? `-${endByteIndex}` : '';
+    return `${byteLabel}${endByteLabel}, ${t('structInspector.location.bytes')} ${byteLength}`;
+}
+
+function formatLengthSource(listLayout: StructMetadataListLayout): string {
+    if (listLayout.lengthSource === 'prefix') {
+        return t('structInspector.lengthSourcePrefix');
+    }
+
+    if (listLayout.lengthSource === 'member' && listLayout.lengthFieldMemberName) {
+        return `${t('structInspector.lengthSourceMember')} ${listLayout.lengthFieldMemberName}`;
+    }
+
+    return listLayout.lengthSource || '-';
+}
+
+function formatLengthEncoding(listLayout: StructMetadataListLayout): string {
+    const segments = [listLayout.lengthEncoding];
+    if (listLayout.isLengthMSBFirst != null) {
+        segments.push(listLayout.isLengthMSBFirst ? t('structInspector.msbFirst') : t('structInspector.lsbFirst'));
+    }
+
+    return segments.join(' · ');
+}
+
 function getColumnSpan(field: StructMetadataField): number {
     return field.location.bitLength ?? 8;
 }
@@ -337,6 +364,34 @@ function getFieldStyle(colorIndex: number): Record<string, string> {
                             <div class="struct-detail-item">
                                 <span class="struct-detail-label">{{ t('structInspector.fields.raw') }}</span>
                                 <n-code :code="selectedField.rawHex || '-'" word-wrap />
+                            </div>
+
+                            <div v-if="selectedField.listLayout" class="struct-detail-item">
+                                <span class="struct-detail-label">{{ t('structInspector.fields.lengthSource') }}</span>
+                                <span>{{ formatLengthSource(selectedField.listLayout) }}</span>
+                            </div>
+
+                            <div v-if="selectedField.listLayout" class="struct-detail-item">
+                                <span class="struct-detail-label">{{ t('structInspector.fields.lengthField') }}</span>
+                                <span>
+                                    {{ formatByteRange(
+                                        selectedField.listLayout.lengthByteIndex,
+                                        selectedField.listLayout.lengthEndByteIndex,
+                                        selectedField.listLayout.lengthByteLength,
+                                    ) }}
+                                    · {{ formatLengthEncoding(selectedField.listLayout) }}
+                                </span>
+                            </div>
+
+                            <div v-if="selectedField.listLayout" class="struct-detail-item">
+                                <span class="struct-detail-label">{{ t('structInspector.fields.valueRange') }}</span>
+                                <span>
+                                    {{ formatByteRange(
+                                        selectedField.listLayout.valueByteIndex,
+                                        selectedField.listLayout.valueEndByteIndex,
+                                        selectedField.listLayout.valueByteLength,
+                                    ) }}
+                                </span>
                             </div>
 
                             <div class="struct-detail-item">
