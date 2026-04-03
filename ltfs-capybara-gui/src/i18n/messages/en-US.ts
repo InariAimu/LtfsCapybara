@@ -17,6 +17,7 @@
         localIndex: 'Local Index',
         task: 'Task',
         aiChat: 'AI Chat',
+        test: 'Test',
         settings: 'Settings',
     },
     messages: {
@@ -116,6 +117,14 @@
     },
     pages: {
         comingSoon: 'This page is coming soon.',
+    },
+    test: {
+        title: 'Struct Test',
+        description: 'This page shows sample StructMetadata returned by LtfsServer.',
+        tableTitle: 'StructMetadata Preview',
+        reload: 'Reload',
+        empty: 'No test data.',
+        loadFailed: 'Failed to load test data.',
     },
     task: {
         refresh: 'Refresh',
@@ -253,6 +262,40 @@
 50~55%: Driver head may have broken channel
 <50%: Broken tape or driver head`,
             vertical: 'Show Physical Layout',
+        },
+    },
+    structInspector: {
+        title: 'Struct Inspector',
+        rawBytes: 'Raw Bytes',
+        empty: 'No struct data.',
+        invalidJsonTitle: 'Invalid struct JSON',
+        visualTitle: 'Bit Layout',
+        detailTitle: 'Field Details',
+        selectHint: 'Select a cell on the left first.',
+        noDescription: 'No description for this field.',
+        currentValueLabel: 'Current value',
+        reservedTag: 'Reserved',
+        byteHeader: 'Byte',
+        bitHeader: 'bit',
+        columns: {
+            field: 'Field',
+            value: 'Value',
+            layout: 'Layout',
+            raw: 'Raw',
+            description: 'Description',
+        },
+        fields: {
+            value: 'Value',
+            location: 'Location',
+            raw: 'Raw Bytes',
+            description: 'Description',
+            valueDescriptions: 'Value Descriptions',
+        },
+        location: {
+            byte: 'byte',
+            bit: 'bit',
+            bytes: 'bytes',
+            length: 'length',
         },
     },
 };

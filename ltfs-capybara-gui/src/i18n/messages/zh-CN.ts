@@ -17,6 +17,7 @@ export default {
         localIndex: '本地索引',
         task: '任务',
         aiChat: 'AI 对话',
+        test: '测试',
         settings: '设置',
     },
     messages: {
@@ -116,6 +117,14 @@ export default {
     },
     pages: {
         comingSoon: '该页面即将上线。',
+    },
+    test: {
+        title: '结构测试',
+        description: '这里展示 LtfsServer 返回的 StructMetadata 测试数据。',
+        tableTitle: 'StructMetadata 预览',
+        reload: '刷新',
+        empty: '暂无测试数据。',
+        loadFailed: '加载测试数据失败。',
     },
     task: {
         refresh: '刷新',
@@ -253,6 +262,40 @@ export default {
 50~55%：可能存在磁头通道损坏
 50%以下：磁带或磁头严重损坏`,
             vertical: '显示物理布局',
+        },
+    },
+    structInspector: {
+        title: '结构解析',
+        rawBytes: '原始字节',
+        empty: '暂无结构数据。',
+        invalidJsonTitle: '结构 JSON 无法解析',
+        visualTitle: '位图视图',
+        detailTitle: '字段详情',
+        selectHint: '请先在左侧选择一个格子。',
+        noDescription: '当前字段没有说明。',
+        currentValueLabel: '当前值说明',
+        reservedTag: '保留区',
+        byteHeader: 'Byte',
+        bitHeader: 'bit',
+        columns: {
+            field: '字段',
+            value: '值',
+            layout: '位置',
+            raw: '原始',
+            description: '说明',
+        },
+        fields: {
+            value: '值',
+            location: '位置',
+            raw: '原始字节',
+            description: '说明',
+            valueDescriptions: '取值说明',
+        },
+        location: {
+            byte: '字节',
+            bit: '位',
+            bytes: '字节',
+            length: '长度',
         },
     },
 };

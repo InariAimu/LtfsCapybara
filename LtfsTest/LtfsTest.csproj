@@ -19,6 +19,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Ltfs\Ltfs.csproj" />
     <ProjectReference Include="..\LtfsServer\LtfsServer.csproj" />
+    <ProjectReference Include="..\TapeDrive\TapeDrive.csproj" />
   </ItemGroup>
 
   <ItemGroup>

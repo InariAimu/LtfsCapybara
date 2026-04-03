@@ -20,6 +20,20 @@ public partial class LTOTapeDrive
     private const uint IOCTL_SCSI_PASS_THROUGH = 0x4D004;
     private const uint IOCTL_SCSI_PASS_THROUGH_DIRECT = 0x4D014;
 
+    public override ushort LastStatus { get; protected set; } = SCSI_STATUS_GOOD;
+
+    private const byte SCSI_STATUS_GOOD = 0x00;
+    private const byte SCSI_STATUS_CHECK_CONDITION = 0x02;
+    private const byte SCSI_STATUS_CONDITION_MET = 0x04;
+    private const byte SCSI_STATUS_BUSY = 0x08;
+    private const byte SCSI_STATUS_INTERMEDIATE = 0x10;
+    private const byte SCSI_STATUS_INTERMEDIATE_CONDITION_MET = 0x14;
+    private const byte SCSI_STATUS_RESERVATION_CONFLICT = 0x18;
+    private const byte SCSI_STATUS_COMMAND_TERMINATED = 0x22;
+    private const byte SCSI_STATUS_QUEUE_FULL = 0x28;
+    private const byte SCSI_STATUS_ACA_ACTIVE = 0x30;
+    private const byte SCSI_STATUS_TASK_ABORTED = 0x40;
+
     private const int SENSE_LEN = 64;
     private const int CDB_LEN = 16;
 
@@ -111,15 +125,29 @@ public partial class LTOTapeDrive
             bool result = NativeMethods.DeviceIoControl(_handle, IOCTL_SCSI_PASS_THROUGH_DIRECT,
                 bufferPtr, sptSize, bufferPtr, sptSize, ref bytesReturned, IntPtr.Zero);
 
-            if (result)
+            if (!result)
             {
-                var output = Marshal.PtrToStructure<SCSI_PASS_THROUGH_WITH_BUFFERS>(bufferPtr);
-
-                Sense = output.Sense;
+                // Windows / driver / bus error
+                int error = Marshal.GetLastWin32Error();
             }
             else
             {
-                ResetSense();
+                var output = Marshal.PtrToStructure<SCSI_PASS_THROUGH_WITH_BUFFERS>(bufferPtr);
+                Sense = output.Sense;
+
+                switch (output.spt.ScsiStatus)
+                {
+                    case SCSI_STATUS_GOOD:
+                        break;
+
+                    case SCSI_STATUS_CHECK_CONDITION:
+                        ParseFixedFormatSense();
+                        if (ParsedSense != null)
+                        {
+                            HandleSense();
+                        }
+                        break;
+                }
             }
 
             return result;

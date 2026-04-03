@@ -10,6 +10,7 @@ import {
     SwapVerticalOutline,
     DocumentTextSharp,
     Fish,
+    BeakerOutline,
 } from '@vicons/ionicons5';
 import { NIcon, NMenu, NLayoutSider } from 'naive-ui';
 import { h, ref, computed, onMounted } from 'vue';
@@ -103,6 +104,11 @@ const menuOptions = computed<MenuOption[]>(() => [
         label: t('menu.aiChat'),
         key: 'ai-chat',
         icon: renderIcon(Fish),
+    },
+    {
+        label: t('menu.test'),
+        key: 'test',
+        icon: renderIcon(BeakerOutline),
     },
     {
         label: t('menu.settings'),

@@ -6,12 +6,27 @@ using System.Text;
 using LtoTape;
 using System.Linq;
 using System.Globalization;
+using TapeDrive.SCSICommands;
+using TapeDrive.Utils;
+using TapeDrive.SCSICommands.LogSensePages;
 
 namespace TapeDrive;
 
 public partial class LTOTapeDrive : IDisposable
 {
     public Dictionary<byte, byte[]> Pages = new();
+
+    public LogSensePageHeader GetLogSensePageHeader(byte pageCode, byte pageControl = 0x01)
+    {
+        byte[] r = ScsiRead(StructParser.ToBytes(new LogSense()
+        {
+            PageCode = pageCode,
+            PC = pageControl,
+            AllocationLength = 4
+        }), 4);
+
+        return StructParser.Parse<LogSensePageHeader>(r);
+    }
 
     public byte[] LogSense(byte pageCode, byte pageControl = 0x01)
     {

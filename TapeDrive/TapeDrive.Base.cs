@@ -19,6 +19,8 @@ public abstract class TapeDriveBase : IDisposable
         Sense = new byte[64];
     }
 
+    public virtual ushort LastStatus { get; protected set; } = 0;
+
     public virtual bool IOCtlDirect(byte[] cdb, IntPtr dataBuffer, uint bufferLength, byte dataIn = 0, uint timeoutSeconds = 600)
     {
         // No real IO in base class; tests can override to simulate results.

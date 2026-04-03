@@ -10,6 +10,7 @@ using LtfsServer.Features.ServerSettings;
 using LtfsServer.Features.Tasks;
 using LtfsServer.Features.AI;
 using LtfsServer.Features.AI.Tools;
+using LtfsServer.Features.Test;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -88,6 +89,8 @@ app.MapServerSettingsApi();
 app.MapTasksApi();
 // Register AI chat proxy API endpoints
 app.MapAiApi();
+// Register test/demo endpoints
+app.MapTestApi();
 
 // Initialize local tape registry from AppData.Path/local before starting
 var localRegistry = app.Services.GetRequiredService<ILocalTapeRegistry>();
