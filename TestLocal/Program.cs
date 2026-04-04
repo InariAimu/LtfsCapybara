@@ -16,7 +16,7 @@ Ltfs.Ltfs lt = new();
 lt.SetTapeDrive(new FakeTapeDrive());
 
 // Initialize the test console logger. Adjust level as desired.
-Log.SetLogger(new ConsoleLogger { Level = LogLevel.Info });
+Log.SetLogger(new ConsoleLogger { Level = LogLevel.Trace });
 
 Logger.Info("Loading LTFS from tape...");
 lt.LoadTape();
@@ -65,10 +65,10 @@ lt.LtfsIndexB = new Ltfs.Index.LtfsIndex()
 };
 lt.LtfsDataTempIndexs.Add((LtfsIndex)lt.LtfsIndexB.Clone());
 
-lt.AddDirectory("", "");
+lt.AddDirectory("\\\\NekoHouse\\video\\Movie\\Annihilation.2018.UHD.Blu-ray.Remux.2160p.HEVC.TrueHD.Atmos.7.1-Hares", "/NetSync/");
 
 Logger.Info("Writing files to tape...");
-await lt.PerformWriteTasks();
+await lt.Commit();
 
 Logger.Info("Writing LTFS Index...");
 try

@@ -7,6 +7,7 @@ namespace Ltfs;
 public class FileBuffer
 {
     private readonly MemoryPool<byte> memoryPoolForSmallFiles = MemoryPool<byte>.Shared;
+    private const int DefaultChannelCapacity = 8;
     
     public sealed class SmallFileBufferItem
     {
@@ -17,10 +18,14 @@ public class FileBuffer
     private readonly ConcurrentDictionary<string, Channel<SmallFileBufferItem>> buffers = new();
     private readonly ConcurrentDictionary<string, Task> producers = new();
 
-    public Task AddFileAsync(string path, int chunkSize, SemaphoreSlim? prefetchSemaphore = null)
+    public Task AddFileAsync(string path, int chunkSize, long fileSize, SemaphoreSlim? prefetchSemaphore = null)
     {
+        var effectiveChunkSize = Math.Max(1, chunkSize);
+        var effectiveFileSize = Math.Max(0, fileSize);
+        var channelCapacity = effectiveFileSize > 0 && effectiveFileSize <= effectiveChunkSize ? 1 : DefaultChannelCapacity;
+
         // Ensure channel exists
-        var ch = buffers.GetOrAdd(path, (p) => Channel.CreateBounded<SmallFileBufferItem>(new BoundedChannelOptions(8)
+        var ch = buffers.GetOrAdd(path, (p) => Channel.CreateBounded<SmallFileBufferItem>(new BoundedChannelOptions(channelCapacity)
         {
             SingleReader = true,
             SingleWriter = true
@@ -35,11 +40,11 @@ public class FileBuffer
 
                 try
                 {
-                    using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: chunkSize, useAsync: true);
+                    using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: effectiveChunkSize, useAsync: true);
                     while (true)
                     {
-                        var owner = memoryPoolForSmallFiles.Rent(chunkSize);
-                        int read = await fs.ReadAsync(owner.Memory[..chunkSize]);
+                        var owner = memoryPoolForSmallFiles.Rent(effectiveChunkSize);
+                        int read = await fs.ReadAsync(owner.Memory[..effectiveChunkSize]);
                         if (read == 0)
                         {
                             owner.Dispose();
@@ -69,7 +74,8 @@ public class FileBuffer
     // Backwards-compatible wrapper
     public Task AddFile(string path, int chunkSize)
     {
-        return AddFileAsync(path, chunkSize, null);
+        var fileSize = File.Exists(path) ? new FileInfo(path).Length : 0;
+        return AddFileAsync(path, chunkSize, fileSize, null);
     }
 
     public ChannelReader<SmallFileBufferItem>? GetReader(string path)

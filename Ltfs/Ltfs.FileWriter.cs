@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Threading.Channels;
 using System.IO.Hashing;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -14,7 +15,11 @@ namespace Ltfs;
 
 public partial class Ltfs
 {
-    const int ChannelThreshold = 1024 * 1024 * 4; // 4MB for SMB performance
+    const int DefaultStreamingChunkSize = 1024 * 1024 * 4; // 4MB for SMB performance
+    const int DefaultSmallFilePrefetchThreshold = 1024 * 1024 * 4;
+    const int DefaultSmallFileDirectWriteThreshold = 128 * 1024;
+    const int DefaultSmallFilePrefetchConcurrency = 16;
+    const int DefaultSmallFilePrefetchWindow = 32;
     const ulong IndexInterval = 30ul * 1024 * 1024 * 1024; // 30GB
 
     // number of buffers in the ring buffer
@@ -25,6 +30,12 @@ public partial class Ltfs
     private readonly MemoryPool<byte> memoryPool = MemoryPool<byte>.Shared;
 
     private readonly FileBuffer fileBuffer = new FileBuffer();
+
+    public int SmallFilePrefetchThresholdBytes { get; set; } = DefaultSmallFilePrefetchThreshold;
+    public int SmallFileDirectWriteThresholdBytes { get; set; } = DefaultSmallFileDirectWriteThreshold;
+    public int SmallFilePrefetchConcurrency { get; set; } = DefaultSmallFilePrefetchConcurrency;
+    public int SmallFilePrefetchWindow { get; set; } = DefaultSmallFilePrefetchWindow;
+    public FileChecksumAlgorithm ChecksumAlgorithm { get; set; } = FileChecksumAlgorithm.Crc64;
 
     // index of the file currently being written; used by prefetch controller
     private volatile int currentWriteIndex = 0;
@@ -45,6 +56,7 @@ public partial class Ltfs
     }
 
     private readonly Crc64 crc64 = new Crc64();
+    private IncrementalHash? sha1;
 
     public Task<bool> PerformWriteTasks()
     {
@@ -75,18 +87,29 @@ public partial class Ltfs
 
         var t = DateTime.Now.Ticks;
 
+        var smallFilePrefetchThreshold = Math.Max(0, SmallFilePrefetchThresholdBytes);
+        var smallFileDirectWriteThreshold = Math.Max(0, SmallFileDirectWriteThresholdBytes);
+        var prefetchConcurrency = Math.Max(0, SmallFilePrefetchConcurrency);
+        var prefetchWindow = Math.Max(0, SmallFilePrefetchWindow);
+
         // Start a background prefetch controller that keeps a sliding window
         // of prefetched files ahead of the current write index. Concurrency
         // of actual file-read producers is limited by `prefetchSemaphore`.
-        var prefetchSemaphore = new SemaphoreSlim(8);
-        const int prefetchWindow = 32;
+        SemaphoreSlim? prefetchSemaphore = null;
 
         // Signal used to wake the prefetcher when the write index advances.
-        var prefetchWindowSignal = new SemaphoreSlim(0);
+        SemaphoreSlim? prefetchWindowSignal = null;
 
-        // Run prefetch task before locating tape to avoid delays.
-        Logger.Info($"Starting prefetch task with window size {prefetchWindow} and concurrency limit {prefetchSemaphore.CurrentCount}");
-        var prefetchTask = PrefetchTask(writeTasks, prefetchSemaphore, prefetchWindowSignal, prefetchWindow);
+        Task prefetchTask = Task.CompletedTask;
+        if (smallFilePrefetchThreshold > 0 && prefetchConcurrency > 0 && prefetchWindow > 0)
+        {
+            prefetchSemaphore = new SemaphoreSlim(prefetchConcurrency);
+            prefetchWindowSignal = new SemaphoreSlim(0);
+
+            // Run prefetch task before locating tape to avoid delays.
+            Logger.Info($"Starting prefetch task with window size {prefetchWindow}, concurrency limit {prefetchConcurrency}, prefetch threshold {FileSize.FormatSize((ulong)smallFilePrefetchThreshold)}, direct-write threshold {FileSize.FormatSize((ulong)smallFileDirectWriteThreshold)}");
+            prefetchTask = PrefetchTask(writeTasks, prefetchSemaphore, prefetchWindowSignal, prefetchWindow, smallFilePrefetchThreshold, smallFileDirectWriteThreshold);
+        }
 
         // position to end-of-data for append
         Logger.Info($"Locating tape");
@@ -109,7 +132,7 @@ public partial class Ltfs
             currentWriteIndex = i;
 
             // Notify the prefetch controller that the write index advanced
-            try { prefetchWindowSignal.Release(); } catch { }
+            try { prefetchWindowSignal?.Release(); } catch { }
             var task = writeTasks[i];
             MarkTaskRunning(task);
 
@@ -162,7 +185,8 @@ public partial class Ltfs
         // it has processed all entries in `writeTasks`). Then dispose the
         // signal used to wake it.
         try { await prefetchTask; } catch { }
-        try { prefetchWindowSignal.Dispose(); } catch { }
+        try { prefetchWindowSignal?.Dispose(); } catch { }
+        try { prefetchSemaphore?.Dispose(); } catch { }
 
         overallMonitorCts.Cancel();
         try { await overallMonitor; } catch { }
@@ -196,7 +220,7 @@ public partial class Ltfs
         ulong startBlock = pos.BlockNumber;
         Logger.Debug($"Start block: {startBlock}");
 
-        crc64.Reset();
+        ResetHashes();
 
         long fileLength = (long)task.LtfsTargetPath.Length;
         if (fileLength == 0)
@@ -227,7 +251,8 @@ public partial class Ltfs
         Logger.Debug($"[Write] {FileSize.FormatSize((ulong)fileLength)} {task.LocalPath}");
         var t = DateTime.Now.Ticks;
 
-        int smbBuffersize = ChannelThreshold;
+        var smallFileDirectWriteThreshold = Math.Max(0, SmallFileDirectWriteThresholdBytes);
+        var streamingChunkSize = GetStreamingChunkSize(blockSize);
 
         // If the file has been prefetched into the FileBuffer, consume from it.
         var bufferedReader = fileBuffer.GetReader(task.LocalPath);
@@ -239,7 +264,7 @@ public partial class Ltfs
             {
                 while (bufferedReader.TryRead(out var buf))
                 {
-                    crc64.Append(buf.Owner.Memory.Span[..buf.Length]);
+                    AppendHashes(buf.Owner.Memory.Span[..buf.Length]);
                     _tapeDrive.BufferedWrite(buf.Owner.Memory[..buf.Length], LtfsLabelA!.Blocksize);
                     try { Interlocked.Add(ref currentFileBytesWritten, buf.Length); } catch { }
                     buf.Owner.Dispose();
@@ -247,6 +272,11 @@ public partial class Ltfs
             }
             // Remove the buffer entry and ensure any leftover memory is disposed
             try { await fileBuffer.RemoveAsync(task.LocalPath); } catch { }
+        }
+        else if (fileLength <= smallFileDirectWriteThreshold)
+        {
+            Logger.Debug($"[Direct small-file write]");
+            await DirectWriteSmallFile(task.LocalPath, blockSize, fileLength);
         }
         else
         {
@@ -263,8 +293,8 @@ public partial class Ltfs
 
             while (true)
             {
-                var memoryOwner = memoryPool.Rent(smbBuffersize);
-                int read = await file.ReadAsync(memoryOwner.Memory[..smbBuffersize]);
+                var memoryOwner = memoryPool.Rent(streamingChunkSize);
+                int read = await file.ReadAsync(memoryOwner.Memory[..streamingChunkSize]);
 
                 if (read == 0)
                 {
@@ -313,9 +343,7 @@ public partial class Ltfs
         };
         task.LtfsTargetPath.ExtendedAttributes = new ExtendedAttributes()
         {
-            Xattrs = [
-                new XAttr("ltfs.hash.crc64sum", crc64.GetCurrentHashAsUInt64().ToString("X16")),
-            ]
+            Xattrs = BuildHashXattrs()
         };
 
         // Clear per-file progress tracking
@@ -323,6 +351,7 @@ public partial class Ltfs
         try { Interlocked.Exchange(ref currentFileSize, 0); } catch { }
         try { Interlocked.Exchange(ref currentFileBytesWritten, 0); } catch { }
         try { Interlocked.Exchange(ref currentFileStartTicks, 0); } catch { }
+        DisposeHashes();
     }
 
     private async Task Crc64Task()
@@ -334,7 +363,7 @@ public partial class Ltfs
         {
             while (rawDataChannel.Reader.TryRead(out var buf))
             {
-                crc64.Append(buf.Owner.Memory.Span[..buf.Length]);
+                AppendHashes(buf.Owner.Memory.Span[..buf.Length]);
                 await crcDataChannel.Writer.WriteAsync(buf);
             }
         }
@@ -357,7 +386,48 @@ public partial class Ltfs
         }
     }
 
-    private Task PrefetchTask(IReadOnlyList<WriteTask> writeTasks, SemaphoreSlim prefetchSemaphore, SemaphoreSlim prefetchWindowSignal, int prefetchWindow)
+    private async Task DirectWriteSmallFile(string localPath, int blockSize, long fileLength)
+    {
+        var chunkSize = GetDirectWriteChunkSize(blockSize, fileLength);
+
+        using var file = new FileStream(
+            localPath, FileMode.Open, FileAccess.Read, FileShare.Read,
+            bufferSize: chunkSize, useAsync: true);
+
+        while (true)
+        {
+            var memoryOwner = memoryPool.Rent(chunkSize);
+            int read;
+            try
+            {
+                read = await file.ReadAsync(memoryOwner.Memory[..chunkSize]);
+            }
+            catch
+            {
+                memoryOwner.Dispose();
+                throw;
+            }
+
+            if (read == 0)
+            {
+                memoryOwner.Dispose();
+                break;
+            }
+
+            try
+            {
+                AppendHashes(memoryOwner.Memory.Span[..read]);
+                _tapeDrive.BufferedWrite(memoryOwner.Memory[..read], blockSize);
+                Interlocked.Add(ref currentFileBytesWritten, read);
+            }
+            finally
+            {
+                memoryOwner.Dispose();
+            }
+        }
+    }
+
+    private Task PrefetchTask(IReadOnlyList<WriteTask> writeTasks, SemaphoreSlim prefetchSemaphore, SemaphoreSlim prefetchWindowSignal, int prefetchWindow, int smallFilePrefetchThreshold, int smallFileDirectWriteThreshold)
     {
         return Task.Run(async () =>
         {
@@ -373,11 +443,12 @@ public partial class Ltfs
                         try
                         {
                             var filesize = ptask.LtfsTargetPath.Length;
-                            if (filesize <= ChannelThreshold)
+                            if (filesize > (ulong)smallFileDirectWriteThreshold && filesize <= (ulong)smallFilePrefetchThreshold)
                             {
                                 // Start producer; it will wait on semaphore before reading.
                                 Logger.Debug($"[Prefetch] {FileSize.FormatSize(filesize)} {ptask.LocalPath}");
-                                _ = fileBuffer.AddFileAsync(ptask.LocalPath, ChannelThreshold, prefetchSemaphore);
+                                var chunkSize = GetPrefetchChunkSize(filesize, smallFilePrefetchThreshold);
+                                _ = fileBuffer.AddFileAsync(ptask.LocalPath, chunkSize, (long)filesize, prefetchSemaphore);
                             }
                         }
                         catch
@@ -394,6 +465,88 @@ public partial class Ltfs
                 await prefetchWindowSignal.WaitAsync();
             }
         });
+    }
+
+    private static int GetStreamingChunkSize(int blockSize)
+    {
+        return Math.Max(blockSize, DefaultStreamingChunkSize);
+    }
+
+    private int GetDirectWriteChunkSize(int blockSize, long fileLength)
+    {
+        var directWriteThreshold = Math.Max(1, SmallFileDirectWriteThresholdBytes);
+        var fileSizedChunk = fileLength > 0 ? (int)Math.Min(fileLength, int.MaxValue) : 1;
+        return Math.Max(blockSize, Math.Min(directWriteThreshold, fileSizedChunk));
+    }
+
+    private static int GetPrefetchChunkSize(ulong fileSize, int smallFilePrefetchThreshold)
+    {
+        var threshold = Math.Max(1, smallFilePrefetchThreshold);
+        var fileSizedChunk = fileSize > 0 ? (int)Math.Min(fileSize, int.MaxValue) : 1;
+        return Math.Max(1, Math.Min(threshold, fileSizedChunk));
+    }
+
+    private void ResetHashes()
+    {
+        DisposeHashes();
+
+        if (ShouldComputeCrc64())
+        {
+            crc64.Reset();
+        }
+
+        if (ShouldComputeSha1())
+        {
+            sha1 = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
+        }
+    }
+
+    private void AppendHashes(ReadOnlySpan<byte> data)
+    {
+        if (ShouldComputeCrc64())
+        {
+            crc64.Append(data);
+        }
+
+        sha1?.AppendData(data);
+    }
+
+    private void AppendHashBytes(byte[] data)
+    {
+        AppendHashes(data);
+    }
+
+    private XAttr[] BuildHashXattrs()
+    {
+        var xattrs = new List<XAttr>(2);
+
+        if (ShouldComputeCrc64())
+        {
+            xattrs.Add(new XAttr("ltfs.hash.crc64sum", crc64.GetCurrentHashAsUInt64().ToString("X16")));
+        }
+
+        if (sha1 != null)
+        {
+            xattrs.Add(new XAttr("ltfs.hash.sha1sum", Convert.ToHexString(sha1.GetHashAndReset())));
+        }
+
+        return xattrs.ToArray();
+    }
+
+    private bool ShouldComputeCrc64()
+    {
+        return ChecksumAlgorithm is FileChecksumAlgorithm.Crc64 or FileChecksumAlgorithm.Crc64AndSha1;
+    }
+
+    private bool ShouldComputeSha1()
+    {
+        return ChecksumAlgorithm is FileChecksumAlgorithm.Sha1 or FileChecksumAlgorithm.Crc64AndSha1;
+    }
+
+    private void DisposeHashes()
+    {
+        sha1?.Dispose();
+        sha1 = null;
     }
 
     // Runs an overall monitor for the WriteAll operation. `getTotalWritten`

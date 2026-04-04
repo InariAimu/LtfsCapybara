@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Reflection;
+using System.Security.Cryptography;
 using System.Reflection.Emit;
 using System.Xml.Schema;
 using System.Xml;
@@ -153,6 +155,180 @@ public class LtfsTest
     [Fact]
     public async Task LocalTapeRegistry_FindsLatestCmEntry()
     {
+    }
+
+    [Fact]
+    public async Task PrefetchTask_SkipsFilesBelowDirectWriteThreshold()
+    {
+        var ltfs = new Ltfs.Ltfs
+        {
+            SmallFileDirectWriteThresholdBytes = 4 * 1024,
+            SmallFilePrefetchThresholdBytes = 64 * 1024,
+        };
+
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllBytesAsync(tempFile, new byte[1024]);
+
+            var ltfsFile = LtfsFile.Default();
+            ltfsFile.Name = "tiny.bin";
+            ltfsFile.Length = 1024;
+
+            var writeTask = new WriteTask
+            {
+                LocalPath = tempFile,
+                TargetPath = "/tiny.bin",
+                LtfsTargetPath = ltfsFile,
+            };
+
+            using var prefetchSemaphore = new SemaphoreSlim(1);
+            using var prefetchSignal = new SemaphoreSlim(0);
+
+            await InvokePrefetchTaskAsync(ltfs, [writeTask], prefetchSemaphore, prefetchSignal, 8, ltfs.SmallFilePrefetchThresholdBytes, ltfs.SmallFileDirectWriteThresholdBytes);
+
+            var reader = GetBufferedReader(ltfs, tempFile);
+            Assert.Null(reader);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public async Task PrefetchTask_BuffersFilesAboveDirectWriteThreshold()
+    {
+        var ltfs = new Ltfs.Ltfs
+        {
+            SmallFileDirectWriteThresholdBytes = 4 * 1024,
+            SmallFilePrefetchThresholdBytes = 64 * 1024,
+        };
+
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllBytesAsync(tempFile, new byte[8 * 1024]);
+
+            var ltfsFile = LtfsFile.Default();
+            ltfsFile.Name = "prefetch.bin";
+            ltfsFile.Length = 8 * 1024;
+
+            var writeTask = new WriteTask
+            {
+                LocalPath = tempFile,
+                TargetPath = "/prefetch.bin",
+                LtfsTargetPath = ltfsFile,
+            };
+
+            using var prefetchSemaphore = new SemaphoreSlim(1);
+            using var prefetchSignal = new SemaphoreSlim(0);
+
+            await InvokePrefetchTaskAsync(ltfs, [writeTask], prefetchSemaphore, prefetchSignal, 8, ltfs.SmallFilePrefetchThresholdBytes, ltfs.SmallFileDirectWriteThresholdBytes);
+
+            var reader = GetBufferedReader(ltfs, tempFile);
+            Assert.NotNull(reader);
+
+            await RemoveBufferedFileAsync(ltfs, tempFile);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void BuildHashXattrs_UsesCrc64WhenConfigured()
+    {
+        var xattrs = BuildHashXattrs(FileChecksumAlgorithm.Crc64, "abc"u8.ToArray());
+
+        Assert.Single(xattrs);
+        Assert.Equal("ltfs.hash.crc64sum", xattrs[0].Key.Value);
+        Assert.Equal("66501A349A0E0855", xattrs[0].Value.Value);
+    }
+
+    [Fact]
+    public void BuildHashXattrs_UsesSha1WhenConfigured()
+    {
+        var xattrs = BuildHashXattrs(FileChecksumAlgorithm.Sha1, "abc"u8.ToArray());
+
+        Assert.Single(xattrs);
+        Assert.Equal("ltfs.hash.sha1sum", xattrs[0].Key.Value);
+        Assert.Equal(Convert.ToHexString(SHA1.HashData("abc"u8.ToArray())), xattrs[0].Value.Value);
+    }
+
+    [Fact]
+    public void BuildHashXattrs_UsesBothHashesWhenConfigured()
+    {
+        var xattrs = BuildHashXattrs(FileChecksumAlgorithm.Crc64AndSha1, "abc"u8.ToArray());
+
+        Assert.Equal(2, xattrs.Length);
+        Assert.Equal("ltfs.hash.crc64sum", xattrs[0].Key.Value);
+        Assert.Equal("66501A349A0E0855", xattrs[0].Value.Value);
+        Assert.Equal("ltfs.hash.sha1sum", xattrs[1].Key.Value);
+        Assert.Equal(Convert.ToHexString(SHA1.HashData("abc"u8.ToArray())), xattrs[1].Value.Value);
+    }
+
+    private static async Task InvokePrefetchTaskAsync(Ltfs.Ltfs ltfs, IReadOnlyList<WriteTask> writeTasks, SemaphoreSlim prefetchSemaphore, SemaphoreSlim prefetchSignal, int prefetchWindow, int prefetchThreshold, int directWriteThreshold)
+    {
+        var method = typeof(Ltfs.Ltfs).GetMethod("PrefetchTask", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("PrefetchTask method was not found.");
+
+        var task = (Task?)method.Invoke(ltfs, new object?[] { writeTasks, prefetchSemaphore, prefetchSignal, prefetchWindow, prefetchThreshold, directWriteThreshold })
+            ?? throw new InvalidOperationException("PrefetchTask did not return a task.");
+
+        await task;
+    }
+
+    private static System.Threading.Channels.ChannelReader<FileBuffer.SmallFileBufferItem>? GetBufferedReader(Ltfs.Ltfs ltfs, string path)
+    {
+        var field = typeof(Ltfs.Ltfs).GetField("fileBuffer", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("fileBuffer field was not found.");
+
+        var buffer = (FileBuffer?)field.GetValue(ltfs)
+            ?? throw new InvalidOperationException("fileBuffer was not initialized.");
+
+        return buffer.GetReader(path);
+    }
+
+    private static async Task RemoveBufferedFileAsync(Ltfs.Ltfs ltfs, string path)
+    {
+        var field = typeof(Ltfs.Ltfs).GetField("fileBuffer", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("fileBuffer field was not found.");
+
+        var buffer = (FileBuffer?)field.GetValue(ltfs)
+            ?? throw new InvalidOperationException("fileBuffer was not initialized.");
+
+        await buffer.RemoveAsync(path);
+    }
+
+    private static XAttr[] BuildHashXattrs(FileChecksumAlgorithm algorithm, byte[] data)
+    {
+        var ltfs = new Ltfs.Ltfs
+        {
+            ChecksumAlgorithm = algorithm,
+        };
+
+        var resetMethod = typeof(Ltfs.Ltfs).GetMethod("ResetHashes", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("ResetHashes method was not found.");
+        var appendMethod = typeof(Ltfs.Ltfs).GetMethod("AppendHashBytes", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("AppendHashBytes method was not found.");
+        var buildMethod = typeof(Ltfs.Ltfs).GetMethod("BuildHashXattrs", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("BuildHashXattrs method was not found.");
+        var disposeMethod = typeof(Ltfs.Ltfs).GetMethod("DisposeHashes", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("DisposeHashes method was not found.");
+
+        resetMethod.Invoke(ltfs, null);
+        try
+        {
+            appendMethod.Invoke(ltfs, new object?[] { data });
+            return (XAttr[]?)buildMethod.Invoke(ltfs, null)
+                ?? throw new InvalidOperationException("BuildHashXattrs returned null.");
+        }
+        finally
+        {
+            disposeMethod.Invoke(ltfs, null);
+        }
     }
 
 }
