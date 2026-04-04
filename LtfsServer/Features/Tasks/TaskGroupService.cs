@@ -2,6 +2,7 @@ using System.Text.Json;
 
 using Ltfs;
 using Ltfs.Index;
+using Ltfs.Tasks;
 
 using LtfsServer.BootStrap;
 
@@ -552,13 +553,7 @@ public sealed class TaskGroupService : ITaskGroupService
         if (task.WriteTask is null)
             return null;
 
-        var operation = task.WriteTask.TaskType switch
-        {
-            FileTaskType.Write => TapeFsTaskType.Add,
-            FileTaskType.Replace => TapeFsTaskType.Update,
-            FileTaskType.Delete => TapeFsTaskType.Delete,
-            _ => task.Type,
-        };
+        var operation = NormalizeTaskType(task.Type);
 
         return new TapeFsPathTask
         {

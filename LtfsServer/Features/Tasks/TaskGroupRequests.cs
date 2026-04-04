@@ -1,4 +1,5 @@
 using Ltfs;
+using Ltfs.Tasks;
 
 namespace LtfsServer.Features.Tasks;
 

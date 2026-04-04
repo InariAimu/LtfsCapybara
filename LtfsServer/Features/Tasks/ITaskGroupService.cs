@@ -1,5 +1,6 @@
 using Ltfs;
 using Ltfs.Index;
+using Ltfs.Tasks;
 
 namespace LtfsServer.Features.Tasks;
 

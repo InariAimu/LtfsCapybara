@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using Ltfs;
+using Ltfs.Tasks;
 
 namespace LtfsServer.Features.Tasks;
 

@@ -1,4 +1,4 @@
-namespace Ltfs;
+namespace Ltfs.Tasks;
 
 public class FormatTask
 {

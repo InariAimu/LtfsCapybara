@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 
 using Ltfs.Index;
 using Ltfs.Utils;
+using Ltfs.Tasks;
 
 using TapeDrive;
 
@@ -45,21 +46,20 @@ public partial class Ltfs
 
     private readonly Crc64 crc64 = new Crc64();
 
-    public async Task<bool> PerformWriteTasks()
+    public Task<bool> PerformWriteTasks()
     {
-        int blocksize = LtfsLabelA.Blocksize;
+        var workingIndex = (LtfsIndex)GetLatestIndex().Clone();
+        LtfsIndexCurr = workingIndex;
+        return PerformWriteTasks(GetPendingTasks().OfType<WriteTask>().ToArray(), workingIndex);
+    }
 
-        // do delete tasks first and remove from task list
-        writeTasks.RemoveAll(t =>
-        {
-            if (t.TaskType == FileTaskType.Delete)
-            {
-                UpdateIndexByTask(GetLatestIndex()!, t);
-                t.IsTaskDone = true;
-                return true;
-            }
-            return false;
-        });
+    private async Task<bool> PerformWriteTasks(IReadOnlyList<WriteTask> writeTasks, LtfsIndex workingIndex)
+    {
+        if (writeTasks.Count == 0)
+            return true;
+
+        var label = LtfsLabelA ?? throw new InvalidOperationException("LTFS label is not loaded.");
+        int blocksize = label.Blocksize;
 
         Logger.Info($"Starting write of {writeTasks.Count} files...");
 
@@ -86,11 +86,11 @@ public partial class Ltfs
 
         // Run prefetch task before locating tape to avoid delays.
         Logger.Info($"Starting prefetch task with window size {prefetchWindow} and concurrency limit {prefetchSemaphore.CurrentCount}");
-        var prefetchTask = PrefetchTask(prefetchSemaphore, prefetchWindowSignal, prefetchWindow);
+        var prefetchTask = PrefetchTask(writeTasks, prefetchSemaphore, prefetchWindowSignal, prefetchWindow);
 
         // position to end-of-data for append
         Logger.Info($"Locating tape");
-        var dataPartition = LtfsLabelA.Partitions.Data;
+        var dataPartition = label.Partitions.Data;
         _tapeDrive.Locate(0, PartitionToNumber(dataPartition), LocateType.EOD);
 
 
@@ -102,6 +102,8 @@ public partial class Ltfs
                 RunOverallMonitor(() => totalWrite, totalBytesToWrite, overallMonitorToken),
             overallMonitorToken);
 
+        var hasErrors = false;
+
         for (int i = 0; i < writeTasks.Count; i++)
         {
             currentWriteIndex = i;
@@ -109,6 +111,7 @@ public partial class Ltfs
             // Notify the prefetch controller that the write index advanced
             try { prefetchWindowSignal.Release(); } catch { }
             var task = writeTasks[i];
+            MarkTaskRunning(task);
 
             try
             {
@@ -117,15 +120,16 @@ public partial class Ltfs
             catch (Exception ex)
             {
                 Logger.Error($"Error writing file {task.LocalPath}: {ex.Message}");
-                task.IsTaskError = true;
+                MarkTaskFailed(task);
+                hasErrors = true;
                 continue;
             }
 
-            totalWrite += task.LtfsPath.Length;
-            totalWriteSinceLastIndex += task.LtfsPath.Length;
-            task.IsTaskDone = true;
+            totalWrite += task.LtfsTargetPath.Length;
+            totalWriteSinceLastIndex += task.LtfsTargetPath.Length;
+            MarkTaskCompleted(task);
 
-            UpdateIndexByTask(GetLatestIndex()!, task);
+            UpdateIndexByTask(workingIndex, task);
 
             Logger.Debug($"{FileSize.FormatSize(totalWrite)} / {FileSize.FormatSize(totalBytesToWrite)} written Progress: {totalWrite * 100 / totalBytesToWrite}% Estimated time left: {(DateTime.Now.Ticks - t) / (double)totalWrite * (totalBytesToWrite - totalWrite) / 10000000.0:f2} seconds");
 
@@ -166,14 +170,15 @@ public partial class Ltfs
         // finish file writes
         _tapeDrive.WriteFileMark();
 
-        return true;
+        return !hasErrors;
     }
 
     private async Task WriteFile(WriteTask task)
     {
-        var blockSize = LtfsLabelA.Blocksize;
+        var label = LtfsLabelA ?? throw new InvalidOperationException("LTFS label is not loaded.");
+        var blockSize = label.Blocksize;
 
-        var dataPartition = LtfsLabelA.Partitions.Data;
+        var dataPartition = label.Partitions.Data;
 
         var pos = _tapeDrive.ReadPosition();
         if (pos.BlockNumber <= writeBlockPos)
@@ -193,11 +198,11 @@ public partial class Ltfs
 
         crc64.Reset();
 
-        long fileLength = (long)task.LtfsPath.Length;
+        long fileLength = (long)task.LtfsTargetPath.Length;
         if (fileLength == 0)
         {
             Logger.Warn($"Zero-length file: {task.LocalPath}");
-            task.LtfsPath.ExtentInfo = new ExtentInfo
+            task.LtfsTargetPath.ExtentInfo = new ExtentInfo
             {
                 Extent = [
                     new Extent
@@ -235,7 +240,7 @@ public partial class Ltfs
                 while (bufferedReader.TryRead(out var buf))
                 {
                     crc64.Append(buf.Owner.Memory.Span[..buf.Length]);
-                    _tapeDrive.BufferedWrite(buf.Owner.Memory[..buf.Length], LtfsLabelA.Blocksize);
+                    _tapeDrive.BufferedWrite(buf.Owner.Memory[..buf.Length], LtfsLabelA!.Blocksize);
                     try { Interlocked.Add(ref currentFileBytesWritten, buf.Length); } catch { }
                     buf.Owner.Dispose();
                 }
@@ -293,7 +298,7 @@ public partial class Ltfs
         writeBlockPos = pos.BlockNumber;
 
         // record a single extent that covers the file written
-        task.LtfsPath.ExtentInfo = new ExtentInfo
+        task.LtfsTargetPath.ExtentInfo = new ExtentInfo
         {
             Extent = [
                 new Extent
@@ -306,7 +311,7 @@ public partial class Ltfs
                 }
             ]
         };
-        task.LtfsPath.ExtendedAttributes = new ExtendedAttributes()
+        task.LtfsTargetPath.ExtendedAttributes = new ExtendedAttributes()
         {
             Xattrs = [
                 new XAttr("ltfs.hash.crc64sum", crc64.GetCurrentHashAsUInt64().ToString("X16")),
@@ -345,14 +350,14 @@ public partial class Ltfs
         {
             while (crcDataChannel.Reader.TryRead(out var buf))
             {
-                _tapeDrive.BufferedWrite(buf.Owner.Memory[..buf.Length], LtfsLabelA.Blocksize);
+                _tapeDrive.BufferedWrite(buf.Owner.Memory[..buf.Length], LtfsLabelA!.Blocksize);
                 try { Interlocked.Add(ref currentFileBytesWritten, buf.Length); } catch { }
                 buf.Owner.Dispose();
             }
         }
     }
 
-    private Task PrefetchTask(SemaphoreSlim prefetchSemaphore, SemaphoreSlim prefetchWindowSignal, int prefetchWindow)
+    private Task PrefetchTask(IReadOnlyList<WriteTask> writeTasks, SemaphoreSlim prefetchSemaphore, SemaphoreSlim prefetchWindowSignal, int prefetchWindow)
     {
         return Task.Run(async () =>
         {
@@ -363,11 +368,11 @@ public partial class Ltfs
                 if (nextToPrefetch <= currentWriteIndex + (prefetchWindow - 1))
                 {
                     var ptask = writeTasks[nextToPrefetch];
-                    if (ptask.TaskType != FileTaskType.Delete)
+                    if (!string.IsNullOrWhiteSpace(ptask.LocalPath))
                     {
                         try
                         {
-                            var filesize = ptask.LtfsPath.Length;
+                            var filesize = ptask.LtfsTargetPath.Length;
                             if (filesize <= ChannelThreshold)
                             {
                                 // Start producer; it will wait on semaphore before reading.

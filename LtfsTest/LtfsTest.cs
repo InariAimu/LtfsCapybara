@@ -10,6 +10,7 @@ using Ltfs;
 using Ltfs.Index;
 using Microsoft.Extensions.Logging.Abstractions;
 using LtfsServer.Features.LocalTapes;
+using Ltfs.Tasks;
 
 namespace LtfsTest;
 
@@ -62,15 +63,69 @@ public class LtfsTest
         ltfs.LtfsDataTempIndexs.Clear();
         ltfs.LtfsDataTempIndexs.Add(LtfsIndex.Default());
 
+        ltfs.CreateDirectory("/dir1");
+
+        var dir = ltfs.FindDirectory("/dir1");
+
+        Assert.NotNull(dir);
+        Assert.Equal("dir1", dir!.Name.Value);
+    }
+
+
+    [Fact]
+    public void AddFile_ExistingFile_QueuesDeleteThenWrite()
+    {
+        Ltfs.Ltfs ltfs = new Ltfs.Ltfs();
+        ltfs.LtfsDataTempIndexs.Clear();
+        ltfs.LtfsDataTempIndexs.Add(LtfsIndex.Default());
+
         var index = ltfs.GetLatestIndex();
-        var file = LtfsFile.Default();
+        var original = LtfsFile.Default();
+        original.Name = "file1.txt";
+        index.Directory["file1.txt"] = original;
 
-        file.Name = "test.txt";
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(tempFile, "replacement");
 
-        ltfs.CreateFile(index.Directory, file);
+            ltfs.AddFile(tempFile, "/file1.txt");
 
-        Assert.True(index.Directory.Contents.Length == 1);
-        Assert.True(((LtfsFile)index.Directory.Contents[0]).Name.Value == "test.txt");
+            var tasks = ltfs.GetPendingTasks();
+            Assert.Equal(2, tasks.Count);
+            Assert.IsType<DeleteTask>(tasks[0]);
+            Assert.IsType<WriteTask>(tasks[1]);
+            Assert.Equal("/file1.txt", ((DeleteTask)tasks[0]).TargetPath);
+            Assert.Equal("/file1.txt", ((WriteTask)tasks[1]).TargetPath);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+
+    [Fact]
+    public void DeletePath_RemovesPendingWriteForNewFile()
+    {
+        Ltfs.Ltfs ltfs = new Ltfs.Ltfs();
+        ltfs.LtfsDataTempIndexs.Clear();
+        ltfs.LtfsDataTempIndexs.Add(LtfsIndex.Default());
+
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(tempFile, "new file");
+
+            ltfs.AddFile(tempFile, "/new-file.txt");
+            ltfs.DeletePath("/new-file.txt");
+
+            Assert.Empty(ltfs.GetPendingTasks());
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
     }
 
 

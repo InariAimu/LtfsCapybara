@@ -392,7 +392,7 @@ public partial class Ltfs
         _tapeDrive.Locate(0, DATA_PARTITION, LocateType.EOD);
         var pos = _tapeDrive.ReadPosition();
 
-        var latestIndex = GetLatestIndex();
+        var latestIndex = LtfsIndexCurr ?? GetLatestIndex();
         var tmpIndex = (LtfsIndex)latestIndex.Clone();
         tmpIndex.GenerationNumber += 1;
         tmpIndex.UpdateTime = DateTime.UtcNow;
@@ -411,6 +411,7 @@ public partial class Ltfs
         LtfsDataTempIndexs.Add(tmpIndex);
 
         LtfsIndexB = tmpIndex;
+        LtfsIndexCurr = tmpIndex;
 
         try
         {
@@ -440,7 +441,7 @@ public partial class Ltfs
             _tapeDrive.Locate(0, INDEX_PARTITION, LocateType.EOD);
 
         var pos = _tapeDrive.ReadPosition();
-        var latestIndex = GetLatestIndex();
+        var latestIndex = LtfsIndexCurr ?? GetLatestIndex();
         var tmpIndex = (LtfsIndex)latestIndex.Clone();
 
         tmpIndex.Location = new TapePosition
@@ -455,6 +456,7 @@ public partial class Ltfs
         };
 
         LtfsIndexA = tmpIndex;
+        LtfsIndexCurr = tmpIndex;
 
         try
         {

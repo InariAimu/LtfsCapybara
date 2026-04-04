@@ -2,6 +2,7 @@ using System;
 using Xunit;
 using Ltfs;
 using Ltfs.Index;
+using Ltfs.Tasks;
 
 namespace LtfsTest
 {
@@ -24,10 +25,9 @@ namespace LtfsTest
 
             var writeTask = new WriteTask
             {
-                TaskType = FileTaskType.Write,
                 LocalPath = "C:\\tmp\\file1.txt",
                 TargetPath = "/dir1/file1.txt",
-                LtfsPath = file
+                LtfsTargetPath = file
             };
 
             // act - write
@@ -47,10 +47,9 @@ namespace LtfsTest
             newFile.Length = 456;
             var replaceTask = new WriteTask
             {
-                TaskType = FileTaskType.Replace,
                 LocalPath = "C:\\tmp\\file1_v2.txt",
                 TargetPath = "/dir1/file1.txt",
-                LtfsPath = newFile
+                LtfsTargetPath = newFile
             };
             ltfs.UpdateIndexByTask(index, replaceTask);
 
@@ -59,12 +58,9 @@ namespace LtfsTest
             Assert.Equal((ulong)456, replaced!.Length);
 
             // act - delete
-            var deleteTask = new WriteTask
+            var deleteTask = new DeleteTask
             {
-                TaskType = FileTaskType.Delete,
-                LocalPath = string.Empty,
-                TargetPath = "/dir1/file1.txt",
-                LtfsPath = replaced!
+                TargetPath = "/dir1/file1.txt"
             };
             ltfs.UpdateIndexByTask(index, deleteTask);
 

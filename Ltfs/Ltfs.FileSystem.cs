@@ -1,55 +1,22 @@
 using Ltfs.Index;
-
+using Ltfs.Tasks;
 using TapeDrive;
 
 namespace Ltfs;
 
 public partial class Ltfs
 {
-    protected List<WriteTask> writeTasks = new();
+    protected readonly List<TaskBase> pendingTasks = [];
+    private long nextTaskSequence = 0;
 
     public LtfsFile? FindFile(string path)
     {
-        var index = GetLatestIndex();
-        if (string.IsNullOrEmpty(path) || index?.Directory == null)
-            return null;
+        return LtfsIndexOperations.FindFile(BuildPendingIndexView(), path);
+    }
 
-        // Remove leading slash and split path
-        var parts = path.Trim('/').Split('/');
-
-        LtfsFile? FindInDir(object dirObj, string[] segments, int depth)
-        {
-            if (dirObj is LtfsDirectory dir)
-            {
-                if (depth == segments.Length - 1)
-                {
-                    // last level, find file
-                    foreach (var item in dir.Contents)
-                    {
-                        if (item is LtfsFile file && file.Name.GetName() == segments[depth])
-                            return file;
-                    }
-                    return null;
-                }
-                else
-                {
-                    // find next level directory
-                    foreach (var item in dir.Contents)
-                    {
-                        if (item is LtfsDirectory subDir && subDir.Name.GetName() == segments[depth])
-                        {
-                            var found = FindInDir(subDir, segments, depth + 1);
-                            if (found != null)
-                                return found;
-                        }
-                    }
-                    return null;
-                }
-            }
-            return null;
-        }
-
-        return FindInDir(index.Directory, parts, 0);
+    public LtfsDirectory? FindDirectory(string path)
+    {
+        return LtfsIndexOperations.FindDirectory(BuildPendingIndexView(), path);
     }
 
     public void AddDirectory(string srcDirectory, string targetPath, bool recrusive = true)
@@ -57,12 +24,15 @@ public partial class Ltfs
         if (!Directory.Exists(srcDirectory))
             return;
 
+        var normalizedTargetPath = LtfsIndexOperations.NormalizePath(targetPath);
+        CreateDirectory(normalizedTargetPath);
+
         var dirInfo = new DirectoryInfo(srcDirectory);
         var entries = dirInfo.GetFileSystemInfos();
 
         foreach (var entry in entries)
         {
-            string relativePath = Path.Combine(targetPath, entry.Name);
+            var relativePath = LtfsIndexOperations.NormalizePath(Path.Combine(normalizedTargetPath, entry.Name));
             if (entry is FileInfo fileInfo)
             {
                 AddFile(fileInfo.FullName, relativePath);
@@ -71,15 +41,24 @@ public partial class Ltfs
             {
                 if (recrusive)
                 {
+                    CreateDirectory(relativePath);
                     AddDirectory(subDirInfo.FullName, relativePath, recrusive);
                 }
             }
         }
     }
 
-    public void CreateFile(LtfsDirectory directory, LtfsFile file)
+    public void CreateDirectory(string targetPath)
     {
-        directory.Contents = directory.Contents.Append(file).ToArray();
+        var normalizedTargetPath = LtfsIndexOperations.NormalizePath(targetPath);
+        if (LtfsIndexOperations.FindDirectory(BuildPendingIndexView(), normalizedTargetPath) is not null)
+            return;
+
+        RemovePendingTasks(normalizedTargetPath, includeDescendants: false);
+        EnqueueTask(new CreateDirectoryTask
+        {
+            TargetPath = normalizedTargetPath,
+        });
     }
 
     public void AddFile(string fileName, string targetPath)
@@ -87,123 +66,92 @@ public partial class Ltfs
         if (!File.Exists(fileName))
             return;
 
-        targetPath = targetPath.Replace('\\', '/');
+        var normalizedTargetPath = LtfsIndexOperations.NormalizePath(targetPath, allowRoot: false);
+        var latestIndex = GetLatestIndex();
+        var effectiveIndex = BuildPendingIndexView();
+        var existingBaseEntry = LtfsIndexOperations.FindEntry(latestIndex, normalizedTargetPath);
+        var existingEffectiveEntry = LtfsIndexOperations.FindEntry(effectiveIndex, normalizedTargetPath);
+        if (existingEffectiveEntry is LtfsDirectory)
+            throw new InvalidOperationException($"Path '{normalizedTargetPath}' conflicts with an existing directory.");
 
-        FileInfo fileInfo = new FileInfo(fileName);
+        var fileInfo = new FileInfo(fileName);
 
         var ltfsFile = LtfsFile.Default();
-        ltfsFile.Name = Path.GetFileName(targetPath);
+        ltfsFile.Name = Path.GetFileName(normalizedTargetPath);
         ltfsFile.Length = (ulong)fileInfo.Length;
         ltfsFile.CreationTime = fileInfo.CreationTimeUtc;
+        ltfsFile.ChangeTime = fileInfo.LastWriteTimeUtc;
         ltfsFile.ModifyTime = fileInfo.LastWriteTimeUtc;
         ltfsFile.AccessTime = fileInfo.LastAccessTimeUtc;
+        ltfsFile.BackupTime = fileInfo.LastWriteTimeUtc;
         ltfsFile.ReadOnly = fileInfo.IsReadOnly;
-        ltfsFile.FileUID = 0; // will be assigned when updating index
+        ltfsFile.FileUID = 0;
 
-        WriteTask task = new WriteTask
-        {
-            TaskType = FileTaskType.Write,
-            LocalPath = fileName,
-            TargetPath = targetPath,
-            LtfsPath = ltfsFile
-        };
+        RemovePendingWriteTask(normalizedTargetPath);
 
-        if (FindFile(targetPath) != null)
+        if (existingBaseEntry is LtfsFile && existingEffectiveEntry is LtfsFile)
         {
-            task.TaskType = FileTaskType.Replace;
+            EnqueueReplaceDelete(normalizedTargetPath);
         }
 
-        writeTasks.Add(task);
+        EnqueueTask(new WriteTask
+        {
+            LocalPath = fileName,
+            TargetPath = normalizedTargetPath,
+            LtfsTargetPath = ltfsFile,
+        });
     }
 
-    public void UpdateIndexByTask(LtfsIndex index, WriteTask task)
+    public void DeletePath(string targetPath)
     {
-        // when a task is finished, update the ltfs index accordingly
-        if (index == null || task == null)
-            return;
-        
-        // normalize and split path
-        var parts = task.TargetPath?.Trim('/')?.Split('/', StringSplitOptions.RemoveEmptyEntries) ?? Array.Empty<string>();
-
-        if (parts.Length == 0)
+        var normalizedTargetPath = LtfsIndexOperations.NormalizePath(targetPath);
+        var latestIndex = GetLatestIndex();
+        var existingBaseEntry = LtfsIndexOperations.FindEntry(latestIndex, normalizedTargetPath);
+        var existingEffectiveEntry = LtfsIndexOperations.FindEntry(BuildPendingIndexView(), normalizedTargetPath);
+        if (existingEffectiveEntry is null)
             return;
 
-        // traverse/create directories to reach parent directory
-        LtfsDirectory current = index.Directory!;
-        for (int i = 0; i < parts.Length - 1; i++)
+        RemovePendingTasks(normalizedTargetPath, includeDescendants: true);
+
+        if (existingBaseEntry is null)
+            return;
+
+        EnqueueTask(new DeleteTask
         {
-            var name = parts[i];
-            var obj = current[name];
-            if (obj is LtfsDirectory dir)
-            {
-                current = dir;
-            }
-            else
-            {
-                // create missing directory
-                var newDir = new LtfsDirectory
-                {
-                    Name = new NameType { Value = name },
-                    FileUID = (uint)(index.HighestFileUID + 1),
-                    CreationTime = DateTime.UtcNow,
-                    ChangeTime = DateTime.UtcNow,
-                    ModifyTime = DateTime.UtcNow,
-                    AccessTime = DateTime.UtcNow,
-                    BackupTime = DateTime.UtcNow,
-                    ReadOnly = false,
-                    Contents = Array.Empty<object>(),
-                };
-                // bump highest uid for directory
-                index.HighestFileUID += 1;
-                current[name] = newDir;
-                current = newDir;
-            }
-        }
+            TargetPath = normalizedTargetPath,
+        });
+    }
 
-        string fileName = parts[^1];
+    public void MovePath(string sourcePath, string targetPath)
+    {
+        var normalizedSourcePath = LtfsIndexOperations.NormalizePath(sourcePath, allowRoot: false);
+        var normalizedTargetPath = LtfsIndexOperations.NormalizePath(targetPath, allowRoot: false);
+        if (string.Equals(normalizedSourcePath, normalizedTargetPath, StringComparison.OrdinalIgnoreCase))
+            return;
 
-        switch (task.TaskType)
+        if (LtfsIndexOperations.FindEntry(BuildPendingIndexView(), normalizedSourcePath) is null)
+            return;
+
+        RemovePendingTasks(normalizedSourcePath, includeDescendants: true);
+        RemovePendingTasks(normalizedTargetPath, includeDescendants: true);
+
+        EnqueueTask(new MoveTask
         {
-            case FileTaskType.Write:
-                // add new file (do not clobber existing)
-                if (current[fileName] is not LtfsFile)
-                {
-                    // ensure the LtfsFile has a valid FileUID
-                    if (task.LtfsPath.FileUID == 0)
-                    {
-                        task.LtfsPath.FileUID = index.HighestFileUID + 1;
-                        index.HighestFileUID += 1;
-                    }
-                    current[fileName] = task.LtfsPath;
-                }
-                else
-                {
-                    // file exists; treat like replace
-                    current[fileName] = task.LtfsPath;
-                }
-                break;
+            SourcePath = normalizedSourcePath,
+            TargetPath = normalizedTargetPath,
+        });
+    }
 
-            case FileTaskType.Replace:
-                // replace existing file or add if missing
-                if (task.LtfsPath.FileUID == 0)
-                {
-                    task.LtfsPath.FileUID = index.HighestFileUID + 1;
-                    index.HighestFileUID += 1;
-                }
-                current[fileName] = task.LtfsPath;
-                break;
+    public IReadOnlyList<TaskBase> GetPendingTasks()
+    {
+        return pendingTasks
+            .OrderBy(task => task.SequenceNumber)
+            .ToArray();
+    }
 
-            case FileTaskType.Delete:
-                // remove matching file entry from directory
-                var remaining = current.Contents.Where(o => !(o is LtfsFile f && f.Name.GetName() == fileName)).ToArray();
-                current.Contents = remaining;
-                break;
-        }
-
-        // update directory and index timestamps
-        current.ModifyTime = DateTime.UtcNow;
-        current.ChangeTime = DateTime.UtcNow;
-        index.UpdateTime = DateTime.UtcNow;
+    public void UpdateIndexByTask(LtfsIndex index, TaskBase task)
+    {
+        LtfsIndexOperations.ApplyTask(index, task);
     }
 
     public bool ReadFile(string fileName, LtfsFile file)
@@ -230,7 +178,7 @@ public partial class Ltfs
                         ulong readBytes = 0;
                         while (readBytes < fe.ByteCount + fe.ByteOffset)
                         {
-                            uint blocklen = (uint)Math.Min((ulong)LtfsLabelA.Blocksize, fe.ByteCount + fe.ByteOffset - readBytes);
+                                uint blocklen = (uint)Math.Min((ulong)LtfsLabelA!.Blocksize, fe.ByteCount + fe.ByteOffset - readBytes);
                             byte[]? data = null;
                             bool readsucc = false;
                             while (!readsucc)
@@ -276,6 +224,75 @@ public partial class Ltfs
             // can log error here
             return false;
         }
+    }
+
+    private LtfsIndex BuildPendingIndexView()
+    {
+        var index = (LtfsIndex)GetLatestIndex().Clone();
+        foreach (var task in GetUncommittedTasks())
+        {
+            LtfsIndexOperations.ApplyTask(index, task);
+        }
+
+        return index;
+    }
+
+    private void EnqueueReplaceDelete(string normalizedTargetPath)
+    {
+        if (GetUncommittedTasks().Any(task => task is DeleteTask deleteTask && SamePath(deleteTask.TargetPath, normalizedTargetPath)))
+            return;
+
+        EnqueueTask(new DeleteTask
+        {
+            TargetPath = normalizedTargetPath,
+        });
+    }
+
+    private void RemovePendingWriteTask(string normalizedTargetPath)
+    {
+        pendingTasks.RemoveAll(task => IsUncommitted(task) && task is WriteTask writeTask && SamePath(writeTask.TargetPath, normalizedTargetPath));
+    }
+
+    private void RemovePendingTasks(string normalizedTargetPath, bool includeDescendants)
+    {
+        pendingTasks.RemoveAll(task => IsUncommitted(task) && TaskTouchesPath(task, normalizedTargetPath, includeDescendants));
+    }
+
+    private bool TaskTouchesPath(TaskBase task, string normalizedTargetPath, bool includeDescendants)
+    {
+        return task switch
+        {
+            PathTaskBase pathTask => PathMatches(pathTask.TargetPath, normalizedTargetPath, includeDescendants),
+            MoveTask moveTask => PathMatches(moveTask.SourcePath, normalizedTargetPath, includeDescendants)
+                || PathMatches(moveTask.TargetPath, normalizedTargetPath, includeDescendants),
+            _ => false,
+        };
+    }
+
+    private static bool PathMatches(string taskPath, string normalizedTargetPath, bool includeDescendants)
+    {
+        if (SamePath(taskPath, normalizedTargetPath))
+            return true;
+
+        if (!includeDescendants)
+            return false;
+
+        var prefix = normalizedTargetPath == "/" ? "/" : normalizedTargetPath + "/";
+        return LtfsIndexOperations.NormalizePath(taskPath).StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool SamePath(string left, string right)
+    {
+        return string.Equals(
+            LtfsIndexOperations.NormalizePath(left),
+            LtfsIndexOperations.NormalizePath(right),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void EnqueueTask(TaskBase task)
+    {
+        task.SequenceNumber = ++nextTaskSequence;
+        pendingTasks.Add(task);
     }
 
 }
