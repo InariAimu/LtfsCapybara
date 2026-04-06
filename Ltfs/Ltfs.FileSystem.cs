@@ -6,7 +6,8 @@ namespace Ltfs;
 
 public partial class Ltfs
 {
-    protected readonly List<TaskBase> pendingTasks = [];
+    protected readonly List<TaskBase> pendingWriteTasks = [];
+    protected readonly List<TaskBase> pendingReadTasks = [];
     private long nextTaskSequence = 0;
 
     public LtfsFile? FindFile(string path)
@@ -102,6 +103,20 @@ public partial class Ltfs
         });
     }
 
+    public void AddReadTask(string sourcePath, string targetPath)
+    {
+        var normalizedSourcePath = LtfsIndexOperations.NormalizePath(sourcePath, allowRoot: false);
+        var sourceFile = LtfsIndexOperations.FindFile(GetLatestIndex(), normalizedSourcePath)
+            ?? throw new FileNotFoundException($"LTFS source file not found: {normalizedSourcePath}");
+
+        EnqueueTask(new ReadTask
+        {
+            SourcePath = normalizedSourcePath,
+            TargetPath = Path.GetFullPath(targetPath),
+            SourceFile = sourceFile,
+        });
+    }
+
     public void DeletePath(string targetPath)
     {
         var normalizedTargetPath = LtfsIndexOperations.NormalizePath(targetPath);
@@ -144,7 +159,22 @@ public partial class Ltfs
 
     public IReadOnlyList<TaskBase> GetPendingTasks()
     {
-        return pendingTasks
+        return pendingWriteTasks
+            .Concat(pendingReadTasks)
+            .OrderBy(task => task.SequenceNumber)
+            .ToArray();
+    }
+
+    public IReadOnlyList<TaskBase> GetPendingWriteTasks()
+    {
+        return pendingWriteTasks
+            .OrderBy(task => task.SequenceNumber)
+            .ToArray();
+    }
+
+    public IReadOnlyList<TaskBase> GetPendingReadTasks()
+    {
+        return pendingReadTasks
             .OrderBy(task => task.SequenceNumber)
             .ToArray();
     }
@@ -250,12 +280,12 @@ public partial class Ltfs
 
     private void RemovePendingWriteTask(string normalizedTargetPath)
     {
-        pendingTasks.RemoveAll(task => IsUncommitted(task) && task is WriteTask writeTask && SamePath(writeTask.TargetPath, normalizedTargetPath));
+        pendingWriteTasks.RemoveAll(task => IsUncommitted(task) && task is WriteTask writeTask && SamePath(writeTask.TargetPath, normalizedTargetPath));
     }
 
     private void RemovePendingTasks(string normalizedTargetPath, bool includeDescendants)
     {
-        pendingTasks.RemoveAll(task => IsUncommitted(task) && TaskTouchesPath(task, normalizedTargetPath, includeDescendants));
+        pendingWriteTasks.RemoveAll(task => IsUncommitted(task) && TaskTouchesPath(task, normalizedTargetPath, includeDescendants));
     }
 
     private bool TaskTouchesPath(TaskBase task, string normalizedTargetPath, bool includeDescendants)
@@ -292,7 +322,12 @@ public partial class Ltfs
     private void EnqueueTask(TaskBase task)
     {
         task.SequenceNumber = ++nextTaskSequence;
-        pendingTasks.Add(task);
+        GetTaskQueue(task).Add(task);
+    }
+
+    private List<TaskBase> GetTaskQueue(TaskBase task)
+    {
+        return task is ReadTask ? pendingReadTasks : pendingWriteTasks;
     }
 
 }

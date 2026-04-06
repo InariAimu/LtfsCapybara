@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO.Hashing;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Reflection.Emit;
@@ -13,6 +14,7 @@ using Ltfs.Index;
 using Microsoft.Extensions.Logging.Abstractions;
 using LtfsServer.Features.LocalTapes;
 using Ltfs.Tasks;
+using TapeDrive;
 
 namespace LtfsTest;
 
@@ -127,6 +129,40 @@ public class LtfsTest
         finally
         {
             File.Delete(tempFile);
+        }
+    }
+
+
+    [Fact]
+    public void PendingTasks_AreSplitIntoReadAndWriteQueues()
+    {
+        var ltfs = CreateReadReadyLtfs(new ScriptedReadTapeDrive(), blockSize: 4);
+        var sourceData = "DATA"u8.ToArray();
+        AddLtfsReadSource(ltfs, "/from-tape.bin", 12, sourceData);
+
+        var tempFile = Path.GetTempFileName();
+        var tempDirectory = Directory.CreateTempSubdirectory();
+        try
+        {
+            File.WriteAllText(tempFile, "write-side");
+
+            ltfs.AddFile(tempFile, "/write-side.bin");
+            ltfs.AddReadTask("/from-tape.bin", Path.Combine(tempDirectory.FullName, "from-tape.bin"));
+
+            var writeTasks = ltfs.GetPendingWriteTasks();
+            var readTasks = ltfs.GetPendingReadTasks();
+            var allTasks = ltfs.GetPendingTasks();
+
+            Assert.Single(writeTasks);
+            Assert.IsType<WriteTask>(writeTasks[0]);
+            Assert.Single(readTasks);
+            Assert.IsType<ReadTask>(readTasks[0]);
+            Assert.Equal(2, allTasks.Count);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+            tempDirectory.Delete(recursive: true);
         }
     }
 
@@ -269,6 +305,150 @@ public class LtfsTest
         Assert.Equal(Convert.ToHexString(SHA1.HashData("abc"u8.ToArray())), xattrs[1].Value.Value);
     }
 
+    [Fact]
+    public async Task PerformReadTasks_ReadsFilesInTapeBlockOrder()
+    {
+        var tapeDrive = new ScriptedReadTapeDrive();
+        var ltfs = CreateReadReadyLtfs(tapeDrive, blockSize: 4);
+
+        var firstData = "BBBB"u8.ToArray();
+        var secondData = "AAAA"u8.ToArray();
+        tapeDrive.AddBlock("b", 10, firstData);
+        tapeDrive.AddBlock("b", 20, secondData);
+
+        AddLtfsReadSource(ltfs, "/later.bin", 20, secondData);
+        AddLtfsReadSource(ltfs, "/earlier.bin", 10, firstData);
+
+        var tempDirectory = Directory.CreateTempSubdirectory();
+        try
+        {
+            var laterTarget = Path.Combine(tempDirectory.FullName, "later.bin");
+            var earlierTarget = Path.Combine(tempDirectory.FullName, "earlier.bin");
+
+            ltfs.AddReadTask("/later.bin", laterTarget);
+            ltfs.AddReadTask("/earlier.bin", earlierTarget);
+
+            var success = await ltfs.PerformReadTasks();
+
+            Assert.True(success);
+            Assert.Equal("BBBB", await File.ReadAllTextAsync(earlierTarget));
+            Assert.Equal("AAAA", await File.ReadAllTextAsync(laterTarget));
+            Assert.Equal([10ul, 20ul], tapeDrive.LocateCalls.Select(call => call.Block).ToArray());
+
+            var readTasks = ltfs.GetPendingTasks().OfType<ReadTask>().OrderBy(task => task.SequenceNumber).ToArray();
+            Assert.All(readTasks, task => Assert.Equal(TaskExecutionStatus.Committed, task.Status));
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task PerformReadTasks_IgnoresExistingTargetsWhenConfigured()
+    {
+        var tapeDrive = new ScriptedReadTapeDrive();
+        var ltfs = CreateReadReadyLtfs(tapeDrive, blockSize: 4);
+        ltfs.ReadTaskExistingFileMode = ReadTaskExistingFileMode.Ignore;
+
+        var data = "DATA"u8.ToArray();
+        tapeDrive.AddBlock("b", 15, data);
+        AddLtfsReadSource(ltfs, "/existing.bin", 15, data);
+
+        var tempDirectory = Directory.CreateTempSubdirectory();
+        try
+        {
+            var targetPath = Path.Combine(tempDirectory.FullName, "existing.bin");
+            await File.WriteAllTextAsync(targetPath, "keep");
+
+            ltfs.AddReadTask("/existing.bin", targetPath);
+
+            var success = await ltfs.PerformReadTasks();
+
+            Assert.True(success);
+            Assert.Equal("keep", await File.ReadAllTextAsync(targetPath));
+            Assert.Empty(tapeDrive.LocateCalls);
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task PerformReadTasks_FailsAndRemovesPartialFileWhenHashMismatchOccurs()
+    {
+        var tapeDrive = new ScriptedReadTapeDrive();
+        var ltfs = CreateReadReadyLtfs(tapeDrive, blockSize: 4);
+
+        var data = "GOOD"u8.ToArray();
+        tapeDrive.AddBlock("b", 30, data);
+
+        var sourceFile = AddLtfsReadSource(ltfs, "/broken.bin", 30, data);
+        sourceFile.ExtendedAttributes = new ExtendedAttributes
+        {
+            Xattrs = [
+                new XAttr("ltfs.hash.sha1sum", Convert.ToHexString(SHA1.HashData("BAD!"u8.ToArray()))),
+            ]
+        };
+
+        var tempDirectory = Directory.CreateTempSubdirectory();
+        try
+        {
+            var targetPath = Path.Combine(tempDirectory.FullName, "broken.bin");
+            ltfs.AddReadTask("/broken.bin", targetPath);
+
+            var success = await ltfs.PerformReadTasks();
+
+            Assert.False(success);
+            Assert.False(File.Exists(targetPath));
+
+            var readTask = Assert.Single(ltfs.GetPendingTasks().OfType<ReadTask>());
+            Assert.Equal(TaskExecutionStatus.Failed, readTask.Status);
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Commit_WithReadType_CommitsOnlyReadTasks()
+    {
+        var tapeDrive = new ScriptedReadTapeDrive();
+        var ltfs = CreateReadReadyLtfs(tapeDrive, blockSize: 4);
+        var sourceData = "READ"u8.ToArray();
+        tapeDrive.AddBlock("b", 40, sourceData);
+        AddLtfsReadSource(ltfs, "/read.bin", 40, sourceData);
+
+        var tempFile = Path.GetTempFileName();
+        var tempDirectory = Directory.CreateTempSubdirectory();
+        try
+        {
+            await File.WriteAllTextAsync(tempFile, "write-side");
+            var readTarget = Path.Combine(tempDirectory.FullName, "read.bin");
+
+            ltfs.AddFile(tempFile, "/write.bin");
+            ltfs.AddReadTask("/read.bin", readTarget);
+
+            var success = await ltfs.Commit(LtfsTaskQueueType.Read);
+
+            Assert.True(success);
+            Assert.Equal("READ", await File.ReadAllTextAsync(readTarget));
+
+            var readTask = Assert.Single(ltfs.GetPendingReadTasks().OfType<ReadTask>());
+            Assert.Equal(TaskExecutionStatus.Committed, readTask.Status);
+
+            var writeTask = Assert.Single(ltfs.GetPendingWriteTasks().OfType<WriteTask>());
+            Assert.Equal(TaskExecutionStatus.Pending, writeTask.Status);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
     private static async Task InvokePrefetchTaskAsync(Ltfs.Ltfs ltfs, IReadOnlyList<WriteTask> writeTasks, SemaphoreSlim prefetchSemaphore, SemaphoreSlim prefetchSignal, int prefetchWindow, int prefetchThreshold, int directWriteThreshold)
     {
         var method = typeof(Ltfs.Ltfs).GetMethod("PrefetchTask", BindingFlags.Instance | BindingFlags.NonPublic)
@@ -328,6 +508,106 @@ public class LtfsTest
         finally
         {
             disposeMethod.Invoke(ltfs, null);
+        }
+    }
+
+    private static Ltfs.Ltfs CreateReadReadyLtfs(ScriptedReadTapeDrive tapeDrive, int blockSize)
+    {
+        var ltfs = new Ltfs.Ltfs();
+        ltfs.SetTapeDrive(tapeDrive);
+        ltfs.LtfsDataTempIndexs.Clear();
+        ltfs.LtfsDataTempIndexs.Add(LtfsIndex.Default());
+        ltfs.LtfsLabelA = new LtfsLabel
+        {
+            Version = "2.4.0",
+            Creator = "test",
+            Formattime = DateTime.UtcNow,
+            Volumeuuid = Guid.NewGuid(),
+            Location = new Location { Partitions = { "a" } },
+            Partitions = new Partitions { Index = "a", Data = "b" },
+            Blocksize = blockSize,
+            Compression = true,
+        };
+        ltfs.ReadTaskExistingFileMode = ReadTaskExistingFileMode.Overwrite;
+        return ltfs;
+    }
+
+    private static LtfsFile AddLtfsReadSource(Ltfs.Ltfs ltfs, string sourcePath, ulong startBlock, byte[] data)
+    {
+        var index = ltfs.GetLatestIndex();
+        var file = LtfsFile.Default();
+        file.Name = Path.GetFileName(sourcePath);
+        file.Length = (ulong)data.Length;
+        file.ExtentInfo = new ExtentInfo
+        {
+            Extent = [
+                new Extent
+                {
+                    Partition = "b",
+                    StartBlock = startBlock,
+                    FileOffset = 0,
+                    ByteOffset = 0,
+                    ByteCount = (ulong)data.Length,
+                }
+            ]
+        };
+        file.ExtendedAttributes = new ExtendedAttributes
+        {
+            Xattrs = [
+                new XAttr("ltfs.hash.crc64sum", ComputeCrc64(data)),
+            ]
+        };
+
+        index.Directory[file.Name.Value] = file;
+
+        return file;
+    }
+
+    private static string ComputeCrc64(byte[] data)
+    {
+        var crc64 = new Crc64();
+        crc64.Append(data);
+        return crc64.GetCurrentHashAsUInt64().ToString("X16");
+    }
+
+    private sealed class ScriptedReadTapeDrive : FakeTapeDrive
+    {
+        private readonly Dictionary<(byte Partition, ulong Block), byte[]> blocks = [];
+        private byte currentPartition;
+        private ulong currentBlock;
+
+        public List<(byte Partition, ulong Block)> LocateCalls { get; } = [];
+
+        public void AddBlock(string partition, ulong block, byte[] data)
+        {
+            blocks[(partition == "a" ? (byte)0 : (byte)1, block)] = data;
+        }
+
+        public override ushort Locate(ulong blockAddress, byte partitionNumber, LocateType locateType)
+        {
+            currentPartition = partitionNumber;
+            currentBlock = blockAddress;
+            LocateCalls.Add((partitionNumber, blockAddress));
+            return 0;
+        }
+
+        public override PositionData ReadPosition()
+        {
+            return new PositionData
+            {
+                PartitionNumber = currentPartition,
+                BlockNumber = currentBlock,
+            };
+        }
+
+        public override byte[] ReadBlock(uint blockSizeLimit = 0x080000, bool truncate = false)
+        {
+            if (!blocks.TryGetValue((currentPartition, currentBlock), out var data))
+                throw new IOException($"No tape block registered at partition {currentPartition}, block {currentBlock}.");
+
+            currentBlock++;
+            Sense = new byte[64];
+            return data;
         }
     }
 

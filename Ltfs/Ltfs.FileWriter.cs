@@ -60,9 +60,7 @@ public partial class Ltfs
 
     public Task<bool> PerformWriteTasks()
     {
-        var workingIndex = (LtfsIndex)GetLatestIndex().Clone();
-        LtfsIndexCurr = workingIndex;
-        return PerformWriteTasks(GetPendingTasks().OfType<WriteTask>().ToArray(), workingIndex);
+        return Commit(LtfsTaskQueueType.Write);
     }
 
     private async Task<bool> PerformWriteTasks(IReadOnlyList<WriteTask> writeTasks, LtfsIndex workingIndex)

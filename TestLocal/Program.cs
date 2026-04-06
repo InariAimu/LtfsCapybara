@@ -65,10 +65,10 @@ lt.LtfsIndexB = new Ltfs.Index.LtfsIndex()
 };
 lt.LtfsDataTempIndexs.Add((LtfsIndex)lt.LtfsIndexB.Clone());
 
-lt.AddDirectory("\\\\NekoHouse\\video\\Movie\\Annihilation.2018.UHD.Blu-ray.Remux.2160p.HEVC.TrueHD.Atmos.7.1-Hares", "/NetSync/");
+lt.AddDirectory("", "");
 
 Logger.Info("Writing files to tape...");
-await lt.Commit();
+await lt.Commit(LtfsTaskQueueType.Write);
 
 Logger.Info("Writing LTFS Index...");
 try

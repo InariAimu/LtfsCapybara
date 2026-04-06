@@ -5,12 +5,27 @@ namespace Ltfs;
 
 public partial class Ltfs
 {
-	public bool HasPendingTasks => pendingTasks.Any(IsUncommitted);
+	private readonly SemaphoreSlim taskExecutionGate = new(1, 1);
 
-	public async Task<bool> Commit()
+	public bool HasPendingTasks => pendingWriteTasks.Any(IsUncommitted) || pendingReadTasks.Any(IsUncommitted);
+
+	public async Task<bool> Commit(LtfsTaskQueueType taskQueueType)
 	{
-		var activeTasks = GetUncommittedTasks();
-		if (activeTasks.Count == 0)
+		return await ExecuteTaskQueueExclusively(async () =>
+		{
+			return taskQueueType switch
+			{
+				LtfsTaskQueueType.Read => await CommitReadTasks(),
+				LtfsTaskQueueType.Write => await CommitWriteTasks(),
+				_ => throw new ArgumentOutOfRangeException(nameof(taskQueueType), taskQueueType, null),
+			};
+		});
+	}
+
+	private async Task<bool> CommitWriteTasks()
+	{
+		var activeTasks = GetUncommittedWriteTasks();
+		if (activeTasks.Length == 0)
 			return true;
 
 		var executableTasks = activeTasks.Where(IsExecutable).ToArray();
@@ -47,12 +62,52 @@ public partial class Ltfs
 		return true;
 	}
 
+	private async Task<bool> CommitReadTasks()
+	{
+		var readTasks = GetUncommittedReadTasks()
+			.Where(IsExecutable)
+			.Cast<ReadTask>()
+			.ToArray();
+
+		return await PerformReadTasks(readTasks, ReadTaskExistingFileMode);
+	}
+
 	private IReadOnlyList<TaskBase> GetUncommittedTasks()
 	{
-		return pendingTasks
+		return pendingWriteTasks
+			.Concat(pendingReadTasks)
 			.Where(IsUncommitted)
 			.OrderBy(task => task.SequenceNumber)
 			.ToArray();
+	}
+
+	private TaskBase[] GetUncommittedWriteTasks()
+	{
+		return pendingWriteTasks
+			.Where(IsUncommitted)
+			.OrderBy(task => task.SequenceNumber)
+			.ToArray();
+	}
+
+	private TaskBase[] GetUncommittedReadTasks()
+	{
+		return pendingReadTasks
+			.Where(IsUncommitted)
+			.OrderBy(task => task.SequenceNumber)
+			.ToArray();
+	}
+
+	private async Task<bool> ExecuteTaskQueueExclusively(Func<Task<bool>> action)
+	{
+		await taskExecutionGate.WaitAsync();
+		try
+		{
+			return await action();
+		}
+		finally
+		{
+			taskExecutionGate.Release();
+		}
 	}
 
 	private static bool IsUncommitted(TaskBase task)
