@@ -68,8 +68,8 @@ public abstract class TapeDriveBase : IDisposable
     public virtual void Load() { }
     public virtual void LoadUnthread() { }
     public virtual void Unload() { }
+    public virtual void Unthread() { }
     public virtual bool Rewind() => true;
-    public virtual bool Unthread() => true;
 
     public virtual byte[] ReadBuffer(byte bufferID, byte mode = 2) => Array.Empty<byte>();
     public virtual byte[] ReadDiagCM(int len10h = 0) => Array.Empty<byte>();

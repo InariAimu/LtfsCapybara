@@ -12,7 +12,7 @@ public class Rewind
     [Metadata("Immediate", "", [
         "0\nStatus is returned after the rewind has completed.",
         "1\nThe drive first writes any unwritten buffered data to tape. lt then returns GOOD status to the hostbefore beginning the actual rewind operation."])]
-    public bool Immed;
+    public bool Immed = false;
 
     [Byte(5)]
     public byte Control = 0;

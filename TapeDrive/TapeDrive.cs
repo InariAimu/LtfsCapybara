@@ -5,6 +5,8 @@ using Microsoft.Win32.SafeHandles;
 using System.Text;
 using LtoTape;
 using System.Linq;
+using TapeDrive.Utils;
+using TapeDrive.SCSICommands;
 
 namespace TapeDrive;
 
@@ -83,15 +85,20 @@ public partial class LTOTapeDrive : TapeDriveBase, IDisposable
         return Sense[0] == 0;
     }
 
-    public override void Load() => ScsiCommand([0x1b, 0, 0, 0, 0x01, 0]);
-    
-    public override void LoadUnthread() => ScsiCommand([0x1b, 0, 0, 0, 0x09, 0]);
+    public override void Load() => ScsiCommand(StructParser.ToBytes(new LoadUnload { Load = true }), timeoutSeconds: 600);
 
-    public override void Unload() => ScsiCommand([0x1b, 0, 0, 0, 0x00, 0]);
+    public override void LoadUnthread() => ScsiCommand(StructParser.ToBytes(new LoadUnload { Load = true, Hold = true }), timeoutSeconds: 600);
 
-    public override bool Rewind() => ScsiCommand([0x01, 0, 0, 0, 0, 0], SCSI_IOCTL_DATA_IN);
+    public override void Unload() => ScsiCommand(StructParser.ToBytes(new LoadUnload { Load = false }), timeoutSeconds: 600);
 
-    public override bool Unthread() => ScsiCommand([0x1b, 0, 0, 0, 0x0a, 0], SCSI_IOCTL_DATA_IN);
+    public override void Unthread() => ScsiCommand(StructParser.ToBytes(new LoadUnload { Load = false, Hold = true }), timeoutSeconds: 600);
+
+    /// <summary>
+    /// Rewinds the tape to the beginning. timeout = 10minutes (VOL2, page28)
+    /// </summary>
+    /// <returns></returns>
+    public override bool Rewind() => ScsiCommand(StructParser.ToBytes(new Rewind { Immed = false }), SCSI_IOCTL_DATA_IN, 600);
+
 
     public override byte[] ReadBuffer(byte bufferID, byte mode = 2)
     {
@@ -237,7 +244,7 @@ public partial class LTOTapeDrive : TapeDriveBase, IDisposable
             ];
         return ScsiWrite(cdb, data);
     }
-    
+
     public override byte[] ModeSense(byte pageID, bool skipHeader = true)
     {
         byte[] header = ScsiRead([0x1a, 0, pageID, 0, 4, 0], 4);
