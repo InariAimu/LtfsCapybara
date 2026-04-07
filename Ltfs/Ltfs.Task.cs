@@ -7,7 +7,7 @@ public partial class Ltfs
 {
 	private readonly SemaphoreSlim taskExecutionGate = new(1, 1);
 
-	public bool HasPendingTasks => pendingWriteTasks.Any(IsUncommitted) || pendingReadTasks.Any(IsUncommitted);
+	public bool HasPendingTasks => pendingWriteTasks.Any(IsUncommitted) || pendingReadTasks.Any(IsUncommitted) || pendingVerifyTasks.Any(IsUncommitted);
 
 	public async Task<bool> Commit(LtfsTaskQueueType taskQueueType)
 	{
@@ -16,6 +16,7 @@ public partial class Ltfs
 			return taskQueueType switch
 			{
 				LtfsTaskQueueType.Read => await CommitReadTasks(),
+				LtfsTaskQueueType.Verify => await CommitVerifyTasks(),
 				LtfsTaskQueueType.Write => await CommitWriteTasks(),
 				_ => throw new ArgumentOutOfRangeException(nameof(taskQueueType), taskQueueType, null),
 			};
@@ -72,10 +73,21 @@ public partial class Ltfs
 		return await PerformReadTasks(readTasks, ReadTaskExistingFileMode);
 	}
 
+	private async Task<bool> CommitVerifyTasks()
+	{
+		var verifyTasks = GetUncommittedVerifyTasks()
+			.Where(IsExecutable)
+			.Cast<VerifyTask>()
+			.ToArray();
+
+		return await PerformVerifyTasks(verifyTasks);
+	}
+
 	private IReadOnlyList<TaskBase> GetUncommittedTasks()
 	{
 		return pendingWriteTasks
 			.Concat(pendingReadTasks)
+			.Concat(pendingVerifyTasks)
 			.Where(IsUncommitted)
 			.OrderBy(task => task.SequenceNumber)
 			.ToArray();
@@ -92,6 +104,14 @@ public partial class Ltfs
 	private TaskBase[] GetUncommittedReadTasks()
 	{
 		return pendingReadTasks
+			.Where(IsUncommitted)
+			.OrderBy(task => task.SequenceNumber)
+			.ToArray();
+	}
+
+	private TaskBase[] GetUncommittedVerifyTasks()
+	{
+		return pendingVerifyTasks
 			.Where(IsUncommitted)
 			.OrderBy(task => task.SequenceNumber)
 			.ToArray();

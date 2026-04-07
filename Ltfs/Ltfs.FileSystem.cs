@@ -8,6 +8,7 @@ public partial class Ltfs
 {
     protected readonly List<TaskBase> pendingWriteTasks = [];
     protected readonly List<TaskBase> pendingReadTasks = [];
+    protected readonly List<TaskBase> pendingVerifyTasks = [];
     private long nextTaskSequence = 0;
 
     public LtfsFile? FindFile(string path)
@@ -117,6 +118,19 @@ public partial class Ltfs
         });
     }
 
+    public void AddVerifyTask(string sourcePath)
+    {
+        var normalizedSourcePath = LtfsIndexOperations.NormalizePath(sourcePath, allowRoot: false);
+        var sourceFile = LtfsIndexOperations.FindFile(GetLatestIndex(), normalizedSourcePath)
+            ?? throw new FileNotFoundException($"LTFS source file not found: {normalizedSourcePath}");
+
+        EnqueueTask(new VerifyTask
+        {
+            SourcePath = normalizedSourcePath,
+            SourceFile = sourceFile,
+        });
+    }
+
     public void DeletePath(string targetPath)
     {
         var normalizedTargetPath = LtfsIndexOperations.NormalizePath(targetPath);
@@ -161,6 +175,7 @@ public partial class Ltfs
     {
         return pendingWriteTasks
             .Concat(pendingReadTasks)
+            .Concat(pendingVerifyTasks)
             .OrderBy(task => task.SequenceNumber)
             .ToArray();
     }
@@ -175,6 +190,13 @@ public partial class Ltfs
     public IReadOnlyList<TaskBase> GetPendingReadTasks()
     {
         return pendingReadTasks
+            .OrderBy(task => task.SequenceNumber)
+            .ToArray();
+    }
+
+    public IReadOnlyList<TaskBase> GetPendingVerifyTasks()
+    {
+        return pendingVerifyTasks
             .OrderBy(task => task.SequenceNumber)
             .ToArray();
     }
@@ -327,7 +349,12 @@ public partial class Ltfs
 
     private List<TaskBase> GetTaskQueue(TaskBase task)
     {
-        return task is ReadTask ? pendingReadTasks : pendingWriteTasks;
+        return task switch
+        {
+            ReadTask => pendingReadTasks,
+            VerifyTask => pendingVerifyTasks,
+            _ => pendingWriteTasks,
+        };
     }
 
 }
