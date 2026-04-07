@@ -166,6 +166,48 @@ public class LtfsTest
         }
     }
 
+    [Fact]
+    public void AddReadTask_WhenSourceIsDirectory_ExpandsFilesAndRewritesTargets()
+    {
+        var ltfs = CreateReadReadyLtfs(new ScriptedReadTapeDrive(), blockSize: 4);
+        AddLtfsReadSource(ltfs, "/media/root.bin", 10, "ROOT"u8.ToArray());
+        AddLtfsReadSource(ltfs, "/media/sub/leaf.bin", 11, "LEAF"u8.ToArray());
+
+        var tempDirectory = Directory.CreateTempSubdirectory();
+        try
+        {
+            ltfs.AddReadTask("/media", tempDirectory.FullName);
+
+            var readTasks = ltfs.GetPendingReadTasks().OfType<ReadTask>().OrderBy(task => task.SourcePath).ToArray();
+
+            Assert.Equal(2, readTasks.Length);
+            Assert.Equal("/media/root.bin", readTasks[0].SourcePath);
+            Assert.Equal(Path.Combine(tempDirectory.FullName, "root.bin"), readTasks[0].TargetPath);
+            Assert.Equal("/media/sub/leaf.bin", readTasks[1].SourcePath);
+            Assert.Equal(Path.Combine(tempDirectory.FullName, "sub", "leaf.bin"), readTasks[1].TargetPath);
+        }
+        finally
+        {
+            tempDirectory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void AddVerifyTask_WhenSourceIsDirectory_ExpandsFilesRecursively()
+    {
+        var ltfs = CreateReadReadyLtfs(new ScriptedReadTapeDrive(), blockSize: 4);
+        AddLtfsReadSource(ltfs, "/verify/root.bin", 10, "ROOT"u8.ToArray());
+        AddLtfsReadSource(ltfs, "/verify/sub/leaf.bin", 11, "LEAF"u8.ToArray());
+
+        ltfs.AddVerifyTask("/verify");
+
+        var verifyTasks = ltfs.GetPendingVerifyTasks().OfType<VerifyTask>().OrderBy(task => task.SourcePath).ToArray();
+
+        Assert.Equal(2, verifyTasks.Length);
+        Assert.Equal("/verify/root.bin", verifyTasks[0].SourcePath);
+        Assert.Equal("/verify/sub/leaf.bin", verifyTasks[1].SourcePath);
+    }
+
 
     [Fact]
     public void RemoveFile()
@@ -558,9 +600,31 @@ public class LtfsTest
             ]
         };
 
-        index.Directory[file.Name.Value] = file;
+        var parentDirectory = EnsureDirectory(index.Directory, sourcePath);
+        parentDirectory[file.Name.Value] = file;
 
         return file;
+    }
+
+    private static LtfsDirectory EnsureDirectory(LtfsDirectory root, string sourcePath)
+    {
+        var segments = sourcePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var current = root;
+        for (int i = 0; i < segments.Length - 1; i++)
+        {
+            if (current[segments[i]] is LtfsDirectory next)
+            {
+                current = next;
+                continue;
+            }
+
+            next = LtfsDirectory.Default();
+            next.Name = segments[i];
+            current[segments[i]] = next;
+            current = next;
+        }
+
+        return current;
     }
 
     private static string ComputeCrc64(byte[] data)

@@ -107,28 +107,52 @@ public partial class Ltfs
     public void AddReadTask(string sourcePath, string targetPath)
     {
         var normalizedSourcePath = LtfsIndexOperations.NormalizePath(sourcePath, allowRoot: false);
-        var sourceFile = LtfsIndexOperations.FindFile(GetLatestIndex(), normalizedSourcePath)
-            ?? throw new FileNotFoundException($"LTFS source file not found: {normalizedSourcePath}");
+        var sourceEntry = LtfsIndexOperations.FindEntry(GetLatestIndex(), normalizedSourcePath)
+            ?? throw new FileNotFoundException($"LTFS source path not found: {normalizedSourcePath}");
 
-        EnqueueTask(new ReadTask
+        switch (sourceEntry)
         {
-            SourcePath = normalizedSourcePath,
-            TargetPath = Path.GetFullPath(targetPath),
-            SourceFile = sourceFile,
-        });
+            case LtfsFile sourceFile:
+                EnqueueReadTask(normalizedSourcePath, Path.GetFullPath(targetPath), sourceFile);
+                break;
+            case LtfsDirectory sourceDirectory:
+                var targetRootPath = Path.GetFullPath(targetPath);
+                foreach (var (filePath, file) in EnumerateDirectoryFiles(normalizedSourcePath, sourceDirectory))
+                {
+                    var relativePath = Path.GetRelativePath(normalizedSourcePath.TrimStart('/'), filePath.TrimStart('/'));
+                    var relativeSegments = relativePath
+                        .Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    var resolvedTargetPath = relativeSegments.Length == 0
+                        ? targetRootPath
+                        : Path.Combine([targetRootPath, .. relativeSegments]);
+                    EnqueueReadTask(filePath, resolvedTargetPath, file);
+                }
+                break;
+            default:
+                throw new InvalidOperationException($"Unsupported LTFS source path type: {normalizedSourcePath}");
+        }
     }
 
     public void AddVerifyTask(string sourcePath)
     {
         var normalizedSourcePath = LtfsIndexOperations.NormalizePath(sourcePath, allowRoot: false);
-        var sourceFile = LtfsIndexOperations.FindFile(GetLatestIndex(), normalizedSourcePath)
-            ?? throw new FileNotFoundException($"LTFS source file not found: {normalizedSourcePath}");
+        var sourceEntry = LtfsIndexOperations.FindEntry(GetLatestIndex(), normalizedSourcePath)
+            ?? throw new FileNotFoundException($"LTFS source path not found: {normalizedSourcePath}");
 
-        EnqueueTask(new VerifyTask
+        switch (sourceEntry)
         {
-            SourcePath = normalizedSourcePath,
-            SourceFile = sourceFile,
-        });
+            case LtfsFile sourceFile:
+                EnqueueVerifyTask(normalizedSourcePath, sourceFile);
+                break;
+            case LtfsDirectory sourceDirectory:
+                foreach (var (filePath, file) in EnumerateDirectoryFiles(normalizedSourcePath, sourceDirectory))
+                {
+                    EnqueueVerifyTask(filePath, file);
+                }
+                break;
+            default:
+                throw new InvalidOperationException($"Unsupported LTFS source path type: {normalizedSourcePath}");
+        }
     }
 
     public void DeletePath(string targetPath)
@@ -345,6 +369,45 @@ public partial class Ltfs
     {
         task.SequenceNumber = ++nextTaskSequence;
         GetTaskQueue(task).Add(task);
+    }
+
+    private void EnqueueReadTask(string sourcePath, string targetPath, LtfsFile sourceFile)
+    {
+        EnqueueTask(new ReadTask
+        {
+            SourcePath = sourcePath,
+            TargetPath = targetPath,
+            SourceFile = sourceFile,
+        });
+    }
+
+    private void EnqueueVerifyTask(string sourcePath, LtfsFile sourceFile)
+    {
+        EnqueueTask(new VerifyTask
+        {
+            SourcePath = sourcePath,
+            SourceFile = sourceFile,
+        });
+    }
+
+    private static IEnumerable<(string FilePath, LtfsFile File)> EnumerateDirectoryFiles(string directoryPath, LtfsDirectory directory)
+    {
+        foreach (var entry in directory.Contents)
+        {
+            switch (entry)
+            {
+                case LtfsFile file:
+                    yield return (LtfsIndexOperations.NormalizePath(Path.Combine(directoryPath, file.Name.GetName())), file);
+                    break;
+                case LtfsDirectory subDirectory:
+                    var subDirectoryPath = LtfsIndexOperations.NormalizePath(Path.Combine(directoryPath, subDirectory.Name.GetName()));
+                    foreach (var item in EnumerateDirectoryFiles(subDirectoryPath, subDirectory))
+                    {
+                        yield return item;
+                    }
+                    break;
+            }
+        }
     }
 
     private List<TaskBase> GetTaskQueue(TaskBase task)

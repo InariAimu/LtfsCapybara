@@ -126,6 +126,10 @@ internal static class LtfsIndexOperations
             index.HighestFileUID += 1;
             file.FileUID = index.HighestFileUID;
         }
+        else if (file.FileUID > index.HighestFileUID)
+        {
+            index.HighestFileUID = file.FileUID;
+        }
 
         file.Name = fileName;
         file.ChangeTime = DateTime.UtcNow;

@@ -411,7 +411,8 @@ public partial class Ltfs
         LtfsDataTempIndexs.Add(tmpIndex);
 
         LtfsIndexB = tmpIndex;
-        LtfsIndexCurr = tmpIndex;
+        ApplyIndexVersionMetadata(latestIndex, tmpIndex);
+        LtfsIndexCurr = latestIndex;
 
         try
         {
@@ -456,7 +457,8 @@ public partial class Ltfs
         };
 
         LtfsIndexA = tmpIndex;
-        LtfsIndexCurr = tmpIndex;
+        ApplyIndexVersionMetadata(latestIndex, tmpIndex);
+        LtfsIndexCurr = latestIndex;
 
         try
         {
@@ -473,6 +475,24 @@ public partial class Ltfs
         _tapeDrive.WriteFileMark();
         _tapeDrive.Flush();
         return true;
+    }
+
+    private static void ApplyIndexVersionMetadata(LtfsIndex target, LtfsIndex source)
+    {
+        target.GenerationNumber = source.GenerationNumber;
+        target.UpdateTime = source.UpdateTime;
+        target.Location = new TapePosition
+        {
+            Partition = source.Location.Partition,
+            StartBlock = source.Location.StartBlock,
+        };
+        target.PreviousGenerationLocation = source.PreviousGenerationLocation is null
+            ? null
+            : new TapePosition
+            {
+                Partition = source.PreviousGenerationLocation.Partition,
+                StartBlock = source.PreviousGenerationLocation.StartBlock,
+            };
     }
 
     public byte PartitionToNumber(string partition)
