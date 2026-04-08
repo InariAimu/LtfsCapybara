@@ -1,6 +1,7 @@
 using TapeDrive.Utils;
 using TapeDrive.SCSICommands;
 using System.Text;
+using TapeDrive.SCSICommands.LogSensePages;
 
 namespace TapeDrive;
 
@@ -28,6 +29,11 @@ public partial class LTOTapeDrive : IDisposable
     public List<SenseInfo> SenseHistory { get; } = [];
 
     public FixedFormatSenseData? ParsedSense { get; private set; }
+
+    public TapeAlertLevel CurrentAlertLevel { get; private set; } = TapeAlertLevel.Information;
+
+    public List<int> CurrentAlertIndexs { get; private set; } = [];
+
 
     public void ParseFixedFormatSense()
     {
@@ -127,9 +133,26 @@ public partial class LTOTapeDrive : IDisposable
                 {
                     case 0x3700: // Rounded parameter
                         break;
+                        
                     case 0x5d00: // Failure prediction threshold exceeded
+                        {
+                            var alertPageData = LogSense(PageCodes.TapeAlertResponseLog);
+                            var alertPage = StructParser.Parse<TapeAlertResponsePage>(alertPageData);
 
+                            CurrentAlertIndexs = TapeAlert.ParseMostSignificantBytesIntoIndexes(alertPage.ParameterValue);
+                            foreach (var index in CurrentAlertIndexs)
+                            {
+                                if (TapeAlert.Items.TryGetValue(index, out var alertInfo))
+                                {
+                                    if (alertInfo.Type > CurrentAlertLevel)
+                                        CurrentAlertLevel = alertInfo.Type;
+
+                                    consoleMessage.AppendLine($"Tape alert: {alertInfo.Flag} {alertInfo.RecommendedHostMessage}");
+                                }
+                            }
+                        }
                         break;
+
                     case 0x5dff: // Failure prediction threshold exceeded (false)
                         break;
                 }
