@@ -128,6 +128,7 @@ public partial class LTOTapeDrive : IDisposable
                     case 0x3700: // Rounded parameter
                         break;
                     case 0x5d00: // Failure prediction threshold exceeded
+
                         break;
                     case 0x5dff: // Failure prediction threshold exceeded (false)
                         break;
@@ -140,29 +141,55 @@ public partial class LTOTapeDrive : IDisposable
                 break;
 
             case 0x03: // MEDIUM ERROR
+                info.ErrorLevel = SenseErrorLevel.Warning;
                 break;
+
             case 0x04: // HARDWARE ERROR
+                info.ErrorLevel = SenseErrorLevel.Critical;
+                consoleMessage.AppendLine("Tape drive hardware failure");
                 break;
+
             case 0x05: // ILLEGAL REQUEST
+                info.ErrorLevel = SenseErrorLevel.Warning;
+                consoleMessage.AppendLine("Illegal SCSI command requested");
                 break;
+
             case 0x06: // UNIT ATTENTION
+                info.ErrorLevel = SenseErrorLevel.Warning;
+                consoleMessage.AppendLine("Tape drive operation condition may have changed");
                 break;
-            case 0x07: // DATA PROTECT
+            case 0x07: // DATA PROTECTION
+                info.ErrorLevel = SenseErrorLevel.Warning;
+                consoleMessage.AppendLine("Media write-protected or encrypted");
                 break;
+
             case 0x08: // BLANK CHECK
+                info.ErrorLevel = SenseErrorLevel.Warning;
+                consoleMessage.AppendLine("End-of-Data encountered");
                 break;
+
             case 0x09: // VENDOR SPECIFIC
                 break;
+
             case 0x0A: // COPY ABORTED
                 break;
+
             case 0x0B: // ABORTED COMMAND
+                info.ErrorLevel = SenseErrorLevel.Warning;
+                consoleMessage.AppendLine("SCSI protocol problem");
                 break;
+
             case 0x0C: // EQUAL
                 break;
+
             case 0x0D: // VOLUME OVERFLOW
+                info.ErrorLevel = SenseErrorLevel.Warning;
+                consoleMessage.AppendLine("Physical End-of-Tape reached. unable to fit remaining information on tape");
                 break;
+
             case 0x0E: // MISCOMPARE
                 break;
+
             default:
                 break;
         }
