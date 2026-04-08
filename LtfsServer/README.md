@@ -1,9 +1,46 @@
-# LtfsServer Minimal API
+# LtfsServer
 
-This project contains a minimal ASP.NET Core REST API example.
+`LtfsServer` is the ASP.NET Core backend for LtfsCapybara. It hosts the REST API used by the GUI and coordinates tape drive discovery, local tape metadata, LTFS index browsing, task groups, settings, and AI-assisted workflows.
 
+## What This Project Does
 
-Run locally:
+- Hosts the HTTP API for the desktop/web frontend.
+- Registers and exposes tape drive operations through `ITapeDriveService`.
+- Scans locally cached cartridge memory and LTFS index files through `ILocalTapeRegistry`.
+- Serves LTFS directory data from cached local indexes.
+- Persists and edits server-side settings.
+- Stores and edits tape-scoped task groups.
+- Proxies AI chat/tool requests through server endpoints.
+
+## Main Endpoint Areas
+
+- `/api/tapedrives`: tape drive discovery and machine actions.
+- `/api/localtapes`: cached tape summary list.
+- `/api/local/{tapeName}`: LTFS index browsing from local cache.
+- `/api/localcm/{tapeName}`: parsed cartridge memory details.
+- `/api/tasks/groups`: tape task group management.
+- `/api/ai/tools` and `/api/ai/chat/completions`: AI tool discovery and chat proxy.
+- `/api/health` and `/api/info`: service metadata and health.
+
+## Configuration
+
+Defaults come from `appsettings.json`:
+
+- `Api:Host`, `Api:Port`, `Api:Scheme`
+- `Data:Path`
+- `ServerSettings:*`
+- `TapeDrive:UseFakeDrive`
+- `AI:model`
+
+At startup, the server resolves `Data:Path` as follows:
+
+- Uses `Data:Path` from configuration when provided.
+- Otherwise defaults to `Documents/LtfsCapybara`.
+- Loads optional runtime overrides from `{Data.Path}/config.json`.
+
+## Run
+
+From the repository root:
 
 ```bash
 dotnet run --project LtfsServer
@@ -16,29 +53,19 @@ cd LtfsServer
 dotnet run
 ```
 
-Configuration:
-
-- Defaults are in `appsettings.json` (`Api:Host`, `Api:Port`, `Api:Scheme`).
-- Override with environment variables (e.g. `PORT`) or CLI args.
-
-Examples:
-
-- Run on port 8080 via env var:
+Build only:
 
 ```bash
-PORT=8080 dotnet run --project LtfsServer
+dotnet build LtfsServer/LtfsServer.csproj
 ```
 
-- Run on a specific host and port via `appsettings.json` or `--urls` override:
+## Development Notes
 
-```bash
-dotnet run --project LtfsServer --urls "http://0.0.0.0:8080"
-```
+- The default server URL is `http://localhost:5003`.
+- CORS is enabled for the Vite development origin `http://localhost:1420`.
+- The project references `Ltfs`, `LtoTape`, and `TapeDrive` directly.
 
-Available endpoints:
+## Notes
 
-- `GET /api/health` — basic health check
-- `GET /api/info` — server name and version
-- `GET /api/example/files` — sample file list
-
-The root `/` returns a simple status JSON including the configured URL.
+- This is not a generic sample API; it is the repository's integration point between the UI and the tape/LTFS libraries.
+- The feature folders under `Features/` map closely to API surface areas and service boundaries.
