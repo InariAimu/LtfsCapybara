@@ -44,9 +44,10 @@ public class WordAttribute(int byteIndex) : Attribute
 }
 
 [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
-public class DWordAttribute(int byteIndex) : Attribute
+public class DWordAttribute(int byteIndex, int length = 4) : Attribute
 {
     public int ByteIndex { get; init; } = byteIndex;
+    public int Length { get; init; } = length;
 }
 
 

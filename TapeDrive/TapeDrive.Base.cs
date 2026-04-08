@@ -82,8 +82,8 @@ public abstract class TapeDriveBase : IDisposable
     public virtual bool SetBarcode(string barcode) => true;
     public virtual bool SetBlockSize(ulong blockSize) => true;
 
-    public virtual bool WriteFileMarks(uint number) => true;
-    public virtual bool WriteFileMark() => WriteFileMarks(1);
+    public virtual bool WriteFileMarks(uint number, bool immed = true) => true;
+    public virtual bool WriteFileMark(bool immed = true) => WriteFileMarks(1, immed);
     public virtual bool Flush() => true;
 
     public virtual bool PreventMediaRemoval() => true;

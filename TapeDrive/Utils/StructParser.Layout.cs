@@ -91,8 +91,9 @@ public static partial class StructParser
 
         if (layout.DWordAttribute is DWordAttribute dwordAttribute)
         {
-            EnsureRangeAvailable(data, dwordAttribute.ByteIndex, sizeof(uint));
-            return ReadDWordValue(layout.MemberType, data, dwordAttribute.ByteIndex);
+            ValidateDWordLength(dwordAttribute.Length);
+            EnsureRangeAvailable(data, dwordAttribute.ByteIndex, dwordAttribute.Length);
+            return ReadDWordValue(layout.MemberType, data, dwordAttribute.ByteIndex, dwordAttribute.Length);
         }
 
         throw new InvalidOperationException($"Member {layout.Member.Name} does not have a supported parser attribute.");
@@ -189,8 +190,9 @@ public static partial class StructParser
 
         if (layout.DWordAttribute is DWordAttribute dwordAttribute)
         {
-            EnsureRangeAvailable(data, dwordAttribute.ByteIndex, sizeof(uint));
-            var buffer = GetDWordBytes(value, layout.MemberType);
+            ValidateDWordLength(dwordAttribute.Length);
+            EnsureRangeAvailable(data, dwordAttribute.ByteIndex, dwordAttribute.Length);
+            var buffer = GetDWordBytes(value, layout.MemberType, dwordAttribute.Length);
             Array.Copy(buffer, 0, data, dwordAttribute.ByteIndex, buffer.Length);
             return;
         }
@@ -213,19 +215,26 @@ public static partial class StructParser
         return ConvertNumericValue(memberType, BigEndianBitConverter.ToUInt16(data, byteIndex));
     }
 
-    private static object ReadDWordValue(Type memberType, byte[] data, int byteIndex)
+    private static object ReadDWordValue(Type memberType, byte[] data, int byteIndex, int length)
     {
+        var rawValue = ReadDWordRawValue(data, byteIndex, length);
+
+        if (length == sizeof(uint) && memberType == typeof(int))
+        {
+            return unchecked((int)rawValue);
+        }
+
         if (memberType == typeof(int))
         {
-            return BigEndianBitConverter.ToInt32(data, byteIndex);
+            return checked((int)rawValue);
         }
 
         if (memberType == typeof(uint))
         {
-            return BigEndianBitConverter.ToUInt32(data, byteIndex);
+            return rawValue;
         }
 
-        return ConvertNumericValue(memberType, BigEndianBitConverter.ToUInt32(data, byteIndex));
+        return ConvertNumericValue(memberType, rawValue);
     }
 
     private static void SetMemberValue(object instance, MemberInfo member, object value)
@@ -356,7 +365,7 @@ public static partial class StructParser
         {
             layout.Encoding = "dword";
             layout.ByteIndex = dwordAttribute.ByteIndex;
-            layout.ByteLength = sizeof(uint);
+            layout.ByteLength = dwordAttribute.Length;
             return layout;
         }
 
@@ -521,7 +530,7 @@ public static partial class StructParser
         {
             layout.Encoding = "dword";
             layout.ByteIndex = dwordAttribute.ByteIndex;
-            layout.ByteLength = sizeof(uint);
+            layout.ByteLength = dwordAttribute.Length;
             return layout;
         }
 
@@ -534,7 +543,7 @@ public static partial class StructParser
         {
             "byte" => data[layout.ByteIndex],
             "word" => BigEndianBitConverter.ToUInt16(data, layout.ByteIndex),
-            "dword" => checked((int)BigEndianBitConverter.ToUInt32(data, layout.ByteIndex)),
+            "dword" => checked((int)ReadDWordRawValue(data, layout.ByteIndex, layout.ByteLength)),
             _ => throw new InvalidOperationException($"Unsupported referenced length encoding {layout.Encoding}.")
         };
     }
@@ -636,14 +645,30 @@ public static partial class StructParser
         return BigEndianBitConverter.GetBytes(Convert.ToUInt16(value, CultureInfo.InvariantCulture));
     }
 
-    private static byte[] GetDWordBytes(object value, Type memberType)
+    private static byte[] GetDWordBytes(object value, Type memberType, int length)
     {
+        ValidateDWordLength(length);
+
+        uint numericValue;
         if (memberType == typeof(int))
         {
-            return BigEndianBitConverter.GetBytes(Convert.ToInt32(value, CultureInfo.InvariantCulture));
+            numericValue = unchecked((uint)Convert.ToInt32(value, CultureInfo.InvariantCulture));
+        }
+        else
+        {
+            numericValue = Convert.ToUInt32(value, CultureInfo.InvariantCulture);
         }
 
-        return BigEndianBitConverter.GetBytes(Convert.ToUInt32(value, CultureInfo.InvariantCulture));
+        ValidateDWordValueFits(numericValue, length, memberType, value);
+
+        var buffer = new byte[length];
+        for (var index = 0; index < length; index++)
+        {
+            var shift = (length - index - 1) * 8;
+            buffer[index] = (byte)((numericValue >> shift) & 0xFF);
+        }
+
+        return buffer;
     }
 
     private static bool ConvertToBoolean(object value)
@@ -687,6 +712,42 @@ public static partial class StructParser
         if (bitIndex + bitLength > 8)
         {
             throw new ArgumentOutOfRangeException(nameof(bitLength), "Bit window cannot extend beyond a single byte.");
+        }
+    }
+
+    private static uint ReadDWordRawValue(byte[] data, int byteIndex, int length)
+    {
+        ValidateDWordLength(length);
+
+        uint value = 0;
+        for (var index = 0; index < length; index++)
+        {
+            value = (value << 8) | data[byteIndex + index];
+        }
+
+        return value;
+    }
+
+    private static void ValidateDWordLength(int length)
+    {
+        if (length <= 0 || length > sizeof(uint))
+        {
+            throw new ArgumentOutOfRangeException(nameof(length), length, $"{nameof(DWordAttribute)} length must be between 1 and {sizeof(uint)} bytes.");
+        }
+    }
+
+    private static void ValidateDWordValueFits(uint value, int length, Type memberType, object originalValue)
+    {
+        if (length == sizeof(uint))
+        {
+            return;
+        }
+
+        var bitCount = length * 8;
+        var maxValue = (1u << bitCount) - 1;
+        if (value > maxValue)
+        {
+            throw new ArgumentOutOfRangeException(memberType.Name, originalValue, $"Value {value} does not fit in {length} bytes.");
         }
     }
 }

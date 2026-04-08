@@ -112,7 +112,7 @@ public partial class LTOTapeDrive : TapeDriveBase, IDisposable
 
         byte[] dumpdata = ScsiRead([0x3c, mode, bufferID, 0, 0, 0, lendata[1], lendata[2], lendata[3], 0], bufferLen);
 
-        File.WriteAllBytes($"buffer_{bufferID:X2}.bin", dumpdata);
+        //File.WriteAllBytes($"buffer_{bufferID:X2}.bin", dumpdata);
 
         return dumpdata;
     }
@@ -134,7 +134,7 @@ public partial class LTOTapeDrive : TapeDriveBase, IDisposable
 
         var data = ScsiRead([0x1c, 1, 0xb0, (byte)((len >> 8) & 0xff), (byte)((len & 0xff)), 0], 0xc7a2);
 
-        File.WriteAllBytes("cm_diag_raw.bin", data);
+        //File.WriteAllBytes("cm_diag_raw.bin", data);
 
         var bufferdgtext = Encoding.ASCII.GetString(data, 6, data.Length - 6);
         bufferdgtext = bufferdgtext.Replace("\0", "").Trim();
@@ -160,7 +160,7 @@ public partial class LTOTapeDrive : TapeDriveBase, IDisposable
             //Console.WriteLine(line);
         }
 
-        File.WriteAllBytes("cm_diag.bin", bytes.ToArray());
+        //File.WriteAllBytes("cm_diag.bin", bytes.ToArray());
 
         return bytes.ToArray();
     }
@@ -212,11 +212,25 @@ public partial class LTOTapeDrive : TapeDriveBase, IDisposable
         return ScsiWrite(cdb, data);
     }
 
-    public override bool WriteFileMarks(uint number) => ScsiWrite([0x10, (byte)Math.Min(number, 1), (byte)((number >> 16) & 0xff), (byte)((number >> 8) & 0xff), (byte)(number & 0xff), 0], []);
+    /// <summary>
+    /// Writes filemarks to the tape. 
+    /// </summary>
+    /// <param name="number">numbers of filemarks to write, 0 means flush buffer</param>
+    /// <param name="immed">true: return status immediately, false: wait until operation completes</param>
+    /// <returns></returns>
+    public override bool WriteFileMarks(uint number, bool immed = true)
+    {
+        WriteFilemarks cdb = new()
+        {
+            Immed = immed,
+            NumMarks = number
+        };
+        return ScsiWrite(StructParser.ToBytes(cdb), []);
+    }
 
-    public override bool WriteFileMark() => WriteFileMarks(1);
+    public override bool WriteFileMark(bool immed = true) => WriteFileMarks(1, immed);
 
-    public override bool Flush() => WriteFileMarks(0);
+    public override bool Flush() => WriteFileMarks(0, false);
 
     public override bool PreventMediaRemoval() => ScsiCommand([0x1e, 0, 0, 0, 1, 0], SCSI_IOCTL_DATA_IN);
 

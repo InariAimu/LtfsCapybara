@@ -70,6 +70,16 @@ public class StructParserTest
     }
 
     [Fact]
+    public void Parse_SupportsVariableLengthDWordAttribute()
+    {
+        byte[] bytes = [0x34, 0x56, 0x78];
+
+        var parsed = StructParser.Parse<TestDWord3ByteStruct>(bytes);
+
+        Assert.Equal((uint)0x00345678, parsed.Value);
+    }
+
+    [Fact]
     public void ToBytes_SerializesFixedFormatSenseData()
     {
         var sense = new FixedFormatSenseData
@@ -191,6 +201,14 @@ public class StructParserTest
     }
 
     [Fact]
+    public void ToBytes_SerializesVariableLengthDWordAttribute()
+    {
+        var bytes = StructParser.ToBytes(new TestDWord3ByteStruct { Value = 0x00345678 });
+
+        Assert.Equal(new byte[] { 0x34, 0x56, 0x78 }, bytes);
+    }
+
+    [Fact]
     public void Parse_SupportsByteListAttribute()
     {
         byte[] bytes = [0x2F, 0x00, 0x00, 0x03, 0x00, 0x02, 0x17];
@@ -306,6 +324,20 @@ public class StructParserTest
     }
 
     [Fact]
+    public void ToBytes_SerializesThreeByteDWordFields()
+    {
+        var command = new TestThreeByteDWordCommand
+        {
+            NumMarks = 0x00345678,
+            Control = 0xAA,
+        };
+
+        var bytes = StructParser.ToBytes(command);
+
+        Assert.Equal(new byte[] { 0x10, 0x00, 0x34, 0x56, 0x78, 0xAA }, bytes);
+    }
+
+    [Fact]
     public void ToMetadataDocument_ExportsReferencedByteListLayout()
     {
         var response = new SenseResponse
@@ -347,6 +379,13 @@ public class StructParserTest
         public uint Value { get; set; }
     }
 
+    [MSBFirstStruct]
+    private class TestDWord3ByteStruct
+    {
+        [DWord(0, 3)]
+        public uint Value { get; set; }
+    }
+
     [MSBFirstStruct("Variable test struct", ExplicitByteLength = 8)]
     private class TestVariableStruct
     {
@@ -355,5 +394,21 @@ public class StructParserTest
 
         [ByteList(-1, LengthType.Byte)]
         public byte[] Payload { get; set; } = [];
+    }
+
+    [MSBFirstStruct(ExplicitByteLength = 6)]
+    private class TestThreeByteDWordCommand
+    {
+        [Byte(0)]
+        public byte Command { get; set; } = 0x10;
+
+        [Byte(1)]
+        public byte Flags { get; set; }
+
+        [DWord(2, 3)]
+        public uint NumMarks { get; set; }
+
+        [Byte(5)]
+        public byte Control { get; set; }
     }
 }
