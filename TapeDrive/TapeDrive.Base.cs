@@ -2,6 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using LtoTape;
+using TapeDrive.SCSICommands.LogSensePages;
 
 namespace TapeDrive;
 
@@ -63,6 +64,12 @@ public abstract class TapeDriveBase : IDisposable
     public virtual Task<bool> ScsiWriteAsync(byte[] cdb, byte[]? data, uint timeoutSeconds = 600)
     {
         return Task.FromResult(ScsiWrite(cdb, data, timeoutSeconds));
+    }
+
+    public virtual bool TryReadPerformanceData(out PerformanceData? performanceData)
+    {
+        performanceData = null;
+        return false;
     }
 
     // Higher-level operations exposed by LTOTapeDrive used by the rest of the codebase.

@@ -129,12 +129,11 @@ public partial class Ltfs
 
     private LtfsTapePerformanceSnapshot? TryReadTapePerformanceSnapshot()
     {
-        if (_tapeDrive is not LTOTapeDrive tapeDrive)
+        if (!_tapeDrive.TryReadPerformanceData(out var performance) || performance is null)
             return _lastTapePerformanceSnapshot;
 
         try
         {
-            var performance = tapeDrive.ReadPerformanceData();
             var snapshot = new LtfsTapePerformanceSnapshot
             {
                 RepositionsPer100MB = performance.RepositionsPer100MB,

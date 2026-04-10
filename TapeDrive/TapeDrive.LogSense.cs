@@ -3,6 +3,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 using System.Text;
+using System.Threading;
 using LtoTape;
 using System.Linq;
 using System.Globalization;
@@ -55,6 +56,32 @@ public partial class LTOTapeDrive : IDisposable
         PerformanceData performanceData = new();
         performanceData.ParseFromLogPageData(data);
         return performanceData;
+    }
+
+    public override bool TryReadPerformanceData(out PerformanceData? performanceData)
+    {
+        performanceData = null;
+
+        var lockTaken = false;
+        try
+        {
+            Monitor.TryEnter(_ioSync, 1, ref lockTaken);
+            if (!lockTaken)
+                return false;
+
+            performanceData = ReadPerformanceData();
+            return true;
+        }
+        catch
+        {
+            performanceData = null;
+            return false;
+        }
+        finally
+        {
+            if (lockTaken)
+                Monitor.Exit(_ioSync);
+        }
     }
 
     public byte[] ReadWERLPage()
