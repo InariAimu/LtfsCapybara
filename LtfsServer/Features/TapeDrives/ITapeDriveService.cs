@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 
+using Ltfs;
+
 using LtoTape;
 
 namespace LtfsServer.Features.TapeDrives;
@@ -29,11 +31,16 @@ public sealed record TapeDriveSnapshot(
     IReadOnlyList<TapeDriveAction> AllowedActions,
     string? LastError,
     bool IsFake,
-    CartridgeMemory? CartridgeMemory);
+    CartridgeMemory? CartridgeMemory,
+    string? LoadedBarcode,
+    bool? HasLtfsFilesystem,
+    string? LtfsVolumeName);
 
 public interface ITapeDriveService
 {
     IReadOnlyList<TapeDriveInfo> ScanAndSync();
     TapeDriveSnapshot GetSnapshot(string tapeDriveId);
     TapeDriveSnapshot Execute(string tapeDriveId, TapeDriveAction action);
+    Ltfs.Ltfs? GetCachedLtfsContext(string tapeDriveId);
+    void UpdateCachedLtfsContext(string tapeDriveId, Ltfs.Ltfs? ltfs, string? loadedBarcode = null);
 }

@@ -141,6 +141,73 @@ public class VerifyTaskTest
         Assert.Equal(ComputeCrc64([1, 2, 3, 4]), task.ExpectedCrc64);
     }
 
+    [Fact]
+    public async Task PerformVerifyTasks_PausesOnWarningIncidentAndContinuesAfterConfirmation()
+    {
+        var tapeDrive = new IncidentReadTapeDrive();
+        var ltfs = CreateReadReadyLtfs(tapeDrive, blockSize: 4);
+        AddLtfsReadSource(ltfs, "/warning.bin", 8, [1, 2, 3, 4]);
+        tapeDrive.AddBlock("b", 8, [1, 2, 3, 4]);
+        tapeDrive.EnqueueIncident(new TapeDriveIncident
+        {
+            Source = TapeDriveIncidentSource.Sense,
+            Severity = TapeDriveIncidentSeverity.Warning,
+            Action = TapeDriveIncidentAction.PauseCurrentTasks,
+            Message = "Synthetic warning",
+        });
+
+        var confirmations = 0;
+        ltfs.TapeDriveIncidentHandler = incident =>
+        {
+            if (incident.Action == TapeDriveIncidentAction.PauseCurrentTasks)
+            {
+                confirmations++;
+                return TapeDriveIncidentResolution.Continue;
+            }
+
+            return TapeDriveIncidentResolution.Continue;
+        };
+
+        ltfs.AddVerifyTask("/warning.bin");
+
+        var result = await ltfs.PerformVerifyTasks();
+
+        Assert.True(result);
+        Assert.Equal(1, confirmations);
+        var task = Assert.IsType<VerifyTask>(ltfs.GetPendingVerifyTasks().Single());
+        Assert.Equal(TaskExecutionStatus.Committed, task.Status);
+        Assert.True(task.VerificationPassed);
+    }
+
+    [Fact]
+    public async Task PerformVerifyTasks_StopsAllTasksOnCriticalIncident()
+    {
+        var tapeDrive = new IncidentReadTapeDrive();
+        var ltfs = CreateReadReadyLtfs(tapeDrive, blockSize: 4);
+        AddLtfsReadSource(ltfs, "/first.bin", 4, [1, 2, 3, 4]);
+        AddLtfsReadSource(ltfs, "/second.bin", 12, [5, 6, 7, 8]);
+        tapeDrive.AddBlock("b", 4, [1, 2, 3, 4]);
+        tapeDrive.AddBlock("b", 12, [5, 6, 7, 8]);
+        tapeDrive.EnqueueIncident(new TapeDriveIncident
+        {
+            Source = TapeDriveIncidentSource.TapeAlert,
+            Severity = TapeDriveIncidentSeverity.Critical,
+            Action = TapeDriveIncidentAction.StopAllOperations,
+            Message = "Synthetic critical tape alert",
+        });
+
+        ltfs.AddVerifyTask("/first.bin");
+        ltfs.AddVerifyTask("/second.bin");
+
+        var result = await ltfs.PerformVerifyTasks();
+
+        Assert.False(result);
+        var tasks = ltfs.GetPendingVerifyTasks().Cast<VerifyTask>().ToArray();
+        Assert.Equal(2, tasks.Length);
+        Assert.All(tasks, task => Assert.Equal(TaskExecutionStatus.Cancelled, task.Status));
+        Assert.Single(tapeDrive.LocateCalls);
+    }
+
     private static Ltfs.Ltfs CreateLtfsWithIndex()
     {
         var ltfs = new Ltfs.Ltfs();
@@ -224,7 +291,7 @@ public class VerifyTaskTest
         return Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(data));
     }
 
-    private sealed class ScriptedReadTapeDrive : FakeTapeDrive
+    private class ScriptedReadTapeDrive : FakeTapeDrive
     {
         private readonly Dictionary<(byte Partition, ulong Block), byte[]> blocks = [];
         private byte currentPartition;
@@ -262,6 +329,24 @@ public class VerifyTaskTest
             currentBlock++;
             Sense = new byte[64];
             return data;
+        }
+    }
+
+    private sealed class IncidentReadTapeDrive : ScriptedReadTapeDrive
+    {
+        private readonly Queue<TapeDriveIncident> incidents = [];
+
+        public void EnqueueIncident(TapeDriveIncident incident)
+        {
+            incidents.Enqueue(incident);
+        }
+
+        public override byte[] ReadBlock(uint blockSizeLimit = 0x080000, bool truncate = false)
+        {
+            if (incidents.Count > 0)
+                ApplyIncidentPolicy(incidents.Dequeue());
+
+            return base.ReadBlock(blockSizeLimit, truncate);
         }
     }
 }

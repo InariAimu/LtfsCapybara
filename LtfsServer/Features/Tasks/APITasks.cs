@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Builder;
+using System.Text.Json;
 
 namespace LtfsServer.Features.Tasks;
 
@@ -6,6 +7,71 @@ public static class APITasks
 {
     public static void MapTasksApi(this WebApplication app)
     {
+        app.MapGet("/api/tasks/executions", (ITaskExecutionService executionService) =>
+            Results.Ok(executionService.ListExecutions()));
+
+        app.MapGet("/api/tasks/executions/{executionId}", (string executionId, ITaskExecutionService executionService) =>
+        {
+            try
+            {
+                return Results.Ok(executionService.GetExecution(executionId));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return Results.NotFound(new { error = ex.Message });
+            }
+        });
+
+        app.MapPost("/api/tasks/groups/{tapeBarcode}/execute", (string tapeBarcode, ExecuteTapeFsTaskGroupRequest request, ITaskExecutionService executionService) =>
+        {
+            try
+            {
+                return Results.Ok(executionService.StartExecution(tapeBarcode, request.TapeDriveId));
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return Results.NotFound(new { error = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        app.MapPost("/api/tasks/executions/{executionId}/incidents/{incidentId}/resolve", (string executionId, string incidentId, ResolveTaskExecutionIncidentRequest request, ITaskExecutionService executionService) =>
+        {
+            try
+            {
+                return Results.Ok(executionService.ResolveIncident(executionId, incidentId, request.Resolution));
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return Results.NotFound(new { error = ex.Message });
+            }
+        });
+
+        app.MapGet("/api/tasks/events", async (HttpContext context, ITaskExecutionService executionService, CancellationToken cancellationToken) =>
+        {
+            context.Response.Headers.CacheControl = "no-cache";
+            context.Response.Headers.Connection = "keep-alive";
+            context.Response.ContentType = "text/event-stream";
+
+            await foreach (var item in executionService.SubscribeAsync(cancellationToken))
+            {
+                var json = JsonSerializer.Serialize(item);
+                await context.Response.WriteAsync($"data: {json}\n\n", cancellationToken);
+                await context.Response.Body.FlushAsync(cancellationToken);
+            }
+        });
+
         app.MapGet("/api/tasks/groups", (ITaskGroupService service) =>
             Results.Ok(service.ListGroups()));
 

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Drawing;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -130,13 +131,23 @@ public partial class LTOTapeDrive
 
             if (!result)
             {
-                // Windows / driver / bus error
                 int error = Marshal.GetLastWin32Error();
+                ApplyIncidentPolicy(new TapeDriveIncident
+                {
+                    Source = TapeDriveIncidentSource.Win32Error,
+                    Severity = TapeDriveIncidentSeverity.Critical,
+                    Action = TapeDriveIncidentAction.StopAllOperations,
+                    Message = new Win32Exception(error).Message,
+                    Detail = $"DeviceIoControl failed with Win32Error={error}.",
+                    Win32ErrorCode = error,
+                    Cdb = [.. cdb],
+                });
             }
             else
             {
                 var output = Marshal.PtrToStructure<SCSI_PASS_THROUGH_WITH_BUFFERS>(bufferPtr);
                 Sense = output.Sense;
+                LastStatus = output.spt.ScsiStatus;
 
                 switch (output.spt.ScsiStatus)
                 {
@@ -147,8 +158,21 @@ public partial class LTOTapeDrive
                         ParseFixedFormatSense();
                         if (ParsedSense != null)
                         {
-                            HandleSense();
+                            HandleSense(cdb);
                         }
+                        break;
+
+                    default:
+                        ApplyIncidentPolicy(new TapeDriveIncident
+                        {
+                            Source = TapeDriveIncidentSource.ScsiStatus,
+                            Severity = TapeDriveIncidentSeverity.Critical,
+                            Action = TapeDriveIncidentAction.StopAllOperations,
+                            Message = $"Unexpected SCSI status 0x{output.spt.ScsiStatus:X2}.",
+                            Detail = "The tape drive returned a non-success status that is not handled as recoverable.",
+                            ScsiStatus = output.spt.ScsiStatus,
+                            Cdb = [.. cdb],
+                        });
                         break;
                 }
             }
@@ -159,7 +183,7 @@ public partial class LTOTapeDrive
         {
             Marshal.FreeHGlobal(bufferPtr);
             bufferPtr = IntPtr.Zero;
-            return false;
+            throw;
         }
     }
 
@@ -167,11 +191,17 @@ public partial class LTOTapeDrive
     {
         byte[] data = new byte[readLength];
         IntPtr dataPtr = Marshal.AllocHGlobal(readLength);
-        Marshal.Copy(data, 0, dataPtr, readLength);
-
-        IOCtlDirect(cdb, dataPtr, (uint)readLength, SCSI_IOCTL_DATA_IN, timeoutSeconds);
-
-        return dataPtr;
+        try
+        {
+            Marshal.Copy(data, 0, dataPtr, readLength);
+            IOCtlDirect(cdb, dataPtr, (uint)readLength, SCSI_IOCTL_DATA_IN, timeoutSeconds);
+            return dataPtr;
+        }
+        catch
+        {
+            Marshal.FreeHGlobal(dataPtr);
+            throw;
+        }
     }
 
     public override byte[] ScsiRead(byte[] cdb, int readLength, uint timeoutSeconds = 600)
@@ -190,14 +220,17 @@ public partial class LTOTapeDrive
         int dataLength = data?.Length ?? 128;
         IntPtr dataPtr = Marshal.AllocHGlobal(dataLength);
 
-        if (data != null)
-            Marshal.Copy(data, 0, dataPtr, dataLength);
+        try
+        {
+            if (data != null)
+                Marshal.Copy(data, 0, dataPtr, dataLength);
 
-        bool result = IOCtlDirect(cdb, dataPtr, (uint)dataLength, SCSI_IOCTL_DATA_OUT, timeoutSeconds);
-
-        Marshal.FreeHGlobal(dataPtr);
-
-        return result;
+            return IOCtlDirect(cdb, dataPtr, (uint)dataLength, SCSI_IOCTL_DATA_OUT, timeoutSeconds);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(dataPtr);
+        }
     }
 
     public override bool ScsiCommand(byte[] cdb, byte inout = SCSI_IOCTL_DATA_OUT, uint timeoutSeconds = 600)

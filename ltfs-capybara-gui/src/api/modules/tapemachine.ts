@@ -29,6 +29,9 @@ export interface TapeMachineSnapshot {
     lastError: string | null;
     isFake: boolean;
     cartridgeMemory: TapeInfo | null;
+    loadedBarcode: string | null;
+    hasLtfsFilesystem: boolean | null;
+    ltfsVolumeName: string | null;
 }
 
 export const tapeMachineApi = {

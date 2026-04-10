@@ -40,6 +40,8 @@ public partial class Ltfs
 
     public TapeDriveBase? TapeDrive => _tapeDrive;
 
+    public Func<TapeDriveIncident, TapeDriveIncidentResolution>? TapeDriveIncidentHandler { get; set; }
+
 
     public int ExtraPartitionCount { get; set; } = 1;
     public bool DisablePartition { get; set; } = false;
@@ -49,6 +51,7 @@ public partial class Ltfs
     public bool LoadTape()
     {
         _tapeDrive ??= new LTOTapeDrive(@"\\.\Tape0", true);
+        ConfigureTapeDrive(_tapeDrive);
         
         _tapeDrive.TestUnitReady();
         _tapeDrive.GetInquiry();
@@ -83,6 +86,22 @@ public partial class Ltfs
     public void SetTapeDrive(TapeDriveBase drive)
     {
         _tapeDrive = drive ?? throw new ArgumentNullException(nameof(drive));
+        ConfigureTapeDrive(_tapeDrive);
+    }
+
+    private void ConfigureTapeDrive(TapeDriveBase drive)
+    {
+        drive.IncidentHandler = ResolveTapeDriveIncident;
+    }
+
+    private TapeDriveIncidentResolution ResolveTapeDriveIncident(TapeDriveIncident incident)
+    {
+        if (TapeDriveIncidentHandler is not null)
+            return TapeDriveIncidentHandler(incident);
+
+        return incident.Action == TapeDriveIncidentAction.NotifyOnly
+            ? TapeDriveIncidentResolution.Continue
+            : TapeDriveIncidentResolution.Abort;
     }
 
     public bool Format(FormatParam formatParam)

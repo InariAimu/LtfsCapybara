@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { NLayout, NLayoutFooter } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 
@@ -13,8 +13,10 @@ import Ltfs from './Ltfs.vue';
 import Task from './Task.vue';
 import AIChat from './AIChat.vue';
 import Test from './Test.vue';
+import { useFileStore } from '@/stores/fileStore';
 
 const { t } = useI18n();
+const fileStore = useFileStore();
 const selectedMenuKey = ref<string>('overview');
 const keepAliveInclude = ['LocalIndex', 'AIChat'];
 
@@ -63,6 +65,14 @@ const selectedTapeDriveId = computed(() => {
 
 const currentPageProps = computed(() =>
     currentPageComponent.value === TapeMachine ? { tapeDriveId: selectedTapeDriveId.value } : {},
+);
+
+watch(
+    selectedTapeDriveId,
+    value => {
+        fileStore.setCurrentTapeDriveId(value ?? '');
+    },
+    { immediate: true },
 );
 </script>
 

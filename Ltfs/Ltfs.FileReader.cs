@@ -35,42 +35,101 @@ public partial class Ltfs
 
         ulong totalBytesToRead = orderedTasks.Aggregate(0ul, (total, task) => total + ResolveReadSourceFile(task).Length);
         ulong totalRead = 0;
+        long currentReadBytes = 0;
+        long currentReadTotalBytes = 0;
+        string? currentReadPath = null;
+        int completedItems = 0;
 
         Logger.Info($"Starting read of {orderedTasks.Length} files...");
 
+        using var progressCts = new CancellationTokenSource();
+        var progressTask = Task.Run(() => RunProgressMonitor(
+            LtfsTaskQueueType.Read,
+            orderedTasks.Length,
+            () => Volatile.Read(ref completedItems),
+            () => totalRead + (ulong)Math.Max(0, Volatile.Read(ref currentReadBytes)),
+            totalBytesToRead,
+            () => currentReadPath,
+            () => Volatile.Read(ref currentReadBytes),
+            () => Volatile.Read(ref currentReadTotalBytes),
+            progressCts.Token));
+
         var hasErrors = false;
-        foreach (var task in orderedTasks)
+        try
         {
-            MarkTaskRunning(task);
-
-            try
+            foreach (var task in orderedTasks)
             {
-                var sourceFile = ResolveReadSourceFile(task);
-                var readResult = await ReadFileToLocalAsync(task.TargetPath, sourceFile, existingFileMode);
-                totalRead += sourceFile.Length;
+                MarkTaskRunning(task);
+                currentReadPath = task.TargetPath;
 
-                if (readResult == ReadFileResult.Skipped)
+                try
                 {
-                    Logger.Info($"Skipped existing file: {task.TargetPath}");
+                    var sourceFile = ResolveReadSourceFile(task);
+                    Interlocked.Exchange(ref currentReadBytes, 0);
+                    Interlocked.Exchange(ref currentReadTotalBytes, (long)sourceFile.Length);
+                    var readResult = await ReadFileToLocalAsync(
+                        task.TargetPath,
+                        sourceFile,
+                        existingFileMode,
+                        bytesRead => Interlocked.Add(ref currentReadBytes, bytesRead));
+                    totalRead += sourceFile.Length;
+
+                    if (readResult == ReadFileResult.Skipped)
+                    {
+                        Logger.Info($"Skipped existing file: {task.TargetPath}");
+                    }
+
+                    MarkTaskCompleted(task);
+                    MarkTaskCommitted(task);
+                    Interlocked.Increment(ref completedItems);
+                }
+                catch (TapeDriveCommandException)
+                {
+                    MarkTaskCancelled(task);
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error($"Error reading file {task.SourcePath} to {task.TargetPath}: {ex.Message}");
+                    MarkTaskFailed(task);
+                    hasErrors = true;
+                }
+                finally
+                {
+                    currentReadPath = null;
+                    Interlocked.Exchange(ref currentReadBytes, 0);
+                    Interlocked.Exchange(ref currentReadTotalBytes, 0);
                 }
 
-                MarkTaskCompleted(task);
-                MarkTaskCommitted(task);
-            }
-            catch (Exception ex)
-            {
-                Logger.Error($"Error reading file {task.SourcePath} to {task.TargetPath}: {ex.Message}");
-                MarkTaskFailed(task);
-                hasErrors = true;
+                if (totalBytesToRead > 0)
+                {
+                    Logger.Debug($"{FileSize.FormatSize(totalRead)} / {FileSize.FormatSize(totalBytesToRead)} read Progress: {totalRead * 100 / totalBytesToRead}%");
+                }
             }
 
-            if (totalBytesToRead > 0)
-            {
-                Logger.Debug($"{FileSize.FormatSize(totalRead)} / {FileSize.FormatSize(totalBytesToRead)} read Progress: {totalRead * 100 / totalBytesToRead}%");
-            }
+            return !hasErrors;
         }
+        finally
+        {
+            progressCts.Cancel();
+            try { await progressTask; } catch { }
 
-        return !hasErrors;
+            long lastTicks = DateTime.UtcNow.Ticks;
+            ulong lastProcessed = totalRead;
+            PublishProgress(BuildProgressSnapshot(
+                LtfsTaskQueueType.Read,
+                orderedTasks.Length,
+                Volatile.Read(ref completedItems),
+                totalRead,
+                totalBytesToRead,
+                null,
+                0,
+                0,
+                lastTicks,
+                ref lastTicks,
+                ref lastProcessed,
+                isCompleted: true));
+        }
     }
 
     private async Task<bool> PerformVerifyTasks(IReadOnlyList<VerifyTask> verifyTasks)
@@ -85,74 +144,136 @@ public partial class Ltfs
 
         ulong totalBytesToVerify = orderedTasks.Aggregate(0ul, (total, task) => total + ResolveVerifySourceFile(task).Length);
         ulong totalVerified = 0;
+        long currentVerifyBytes = 0;
+        long currentVerifyTotalBytes = 0;
+        string? currentVerifyPath = null;
+        int completedItems = 0;
 
         Logger.Info($"Starting verification of {orderedTasks.Length} files...");
 
-        var hasErrors = false;
-        foreach (var task in orderedTasks)
-        {
-            MarkTaskRunning(task);
-            ResetVerifyTaskResult(task);
+        using var progressCts = new CancellationTokenSource();
+        var progressTask = Task.Run(() => RunProgressMonitor(
+            LtfsTaskQueueType.Verify,
+            orderedTasks.Length,
+            () => Volatile.Read(ref completedItems),
+            () => totalVerified + (ulong)Math.Max(0, Volatile.Read(ref currentVerifyBytes)),
+            totalBytesToVerify,
+            () => currentVerifyPath,
+            () => Volatile.Read(ref currentVerifyBytes),
+            () => Volatile.Read(ref currentVerifyTotalBytes),
+            progressCts.Token));
 
-            try
+        var hasErrors = false;
+        try
+        {
+            foreach (var task in orderedTasks)
             {
-                var sourceFile = ResolveVerifySourceFile(task);
-                if (sourceFile.Length == 0)
+                MarkTaskRunning(task);
+                ResetVerifyTaskResult(task);
+                currentVerifyPath = task.SourcePath;
+
+                try
                 {
-                    MarkVerifyTaskSkipped(task, "Skipped zero-length file.");
-                    MarkTaskCompleted(task);
-                    MarkTaskCommitted(task);
-                }
-                else
-                {
-                    var expectedCrc64 = GetExpectedVerifyCrc64(sourceFile);
-                    if (expectedCrc64 is null)
+                    var sourceFile = ResolveVerifySourceFile(task);
+                    Interlocked.Exchange(ref currentVerifyBytes, 0);
+                    Interlocked.Exchange(ref currentVerifyTotalBytes, (long)sourceFile.Length);
+                    if (sourceFile.Length == 0)
                     {
-                        MarkVerifyTaskSkipped(task, "Skipped file without CRC64 hash.");
+                        MarkVerifyTaskSkipped(task, "Skipped zero-length file.");
                         MarkTaskCompleted(task);
                         MarkTaskCommitted(task);
+                        Interlocked.Increment(ref completedItems);
                     }
                     else
                     {
-                        var verifyResult = await VerifyFileAsync(sourceFile, expectedCrc64);
-                        task.ExpectedCrc64 = verifyResult.ExpectedCrc64;
-                        task.ActualCrc64 = verifyResult.ActualCrc64;
-                        task.VerificationPassed = verifyResult.Passed;
-                        task.VerificationMessage = verifyResult.Message;
-                        totalVerified += sourceFile.Length;
-
-                        if (verifyResult.Passed)
+                        var expectedCrc64 = GetExpectedVerifyCrc64(sourceFile);
+                        if (expectedCrc64 is null)
                         {
+                            MarkVerifyTaskSkipped(task, "Skipped file without CRC64 hash.");
                             MarkTaskCompleted(task);
                             MarkTaskCommitted(task);
+                            Interlocked.Increment(ref completedItems);
                         }
                         else
                         {
-                            MarkTaskFailed(task);
-                            hasErrors = true;
+                            var verifyResult = await VerifyFileAsync(
+                                sourceFile,
+                                expectedCrc64,
+                                bytesVerified => Interlocked.Add(ref currentVerifyBytes, bytesVerified));
+                            task.ExpectedCrc64 = verifyResult.ExpectedCrc64;
+                            task.ActualCrc64 = verifyResult.ActualCrc64;
+                            task.VerificationPassed = verifyResult.Passed;
+                            task.VerificationMessage = verifyResult.Message;
+                            totalVerified += sourceFile.Length;
+
+                            if (verifyResult.Passed)
+                            {
+                                MarkTaskCompleted(task);
+                                MarkTaskCommitted(task);
+                                Interlocked.Increment(ref completedItems);
+                            }
+                            else
+                            {
+                                MarkTaskFailed(task);
+                                hasErrors = true;
+                            }
                         }
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                task.VerificationPassed = false;
-                task.VerificationMessage = ex.Message;
-                Logger.Error($"Error verifying file {task.SourcePath}: {ex.Message}");
-                MarkTaskFailed(task);
-                hasErrors = true;
+                catch (TapeDriveCommandException)
+                {
+                    task.VerificationPassed = false;
+                    task.VerificationMessage = "Verification aborted by tape drive incident.";
+                    MarkTaskCancelled(task);
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    task.VerificationPassed = false;
+                    task.VerificationMessage = ex.Message;
+                    Logger.Error($"Error verifying file {task.SourcePath}: {ex.Message}");
+                    MarkTaskFailed(task);
+                    hasErrors = true;
+                }
+                finally
+                {
+                    currentVerifyPath = null;
+                    Interlocked.Exchange(ref currentVerifyBytes, 0);
+                    Interlocked.Exchange(ref currentVerifyTotalBytes, 0);
+                }
+
+                if (totalBytesToVerify > 0)
+                {
+                    Logger.Debug($"{FileSize.FormatSize(totalVerified)} / {FileSize.FormatSize(totalBytesToVerify)} verification Progress: {totalVerified * 100 / totalBytesToVerify}%");
+                }
             }
 
-            if (totalBytesToVerify > 0)
-            {
-                Logger.Debug($"{FileSize.FormatSize(totalVerified)} / {FileSize.FormatSize(totalBytesToVerify)} verification Progress: {totalVerified * 100 / totalBytesToVerify}%");
-            }
+            return !hasErrors;
         }
+        finally
+        {
+            progressCts.Cancel();
+            try { await progressTask; } catch { }
 
-        return !hasErrors;
+            long lastTicks = DateTime.UtcNow.Ticks;
+            ulong lastProcessed = totalVerified;
+            PublishProgress(BuildProgressSnapshot(
+                LtfsTaskQueueType.Verify,
+                orderedTasks.Length,
+                Volatile.Read(ref completedItems),
+                totalVerified,
+                totalBytesToVerify,
+                null,
+                0,
+                0,
+                lastTicks,
+                ref lastTicks,
+                ref lastProcessed,
+                isCompleted: true));
+        }
     }
 
-    private async Task<ReadFileResult> ReadFileToLocalAsync(string targetPath, LtfsFile file, ReadTaskExistingFileMode existingFileMode)
+    private async Task<ReadFileResult> ReadFileToLocalAsync(string targetPath, LtfsFile file, ReadTaskExistingFileMode existingFileMode, Action<int>? onBytesRead = null)
     {
         var label = LtfsLabelA ?? throw new InvalidOperationException("LTFS label is not loaded.");
         var resolvedTargetPath = Path.GetFullPath(targetPath);
@@ -185,6 +306,7 @@ public partial class Ltfs
                     fs.Seek(fileOffset, SeekOrigin.Begin);
                     await fs.WriteAsync(chunk);
                     validator?.Append(chunk.Span);
+                    onBytesRead?.Invoke(chunk.Length);
                 });
 
                 validator?.Validate();
@@ -209,12 +331,13 @@ public partial class Ltfs
         }
     }
 
-    private async Task<VerifyResult> VerifyFileAsync(LtfsFile file, string expectedCrc64)
+    private async Task<VerifyResult> VerifyFileAsync(LtfsFile file, string expectedCrc64, Action<int>? onBytesVerified = null)
     {
         var crc64 = new Crc64();
         await ReadTapeFileAsync(file, (_, chunk) =>
         {
             crc64.Append(chunk.Span);
+            onBytesVerified?.Invoke(chunk.Length);
             return Task.CompletedTask;
         });
         var actualCrc64 = crc64.GetCurrentHashAsUInt64().ToString("X16");

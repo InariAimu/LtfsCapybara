@@ -6,6 +6,7 @@ export const useFileStore = defineStore('file', {
         files: [] as any[],
         loading: false,
         currentTapeName: '',
+        currentTapeDriveId: '',
         currentPath: '/',
         localIndexTreeData: [] as any[],
         localIndexExpandedKeys: [] as Array<string | number>,
@@ -30,6 +31,10 @@ export const useFileStore = defineStore('file', {
 
         setCurrentPath(path: string) {
             this.currentPath = path || '/';
+        },
+
+        setCurrentTapeDriveId(tapeDriveId: string) {
+            this.currentTapeDriveId = tapeDriveId;
         },
 
         setCurrentLocation(tapeName: string, path: string) {

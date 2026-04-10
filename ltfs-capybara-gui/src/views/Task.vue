@@ -10,12 +10,14 @@ import {
     NText,
     NButton,
     NEmpty,
+    NAlert,
     useMessage,
 } from 'naive-ui';
 import type { TreeOption, DataTableColumns } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import { taskApi } from '@/api/modules/tasks';
 import { useFileStore } from '@/stores/fileStore';
+import { useExecutionStore } from '@/stores/executionStore';
 import {
     getParentPath,
     getPathName,
@@ -27,11 +29,20 @@ import {
 const { t } = useI18n();
 const message = useMessage();
 const store = useFileStore();
+const executionStore = useExecutionStore();
 
 const isLoading = ref(false);
 const selectedKeys = ref<string[]>([]);
 const selectedTape = ref('');
 const selectedPath = ref('/');
+
+const activeExecution = computed(() =>
+    executionStore.executions.find(execution => execution.tapeBarcode === selectedTape.value) ?? null,
+);
+
+const canExecute = computed(
+    () => Boolean(selectedTape.value) && Boolean(store.currentTapeDriveId) && !executionStore.activeExecution,
+);
 
 // ─── Tree ────────────────────────────────────────────────────────────────────
 
@@ -340,6 +351,27 @@ async function handleDeleteTask(row: TaskTableRow) {
     }
 }
 
+async function handleExecuteTasks() {
+    if (!selectedTape.value) {
+        message.warning(t('task.selectNodeHint'));
+        return;
+    }
+
+    if (!store.currentTapeDriveId) {
+        message.warning(t('task.selectDriveFirst'));
+        return;
+    }
+
+    try {
+        const res = await taskApi.executeGroup(selectedTape.value, store.currentTapeDriveId);
+        executionStore.upsertExecution(res.data);
+        message.success(t('task.executionStarted'));
+    } catch (err) {
+        console.error('handleExecuteTasks error', err);
+        message.error(t('task.executionStartFailed'));
+    }
+}
+
 onMounted(loadTaskGroups);
 </script>
 
@@ -349,9 +381,14 @@ onMounted(loadTaskGroups);
             <n-flex vertical :size="8" style="height: 100%">
                 <n-flex align="center" justify="space-between" style="flex-shrink: 0">
                     <n-text strong>{{ t('menu.task') }}</n-text>
-                    <n-button size="small" tertiary :loading="isLoading" @click="loadTaskGroups">
-                        {{ t('task.refresh') }}
-                    </n-button>
+                    <n-flex>
+                        <n-button size="small" tertiary :loading="isLoading" @click="loadTaskGroups">
+                            {{ t('task.refresh') }}
+                        </n-button>
+                        <n-button size="small" type="primary" :disabled="!canExecute" @click="handleExecuteTasks">
+                            {{ t('task.execute') }}
+                        </n-button>
+                    </n-flex>
                 </n-flex>
                 <n-empty v-if="treeData.length === 0" :description="t('task.emptyGroups')" />
                 <n-tree
@@ -371,7 +408,18 @@ onMounted(loadTaskGroups);
                 :description="t('task.selectNodeHint')"
                 style="margin-top: 40px"
             />
-            <n-data-table v-else :columns="columns" :data="tableRows" size="small" />
+            <template v-else>
+                <n-alert v-if="activeExecution" type="info" style="margin-bottom: 12px;">
+                    <div>{{ activeExecution.status }}</div>
+                    <div v-if="activeExecution.progress?.statusMessage">
+                        {{ activeExecution.progress.statusMessage }}
+                    </div>
+                    <div v-if="activeExecution.pendingIncident?.message">
+                        {{ activeExecution.pendingIncident.message }}
+                    </div>
+                </n-alert>
+                <n-data-table :columns="columns" :data="tableRows" size="small" />
+            </template>
         </n-layout>
     </n-layout>
 </template>

@@ -1,6 +1,7 @@
 using TapeDrive.Utils;
 using TapeDrive.SCSICommands;
 using System.Text;
+using System.Linq;
 using TapeDrive.SCSICommands.LogSensePages;
 
 namespace TapeDrive;
@@ -47,7 +48,7 @@ public partial class LTOTapeDrive : IDisposable
     }
 
 
-    public void HandleSense()
+    public void HandleSense(byte[]? cdb = null)
     {
         if (ParsedSense is null)
             return;
@@ -136,10 +137,12 @@ public partial class LTOTapeDrive : IDisposable
                         
                     case 0x5d00: // Failure prediction threshold exceeded
                         {
+                            CurrentAlertLevel = TapeAlertLevel.Information;
                             var alertPageData = LogSense(PageCodes.TapeAlertResponseLog);
                             var alertPage = StructParser.Parse<TapeAlertResponsePage>(alertPageData);
 
                             CurrentAlertIndexs = TapeAlert.ParseMostSignificantBytesIntoIndexes(alertPage.ParameterValue);
+                            var incidents = new List<TapeDriveIncident>(CurrentAlertIndexs.Count);
                             foreach (var index in CurrentAlertIndexs)
                             {
                                 if (TapeAlert.Items.TryGetValue(index, out var alertInfo))
@@ -147,8 +150,14 @@ public partial class LTOTapeDrive : IDisposable
                                     if (alertInfo.Type > CurrentAlertLevel)
                                         CurrentAlertLevel = alertInfo.Type;
 
+                                    incidents.Add(BuildTapeAlertIncident(index, alertInfo, cdb));
                                     consoleMessage.AppendLine($"Tape alert: {alertInfo.Flag} {alertInfo.RecommendedHostMessage}");
                                 }
+                            }
+
+                            foreach (var incident in incidents)
+                            {
+                                ApplyIncidentPolicy(incident);
                             }
                         }
                         break;
@@ -221,6 +230,58 @@ public partial class LTOTapeDrive : IDisposable
         info.AdvisedAction = consoleMessage.ToString();
 
         SenseHistory.Add(info);
+
+        if (info.ErrorLevel != SenseErrorLevel.None)
+        {
+            ApplyIncidentPolicy(BuildSenseIncident(info, cdb));
+        }
+    }
+
+    private TapeDriveIncident BuildSenseIncident(SenseInfo info, byte[]? cdb)
+    {
+        var message = string.IsNullOrWhiteSpace(info.AdvisedAction)
+            ? GetSenseKeyDescription(info.SenseData.SenseKey)
+            : info.AdvisedAction.Trim();
+
+        return new TapeDriveIncident
+        {
+            Source = TapeDriveIncidentSource.Sense,
+            Severity = info.ErrorLevel switch
+            {
+                SenseErrorLevel.Warning => TapeDriveIncidentSeverity.Warning,
+                SenseErrorLevel.Critical => TapeDriveIncidentSeverity.Critical,
+                _ => TapeDriveIncidentSeverity.Information,
+            },
+            Action = info.ErrorLevel switch
+            {
+                SenseErrorLevel.Warning => TapeDriveIncidentAction.PauseCurrentTasks,
+                SenseErrorLevel.Critical => TapeDriveIncidentAction.StopAllOperations,
+                _ => TapeDriveIncidentAction.NotifyOnly,
+            },
+            Message = message,
+            Detail = info.Description.Trim(),
+            SenseInfo = info,
+            Cdb = cdb is null ? null : [.. cdb],
+        };
+    }
+
+    private static TapeDriveIncident BuildTapeAlertIncident(int index, TapeAlertItem alertInfo, byte[]? cdb)
+    {
+        return new TapeDriveIncident
+        {
+            Source = TapeDriveIncidentSource.TapeAlert,
+            Severity = alertInfo.Type == TapeAlertLevel.Critical
+                ? TapeDriveIncidentSeverity.Critical
+                : TapeDriveIncidentSeverity.Warning,
+            Action = alertInfo.Type == TapeAlertLevel.Critical
+                ? TapeDriveIncidentAction.StopAllOperations
+                : TapeDriveIncidentAction.NotifyOnly,
+            Message = $"Tape alert: {alertInfo.Flag} {alertInfo.RecommendedHostMessage}",
+            Detail = alertInfo.Cause,
+            TapeAlertIndexes = [index],
+            TapeAlerts = [alertInfo],
+            Cdb = cdb is null ? null : [.. cdb],
+        };
     }
 
     public static string GetSenseKeyDescription(byte senseKey)

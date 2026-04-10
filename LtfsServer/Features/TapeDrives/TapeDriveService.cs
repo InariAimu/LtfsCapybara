@@ -5,6 +5,8 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 
+using Ltfs;
+
 using LtfsServer.BootStrap;
 using LtfsServer.Features.LocalTapes;
 
@@ -23,9 +25,16 @@ public class TapeDriveService : ITapeDriveService
     {
         public required string TapeDriveId { get; init; }
         public required string DevicePath { get; init; }
+        public required string DisplayName { get; set; }
         public required bool IsFake { get; init; }
         public TapeDriveState State { get; set; } = TapeDriveState.Empty;
         public string? LastError { get; set; }
+        public CartridgeMemory? CartridgeMemory { get; set; }
+        public string? LoadedBarcode { get; set; }
+        public bool? HasLtfsFilesystem { get; set; }
+        public string? LtfsVolumeName { get; set; }
+        public Ltfs.Ltfs? LtfsContext { get; set; }
+        public bool MediaContextLoaded { get; set; }
     }
 
     private const int MaxTapeDeviceCount = 32;
@@ -39,6 +48,7 @@ public class TapeDriveService : ITapeDriveService
     private readonly List<string> _managedIds = new();
     private readonly ConcurrentDictionary<string, MachineContext> _contexts = new();
     private readonly ConcurrentDictionary<string, object> _locks = new();
+    private readonly ConcurrentDictionary<string, TapeDriveInfo> _driveInfos = new(StringComparer.OrdinalIgnoreCase);
 
     public TapeDriveService(
         ITapeDriveRegistry registry,
@@ -58,35 +68,78 @@ public class TapeDriveService : ITapeDriveService
     {
         lock (_sync)
         {
-            RemoveManagedDrives();
-
             var discovered = DiscoverDrives();
+            var discoveredIds = new HashSet<string>(discovered.Select(entry => entry.Id), StringComparer.OrdinalIgnoreCase);
             var results = new List<TapeDriveInfo>();
 
             foreach (var entry in discovered)
             {
+                if (_registry.TryGet(entry.Id, out var existingDrive) && existingDrive is not null)
+                {
+                    (entry.Drive as IDisposable)?.Dispose();
+                    var existingInfo = new TapeDriveInfo(entry.Id, entry.DevicePath, entry.DisplayName, entry.IsFake);
+                    _driveInfos[entry.Id] = existingInfo;
+                    UpdateOrCreateContext(existingInfo);
+                    results.Add(existingInfo);
+                    continue;
+                }
+
                 if (!_registry.TryAdd(entry.Id, entry.Drive))
                 {
                     (entry.Drive as IDisposable)?.Dispose();
                     continue;
                 }
 
-                _managedIds.Add(entry.Id);
-                results.Add(new TapeDriveInfo(entry.Id, entry.DevicePath, entry.DisplayName, entry.IsFake));
+                var info = new TapeDriveInfo(entry.Id, entry.DevicePath, entry.DisplayName, entry.IsFake);
+                _driveInfos[entry.Id] = info;
+                UpdateOrCreateContext(info);
+                results.Add(info);
             }
+
+            RemoveMissingDrives(discoveredIds);
+
+            _managedIds.Clear();
+            _managedIds.AddRange(results.Select(result => result.Id));
 
             return results;
         }
     }
 
-    private void RemoveManagedDrives()
+    public Ltfs.Ltfs? GetCachedLtfsContext(string tapeDriveId)
     {
-        foreach (var id in _managedIds)
+        if (_contexts.TryGetValue(tapeDriveId, out var context))
         {
-            _registry.TryRemove(id, out _);
+            return context.LtfsContext;
         }
 
-        _managedIds.Clear();
+        return null;
+    }
+
+    public void UpdateCachedLtfsContext(string tapeDriveId, Ltfs.Ltfs? ltfs, string? loadedBarcode = null)
+    {
+        var context = GetOrCreateContext(tapeDriveId);
+        lock (GetDriveLock(tapeDriveId))
+        {
+            context.LtfsContext = ltfs;
+            context.MediaContextLoaded = true;
+            context.HasLtfsFilesystem = ltfs is not null;
+            context.LtfsVolumeName = ltfs?.LtfsIndexCurr?.Directory?.Name?.Value;
+            if (!string.IsNullOrWhiteSpace(loadedBarcode))
+            {
+                context.LoadedBarcode = SanitizeBarcode(loadedBarcode);
+            }
+        }
+    }
+
+    private void RemoveMissingDrives(HashSet<string> discoveredIds)
+    {
+        foreach (var id in _managedIds.Where(id => !discoveredIds.Contains(id)).ToArray())
+        {
+            _registry.TryRemove(id, out _);
+            _contexts.TryRemove(id, out _);
+            _locks.TryRemove(id, out _);
+            _driveInfos.TryRemove(id, out _);
+        }
     }
 
     private List<DiscoveredDrive> DiscoverDrives()
@@ -141,23 +194,16 @@ public class TapeDriveService : ITapeDriveService
 
     public TapeDriveSnapshot GetSnapshot(string tapeDriveId)
     {
-        var driveInfo = RefreshAndResolveDrive(tapeDriveId);
-        var context = _contexts.AddOrUpdate(
-            tapeDriveId,
-            _ => new MachineContext
-            {
-                TapeDriveId = driveInfo.Id,
-                DevicePath = driveInfo.DevicePath,
-                IsFake = driveInfo.IsFake,
-                State = TapeDriveState.Empty,
-            },
-            (_, old) =>
-            {
-                old.State = old.State == TapeDriveState.Unknown ? TapeDriveState.Empty : old.State;
-                return old;
-            });
+        var driveInfo = ResolveDrive(tapeDriveId);
+        if (!_registry.TryGet(tapeDriveId, out var drive) || drive is null)
+        {
+            throw new InvalidOperationException($"Tape drive '{tapeDriveId}' is unavailable.");
+        }
 
-        return ToSnapshot(context, null);
+        var context = UpdateOrCreateContext(driveInfo);
+
+        EnsureMediaContextLoaded(context, drive);
+        return ToSnapshot(context);
     }
 
     public TapeDriveSnapshot Execute(string tapeDriveId, TapeDriveAction action)
@@ -166,26 +212,16 @@ public class TapeDriveService : ITapeDriveService
 
         lock (lockObj)
         {
-            var driveInfo = RefreshAndResolveDrive(tapeDriveId);
+            var driveInfo = ResolveDrive(tapeDriveId);
             if (!_registry.TryGet(tapeDriveId, out var drive) || drive is null)
             {
                 throw new InvalidOperationException($"Tape drive '{tapeDriveId}' is unavailable.");
             }
 
-            var context = _contexts.AddOrUpdate(
-                tapeDriveId,
-                _ => new MachineContext
-                {
-                    TapeDriveId = driveInfo.Id,
-                    DevicePath = driveInfo.DevicePath,
-                    IsFake = driveInfo.IsFake,
-                    State = TapeDriveState.Empty,
-                },
-                (_, old) => old);
+            var context = UpdateOrCreateContext(driveInfo);
 
             EnsureActionAllowed(context.State, action, tapeDriveId);
 
-            CartridgeMemory? cm = null;
             try
             {
                 switch (action)
@@ -194,11 +230,13 @@ public class TapeDriveService : ITapeDriveService
                         drive.Load();
                         context.State = TapeDriveState.Threaded;
                         context.LastError = null;
+                        InvalidateMediaContext(context, clearCartridgeMemory: false);
                         break;
                     case TapeDriveAction.LoadTape:
                         drive.LoadUnthread();
                         context.State = TapeDriveState.Loaded;
                         context.LastError = null;
+                        InvalidateMediaContext(context, clearCartridgeMemory: false);
                         break;
                     case TapeDriveAction.UnthreadTape:
                         drive.Unthread();
@@ -209,11 +247,14 @@ public class TapeDriveService : ITapeDriveService
                         drive.Unload();
                         context.State = TapeDriveState.Empty;
                         context.LastError = null;
+                        InvalidateMediaContext(context, clearCartridgeMemory: true);
                         break;
                     case TapeDriveAction.ReadInfo:
                         var raw = drive.ReadDiagCM();
-                        cm = new CartridgeMemory();
+                        var cm = new CartridgeMemory();
                         cm.FromBytes(raw);
+                        context.CartridgeMemory = cm;
+                        context.LoadedBarcode = ResolveBarcode(drive, cm);
                         SaveCmBinaryAndUpdateRegistry(raw, drive, cm);
                         context.LastError = null;
                         break;
@@ -229,8 +270,100 @@ public class TapeDriveService : ITapeDriveService
                 throw;
             }
 
-            return ToSnapshot(context, cm);
+            EnsureMediaContextLoaded(context, drive, forceRefresh: action is TapeDriveAction.ThreadTape or TapeDriveAction.LoadTape or TapeDriveAction.ReadInfo);
+            return ToSnapshot(context);
         }
+    }
+
+    private void EnsureMediaContextLoaded(MachineContext context, TapeDriveBase drive, bool forceRefresh = false)
+    {
+        if (context.State == TapeDriveState.Empty)
+        {
+            InvalidateMediaContext(context, clearCartridgeMemory: true);
+            return;
+        }
+
+        if (context.MediaContextLoaded && !forceRefresh)
+        {
+            return;
+        }
+
+        RefreshMediaContextCore(context, drive);
+    }
+
+    private void RefreshMediaContextCore(MachineContext context, TapeDriveBase drive)
+    {
+        context.LtfsContext = null;
+        context.HasLtfsFilesystem = null;
+        context.LtfsVolumeName = null;
+
+        try
+        {
+            var barcode = SanitizeBarcode(drive.ReadBarCode());
+            if (!string.IsNullOrWhiteSpace(barcode))
+            {
+                context.LoadedBarcode = barcode;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "ReadBarCode failed for {TapeDriveId}", context.TapeDriveId);
+        }
+
+        try
+        {
+            var raw = drive.ReadDiagCM();
+            if (raw.Length > 0)
+            {
+                var cm = new CartridgeMemory();
+                cm.FromBytes(raw);
+                context.CartridgeMemory = cm;
+                var barcode = ResolveBarcode(drive, cm);
+                if (!string.IsNullOrWhiteSpace(barcode))
+                {
+                    context.LoadedBarcode = barcode;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "ReadDiagCM failed for {TapeDriveId}", context.TapeDriveId);
+        }
+
+        try
+        {
+            var ltfs = new Ltfs.Ltfs();
+            ltfs.SetTapeDrive(drive);
+            var hasLtfs = ltfs.ReadLtfs();
+            context.HasLtfsFilesystem = hasLtfs;
+            context.LtfsVolumeName = hasLtfs
+                ? ltfs.LtfsIndexCurr?.Directory?.Name?.Value
+                : null;
+            context.LtfsContext = hasLtfs ? ltfs : null;
+        }
+        catch (Exception ex)
+        {
+            context.HasLtfsFilesystem = false;
+            context.LtfsVolumeName = null;
+            context.LtfsContext = null;
+            _logger.LogDebug(ex, "ReadLtfs probe failed for {TapeDriveId}", context.TapeDriveId);
+        }
+
+        context.MediaContextLoaded = true;
+    }
+
+    private static void InvalidateMediaContext(MachineContext context, bool clearCartridgeMemory)
+    {
+        if (clearCartridgeMemory)
+        {
+            context.CartridgeMemory = null;
+        }
+
+        context.LoadedBarcode = clearCartridgeMemory ? null : context.LoadedBarcode;
+        context.HasLtfsFilesystem = null;
+        context.LtfsVolumeName = null;
+        context.LtfsContext = null;
+        context.MediaContextLoaded = false;
     }
 
     private void SaveCmBinaryAndUpdateRegistry(byte[] rawCm, TapeDriveBase drive, CartridgeMemory cm)
@@ -290,17 +423,50 @@ public class TapeDriveService : ITapeDriveService
         return safe;
     }
 
-    private TapeDriveInfo RefreshAndResolveDrive(string tapeDriveId)
+    private TapeDriveInfo ResolveDrive(string tapeDriveId)
     {
+        if (_driveInfos.TryGetValue(tapeDriveId, out var cachedInfo))
+        {
+            return cachedInfo;
+        }
+
         var drives = ScanAndSync();
-        var driveInfo = drives.FirstOrDefault(d => string.Equals(d.Id, tapeDriveId, StringComparison.OrdinalIgnoreCase));
-        if (driveInfo is null)
+        var discoveredInfo = drives.FirstOrDefault(d => string.Equals(d.Id, tapeDriveId, StringComparison.OrdinalIgnoreCase));
+        if (discoveredInfo is null)
         {
             throw new KeyNotFoundException($"Tape drive '{tapeDriveId}' was not found.");
         }
 
-        return driveInfo;
+        return discoveredInfo;
     }
+
+    private MachineContext GetOrCreateContext(string tapeDriveId)
+    {
+        var driveInfo = ResolveDrive(tapeDriveId);
+        return UpdateOrCreateContext(driveInfo);
+    }
+
+    private MachineContext UpdateOrCreateContext(TapeDriveInfo driveInfo)
+    {
+        return _contexts.AddOrUpdate(
+            driveInfo.Id,
+            _ => new MachineContext
+            {
+                TapeDriveId = driveInfo.Id,
+                DevicePath = driveInfo.DevicePath,
+                DisplayName = driveInfo.DisplayName,
+                IsFake = driveInfo.IsFake,
+                State = TapeDriveState.Empty,
+            },
+            (_, old) =>
+            {
+                old.DisplayName = driveInfo.DisplayName;
+                old.State = old.State == TapeDriveState.Unknown ? TapeDriveState.Empty : old.State;
+                return old;
+            });
+    }
+
+    private object GetDriveLock(string tapeDriveId) => _locks.GetOrAdd(tapeDriveId, _ => new object());
 
     private static void EnsureActionAllowed(TapeDriveState state, TapeDriveAction action, string tapeDriveId)
     {
@@ -325,7 +491,7 @@ public class TapeDriveService : ITapeDriveService
         };
     }
 
-    private static TapeDriveSnapshot ToSnapshot(MachineContext context, CartridgeMemory? cm)
+    private static TapeDriveSnapshot ToSnapshot(MachineContext context)
     {
         return new TapeDriveSnapshot(
             context.TapeDriveId,
@@ -334,7 +500,10 @@ public class TapeDriveService : ITapeDriveService
             GetAllowedActions(context.State),
             context.LastError,
             context.IsFake,
-            cm);
+            context.CartridgeMemory,
+            context.LoadedBarcode,
+            context.HasLtfsFilesystem,
+            context.LtfsVolumeName);
     }
 
     private sealed record DiscoveredDrive(

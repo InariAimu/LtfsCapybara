@@ -6,6 +6,7 @@ import { dateEnUS, dateZhCN, enUS, zhCN } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import Main from '@/views/Main.vue';
 import { useAppTheme } from '@/theme';
+import TaskExecutionBridge from '@/components/TaskExecutionBridge.vue';
 
 const { locale } = useI18n();
 const { isDarkTheme } = useAppTheme();
@@ -47,7 +48,11 @@ const themeOverrides: GlobalThemeOverrides = {
         :date-locale="naiveDateLocale"
     >
         <n-message-provider>
-            <n-modal-provider><Main /></n-modal-provider> </n-message-provider
+            <n-modal-provider>
+                <TaskExecutionBridge />
+                <Main />
+            </n-modal-provider>
+        </n-message-provider
     ></n-config-provider>
 </template>
 

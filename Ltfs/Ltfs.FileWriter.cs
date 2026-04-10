@@ -73,7 +73,6 @@ public partial class Ltfs
 
         Logger.Info($"Starting write of {writeTasks.Count} files...");
 
-        // ensure tape driver uses the block size
         _tapeDrive.SetBlockSize((ulong)blocksize);
 
         writeBlockPos = 0;
@@ -90,109 +89,133 @@ public partial class Ltfs
         var prefetchConcurrency = Math.Max(0, SmallFilePrefetchConcurrency);
         var prefetchWindow = Math.Max(0, SmallFilePrefetchWindow);
 
-        // Start a background prefetch controller that keeps a sliding window
-        // of prefetched files ahead of the current write index. Concurrency
-        // of actual file-read producers is limited by `prefetchSemaphore`.
         SemaphoreSlim? prefetchSemaphore = null;
-
-        // Signal used to wake the prefetcher when the write index advances.
         SemaphoreSlim? prefetchWindowSignal = null;
-
         Task prefetchTask = Task.CompletedTask;
-        if (smallFilePrefetchThreshold > 0 && prefetchConcurrency > 0 && prefetchWindow > 0)
+        CancellationTokenSource? overallMonitorCts = null;
+        Task overallMonitor = Task.CompletedTask;
+
+        try
         {
-            prefetchSemaphore = new SemaphoreSlim(prefetchConcurrency);
-            prefetchWindowSignal = new SemaphoreSlim(0);
+            if (smallFilePrefetchThreshold > 0 && prefetchConcurrency > 0 && prefetchWindow > 0)
+            {
+                prefetchSemaphore = new SemaphoreSlim(prefetchConcurrency);
+                prefetchWindowSignal = new SemaphoreSlim(0);
 
-            // Run prefetch task before locating tape to avoid delays.
-            Logger.Info($"Starting prefetch task with window size {prefetchWindow}, concurrency limit {prefetchConcurrency}, prefetch threshold {FileSize.FormatSize((ulong)smallFilePrefetchThreshold)}, direct-write threshold {FileSize.FormatSize((ulong)smallFileDirectWriteThreshold)}");
-            prefetchTask = PrefetchTask(writeTasks, prefetchSemaphore, prefetchWindowSignal, prefetchWindow, smallFilePrefetchThreshold, smallFileDirectWriteThreshold);
+                Logger.Info($"Starting prefetch task with window size {prefetchWindow}, concurrency limit {prefetchConcurrency}, prefetch threshold {FileSize.FormatSize((ulong)smallFilePrefetchThreshold)}, direct-write threshold {FileSize.FormatSize((ulong)smallFileDirectWriteThreshold)}");
+                prefetchTask = PrefetchTask(writeTasks, prefetchSemaphore, prefetchWindowSignal, prefetchWindow, smallFilePrefetchThreshold, smallFileDirectWriteThreshold);
+            }
+
+            Logger.Info($"Locating tape");
+            var dataPartition = label.Partitions.Data;
+            _tapeDrive.Locate(0, PartitionToNumber(dataPartition), LocateType.EOD);
+
+            overallMonitorCts = new CancellationTokenSource();
+            var overallMonitorToken = overallMonitorCts.Token;
+            var completedItems = 0;
+            overallMonitor = Task.Run(() => RunProgressMonitor(
+                    LtfsTaskQueueType.Write,
+                    writeTasks.Count,
+                    () => Volatile.Read(ref completedItems),
+                    () => totalWrite + (ulong)Math.Max(0, Interlocked.Read(ref currentFileBytesWritten)),
+                    totalBytesToWrite,
+                    () => currentFilePath,
+                    () => Interlocked.Read(ref currentFileBytesWritten),
+                    () => Interlocked.Read(ref currentFileSize),
+                    overallMonitorToken),
+                overallMonitorToken);
+
+            var hasErrors = false;
+
+            for (int i = 0; i < writeTasks.Count; i++)
+            {
+                currentWriteIndex = i;
+
+                try { prefetchWindowSignal?.Release(); } catch { }
+
+                var task = writeTasks[i];
+                MarkTaskRunning(task);
+
+                try
+                {
+                    await WriteFile(task);
+                }
+                catch (TapeDriveCommandException)
+                {
+                    MarkTaskCancelled(task);
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error($"Error writing file {task.LocalPath}: {ex.Message}");
+                    MarkTaskFailed(task);
+                    hasErrors = true;
+                    continue;
+                }
+
+                totalWrite += task.LtfsTargetPath.Length;
+                totalWriteSinceLastIndex += task.LtfsTargetPath.Length;
+                MarkTaskCompleted(task);
+                Interlocked.Increment(ref completedItems);
+
+                UpdateIndexByTask(workingIndex, task);
+
+                Logger.Debug($"{FileSize.FormatSize(totalWrite)} / {FileSize.FormatSize(totalBytesToWrite)} written Progress: {totalWrite * 100 / totalBytesToWrite}% Estimated time left: {(DateTime.Now.Ticks - t) / (double)totalWrite * (totalBytesToWrite - totalWrite) / 10000000.0:f2} seconds");
+
+                if (totalWriteSinceLastIndex >= IndexInterval)
+                {
+                    Logger.Info("Writing intermediate index to tape...");
+                    _tapeDrive.WriteFileMark();
+                    WriteIndexToDataPartition();
+                    totalWriteSinceLastIndex = 0;
+                }
+            }
+
+            Logger.Info($"All {writeTasks.Count} files written.");
+            Logger.Info($"Total time: {(DateTime.Now.Ticks - t) / 10000000.0:f2} seconds");
+            var time = DateTime.Now.Ticks - t;
+            if (time == 0)
+                time = 1;
+
+            Logger.Info($"Average Speed: {FileSize.FormatSize((ulong)(totalWrite * 10000000.0 / time))}/s");
+
+            foreach (var task in writeTasks)
+            {
+                if (task.IsTaskError)
+                {
+                    Logger.Error($"Task error: {task.LocalPath}");
+                }
+            }
+
+            _tapeDrive.WriteFileMark();
+
+            return !hasErrors;
         }
-
-        // position to end-of-data for append
-        Logger.Info($"Locating tape");
-        var dataPartition = label.Partitions.Data;
-        _tapeDrive.Locate(0, PartitionToNumber(dataPartition), LocateType.EOD);
-
-
-        // Start a single monitor for the whole WriteAll operation. The
-        // implementation is extracted into `RunOverallMonitor` below.
-        using var overallMonitorCts = new CancellationTokenSource();
-        var overallMonitorToken = overallMonitorCts.Token;
-        var overallMonitor = Task.Run(() =>
-                RunOverallMonitor(() => totalWrite, totalBytesToWrite, overallMonitorToken),
-            overallMonitorToken);
-
-        var hasErrors = false;
-
-        for (int i = 0; i < writeTasks.Count; i++)
+        finally
         {
-            currentWriteIndex = i;
+            overallMonitorCts?.Cancel();
+            try { await prefetchTask; } catch { }
+            try { await overallMonitor; } catch { }
+            try { prefetchWindowSignal?.Dispose(); } catch { }
+            try { prefetchSemaphore?.Dispose(); } catch { }
+            overallMonitorCts?.Dispose();
 
-            // Notify the prefetch controller that the write index advanced
-            try { prefetchWindowSignal?.Release(); } catch { }
-            var task = writeTasks[i];
-            MarkTaskRunning(task);
-
-            try
-            {
-                await WriteFile(task);
-            }
-            catch (Exception ex)
-            {
-                Logger.Error($"Error writing file {task.LocalPath}: {ex.Message}");
-                MarkTaskFailed(task);
-                hasErrors = true;
-                continue;
-            }
-
-            totalWrite += task.LtfsTargetPath.Length;
-            totalWriteSinceLastIndex += task.LtfsTargetPath.Length;
-            MarkTaskCompleted(task);
-
-            UpdateIndexByTask(workingIndex, task);
-
-            Logger.Debug($"{FileSize.FormatSize(totalWrite)} / {FileSize.FormatSize(totalBytesToWrite)} written Progress: {totalWrite * 100 / totalBytesToWrite}% Estimated time left: {(DateTime.Now.Ticks - t) / (double)totalWrite * (totalBytesToWrite - totalWrite) / 10000000.0:f2} seconds");
-
-            if (totalWriteSinceLastIndex >= IndexInterval)
-            {
-                Logger.Info("Writing intermediate index to tape...");
-                _tapeDrive.WriteFileMark();
-                WriteIndexToDataPartition();
-                totalWriteSinceLastIndex = 0;
-            }
-
+            long lastTicks = DateTime.UtcNow.Ticks;
+            ulong lastProcessed = totalWrite;
+            PublishProgress(BuildProgressSnapshot(
+                LtfsTaskQueueType.Write,
+                writeTasks.Count,
+                writeTasks.Count(task => task.Status is TaskExecutionStatus.Completed or TaskExecutionStatus.Committed),
+                totalWrite,
+                totalBytesToWrite,
+                null,
+                0,
+                0,
+                lastTicks,
+                ref lastTicks,
+                ref lastProcessed,
+                isCompleted: true));
         }
-
-        Logger.Info($"All {writeTasks.Count} files written.");
-        Logger.Info($"Total time: {(DateTime.Now.Ticks - t) / 10000000.0:f2} seconds");
-        var time = DateTime.Now.Ticks - t;
-        if (time == 0) time = 1;
-        Logger.Info($"Average Speed: {FileSize.FormatSize((ulong)(totalWrite * 10000000.0 / time))}/s");
-
-
-        foreach (var task in writeTasks)
-        {
-            if (task.IsTaskError)
-            {
-                Logger.Error($"Task error: {task.LocalPath}");
-            }
-        }
-
-        // Wait for the prefetch task to finish scheduling (it will exit when
-        // it has processed all entries in `writeTasks`). Then dispose the
-        // signal used to wake it.
-        try { await prefetchTask; } catch { }
-        try { prefetchWindowSignal?.Dispose(); } catch { }
-        try { prefetchSemaphore?.Dispose(); } catch { }
-
-        overallMonitorCts.Cancel();
-        try { await overallMonitor; } catch { }
-
-        // finish file writes
-        _tapeDrive.WriteFileMark();
-
-        return !hasErrors;
     }
 
     private async Task WriteFile(WriteTask task)
@@ -547,77 +570,4 @@ public partial class Ltfs
         sha1 = null;
     }
 
-    // Runs an overall monitor for the WriteAll operation. `getTotalWritten`
-    // is invoked to obtain the total bytes written so far (outside the
-    // monitor) so the monitor can display overall progress.
-    private async Task RunOverallMonitor(Func<ulong> getTotalWritten, ulong totalBytesToWrite, CancellationToken token)
-    {
-        var startTicks = DateTime.Now.Ticks;
-        long lastTicks = startTicks;
-        // include any in-progress bytes initially
-        long currentWrittenInit = Interlocked.Read(ref currentFileBytesWritten);
-        ulong lastOverallWritten = getTotalWritten() + (ulong)Math.Max(0, currentWrittenInit);
-
-        try
-        {
-            while (!token.IsCancellationRequested)
-            {
-                // Compute overall bytes written including any in-progress file bytes
-                long currentWritten = Interlocked.Read(ref currentFileBytesWritten);
-                ulong overallWritten = getTotalWritten() + (ulong)Math.Max(0, currentWritten);
-
-                var nowTicks = DateTime.Now.Ticks;
-                var elapsedTicks = nowTicks - startTicks;
-                if (elapsedTicks <= 0) elapsedTicks = 1;
-                double elapsedSecTotal = elapsedTicks / 10000000.0;
-
-                // Compute instantaneous speed over the last interval (approx 1s)
-                var intervalTicks = nowTicks - lastTicks;
-                if (intervalTicks <= 0) intervalTicks = 1;
-                double intervalSec = intervalTicks / 10000000.0;
-                ulong delta = overallWritten >= lastOverallWritten ? overallWritten - lastOverallWritten : 0ul;
-                double speedInstant = delta / Math.Max(1e-6, intervalSec); // bytes per second over last interval
-
-                // Keep overall average speed for ETA calculation
-                double speedOverall = overallWritten / Math.Max(1.0, elapsedSecTotal); // bytes per second (average)
-
-                double percentOverall = totalBytesToWrite > 0 ? (overallWritten * 100.0 / totalBytesToWrite) : 0.0;
-                double etaOverall = speedOverall > 0 ? (totalBytesToWrite > overallWritten ? (totalBytesToWrite - overallWritten) / speedOverall : 0.0) : double.PositiveInfinity;
-
-                var statusOverall = $"Total: {FileSize.FormatSize(overallWritten)} / {FileSize.FormatSize(totalBytesToWrite)} {percentOverall:f1}% ETA: {etaOverall:f0}s Speed: {FileSize.FormatSize((ulong)speedInstant)}/s";
-
-                if (Log.Current is ConsoleLogger cl)
-                {
-                    try
-                    {
-                        lock (Console.Out)
-                        {
-                            int bottom = Math.Max(0, Console.WindowHeight - 1);
-                            try { Console.SetCursorPosition(0, bottom); } catch { }
-                            try
-                            {
-                                Console.SetCursorPosition(0, bottom);
-                                cl.WriteLevelPrefix(LogLevel.Info);
-                                var toWrite = statusOverall.PadRight(Math.Max(0, Console.WindowWidth - 4));
-                                Console.Write(toWrite);
-                            }
-                            catch { }
-                        }
-                    }
-                    catch { }
-                }
-                else
-                {
-                    Logger.Info(statusOverall);
-                }
-
-                // Update last-sample trackers and wait ~1s
-                lastOverallWritten = overallWritten;
-                lastTicks = nowTicks;
-
-                await Task.Delay(1000, token).ConfigureAwait(false);
-            }
-        }
-        catch (OperationCanceledException) { }
-    }
 }

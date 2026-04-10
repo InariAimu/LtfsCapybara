@@ -1,6 +1,8 @@
 using Ltfs.Index;
 using Ltfs.Tasks;
 
+using TapeDrive;
+
 namespace Ltfs;
 
 public partial class Ltfs
@@ -13,13 +15,22 @@ public partial class Ltfs
 	{
 		return await ExecuteTaskQueueExclusively(async () =>
 		{
-			return taskQueueType switch
+			try
 			{
-				LtfsTaskQueueType.Read => await CommitReadTasks(),
-				LtfsTaskQueueType.Verify => await CommitVerifyTasks(),
-				LtfsTaskQueueType.Write => await CommitWriteTasks(),
-				_ => throw new ArgumentOutOfRangeException(nameof(taskQueueType), taskQueueType, null),
-			};
+				return taskQueueType switch
+				{
+					LtfsTaskQueueType.Read => await CommitReadTasks(),
+					LtfsTaskQueueType.Verify => await CommitVerifyTasks(),
+					LtfsTaskQueueType.Write => await CommitWriteTasks(),
+					_ => throw new ArgumentOutOfRangeException(nameof(taskQueueType), taskQueueType, null),
+				};
+			}
+			catch (TapeDriveCommandException ex)
+			{
+				Logger.Error($"Tape drive operation aborted: {ex.Message}");
+				CancelUncommittedTasks(taskQueueType, ex.Incident.Action == TapeDriveIncidentAction.StopAllOperations);
+				return false;
+			}
 		});
 	}
 
@@ -165,6 +176,15 @@ public partial class Ltfs
 		task.EndTime = DateTime.UtcNow;
 	}
 
+	private static void MarkTaskCancelled(TaskBase task)
+	{
+		if (task.StartTime == DateTime.MinValue)
+			task.StartTime = DateTime.UtcNow;
+
+		task.Status = TaskExecutionStatus.Cancelled;
+		task.EndTime = DateTime.UtcNow;
+	}
+
 	private static void MarkTaskCommitted(TaskBase task)
 	{
 		if (task.StartTime == DateTime.MinValue)
@@ -172,5 +192,30 @@ public partial class Ltfs
 
 		task.Status = TaskExecutionStatus.Committed;
 		task.EndTime = DateTime.UtcNow;
+	}
+
+	private void CancelUncommittedTasks(LtfsTaskQueueType taskQueueType, bool cancelAllQueues)
+	{
+		var queues = cancelAllQueues
+			? new[] { pendingWriteTasks, pendingReadTasks, pendingVerifyTasks }
+			: new[] { GetQueue(taskQueueType) };
+
+		foreach (var queue in queues)
+		{
+			foreach (var task in queue.Where(IsUncommitted))
+			{
+				MarkTaskCancelled(task);
+			}
+		}
+	}
+
+	private List<TaskBase> GetQueue(LtfsTaskQueueType taskQueueType)
+	{
+		return taskQueueType switch
+		{
+			LtfsTaskQueueType.Read => pendingReadTasks,
+			LtfsTaskQueueType.Verify => pendingVerifyTasks,
+			_ => pendingWriteTasks,
+		};
 	}
 }

@@ -12,6 +12,10 @@ namespace TapeDrive;
 /// </summary>
 public abstract class TapeDriveBase : IDisposable
 {
+    public event EventHandler<TapeDriveIncidentEventArgs>? IncidentRaised;
+
+    public virtual Func<TapeDriveIncident, TapeDriveIncidentResolution>? IncidentHandler { get; set; }
+
     public virtual byte[] Sense { get; protected set; } = new byte[64];
 
     public virtual void ResetSense()
@@ -129,4 +133,31 @@ public abstract class TapeDriveBase : IDisposable
 
     // Misc
     public virtual uint GlobalBlockSizeLimit { get; set; } = 0x00080000;
+
+    protected void ApplyIncidentPolicy(TapeDriveIncident incident)
+    {
+        var resolution = ResolveIncident(incident);
+
+        switch (incident.Action)
+        {
+            case TapeDriveIncidentAction.NotifyOnly:
+                return;
+            case TapeDriveIncidentAction.PauseCurrentTasks when resolution == TapeDriveIncidentResolution.Continue:
+                return;
+            default:
+                throw new TapeDriveCommandException(incident);
+        }
+    }
+
+    protected TapeDriveIncidentResolution ResolveIncident(TapeDriveIncident incident)
+    {
+        IncidentRaised?.Invoke(this, new TapeDriveIncidentEventArgs(incident));
+
+        if (IncidentHandler is not null)
+            return IncidentHandler(incident);
+
+        return incident.Action == TapeDriveIncidentAction.NotifyOnly
+            ? TapeDriveIncidentResolution.Continue
+            : TapeDriveIncidentResolution.Abort;
+    }
 }

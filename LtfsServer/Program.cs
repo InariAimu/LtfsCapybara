@@ -38,6 +38,7 @@ builder.Services.AddSingleton<ILocalFileSystemTreeService, LocalFileSystemTreeSe
 // Register server settings service (read/write appsettings.json)
 builder.Services.AddSingleton<IServerSettingsService, ServerSettingsService>();
 builder.Services.AddSingleton<ITaskGroupService, TaskGroupService>();
+builder.Services.AddSingleton<ITaskExecutionService, TaskExecutionService>();
 builder.Services.AddSingleton<ILocalIndexQueryService, LocalIndexQueryService>();
 
 builder.Services.AddHttpClient("AiServerProxy");

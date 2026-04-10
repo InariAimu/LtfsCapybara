@@ -64,6 +64,67 @@ export interface TapeFsTaskGroup {
     updatedAtTicks: number;
 }
 
+export interface TaskExecutionProgress {
+    queueType: string;
+    totalItems: number;
+    completedItems: number;
+    totalBytes: number;
+    processedBytes: number;
+    currentItemPath: string | null;
+    currentItemBytes: number;
+    currentItemTotalBytes: number;
+    instantBytesPerSecond: number;
+    averageBytesPerSecond: number;
+    estimatedRemainingSeconds: number;
+    statusMessage: string;
+    isCompleted: boolean;
+    timestampUtcTicks: number;
+}
+
+export interface TaskExecutionIncident {
+    incidentId: string;
+    executionId: string;
+    source: string;
+    severity: string;
+    action: string;
+    message: string;
+    detail: string | null;
+    requiresConfirmation: boolean;
+    isResolved: boolean;
+    resolution: string | null;
+    createdAtTicks: number;
+    resolvedAtTicks: number | null;
+}
+
+export interface TaskExecutionLogEntry {
+    logId: string;
+    executionId: string;
+    tapeDriveId: string;
+    level: string;
+    message: string;
+    createdAtTicks: number;
+}
+
+export interface TaskExecutionSnapshot {
+    executionId: string;
+    tapeBarcode: string;
+    tapeDriveId: string;
+    status: string;
+    error: string | null;
+    startedAtTicks: number;
+    updatedAtTicks: number;
+    completedAtTicks: number | null;
+    progress: TaskExecutionProgress | null;
+    pendingIncident: TaskExecutionIncident | null;
+}
+
+export interface TaskExecutionEventEnvelope {
+    type: string;
+    execution: TaskExecutionSnapshot | null;
+    incident: TaskExecutionIncident | null;
+    log: TaskExecutionLogEntry | null;
+}
+
 export interface TapeFsTaskCreateRequest {
     type: TapeFsTaskOperation | 'read' | 'format';
     tapeBarcode?: string;
@@ -146,6 +207,31 @@ export const taskApi = {
     deleteTask(tapeBarcode: string, taskId: string) {
         return apiClient.delete<TapeFsTaskGroup>(
             `/tasks/groups/${encodeURIComponent(tapeBarcode)}/tasks/${encodeURIComponent(taskId)}`,
+        );
+    },
+
+    listExecutions() {
+        return apiClient.get<TaskExecutionSnapshot[]>('/tasks/executions');
+    },
+
+    getExecution(executionId: string) {
+        return apiClient.get<TaskExecutionSnapshot>(
+            `/tasks/executions/${encodeURIComponent(executionId)}`,
+        );
+    },
+
+    executeGroup(tapeBarcode: string, tapeDriveId: string) {
+        return apiClient.post<TaskExecutionSnapshot>(
+            `/tasks/groups/${encodeURIComponent(tapeBarcode)}/execute`,
+            { tapeDriveId },
+            { timeout: 0 },
+        );
+    },
+
+    resolveIncident(executionId: string, incidentId: string, resolution: 'continue' | 'abort') {
+        return apiClient.post<TaskExecutionIncident>(
+            `/tasks/executions/${encodeURIComponent(executionId)}/incidents/${encodeURIComponent(incidentId)}/resolve`,
+            { resolution },
         );
     },
 };
