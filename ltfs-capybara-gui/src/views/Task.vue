@@ -40,6 +40,8 @@ const activeExecution = computed(() =>
     executionStore.executions.find(execution => execution.tapeBarcode === selectedTape.value) ?? null,
 );
 const activeExecutionPerformance = computed(() => activeExecution.value?.progress?.tapePerformance ?? null);
+const activeExecutionElapsed = computed(() => formatDurationFromTicks(activeExecution.value?.startedAtTicks));
+const activeExecutionEta = computed(() => formatRemainingSeconds(activeExecution.value?.progress?.estimatedRemainingSeconds));
 
 const canExecute = computed(
     () => Boolean(selectedTape.value) && Boolean(store.currentTapeDriveId) && !executionStore.activeExecution,
@@ -250,6 +252,39 @@ function formatCompressionRatio(ratio: number): string {
     return `${ratio.toFixed(2)}x`;
 }
 
+function formatDurationFromTicks(startedAtTicks: number | null | undefined): string {
+    if (!startedAtTicks) return '-';
+    const startedAtMs = startedAtTicks / 10000 - 62135596800000;
+    const elapsedMs = Date.now() - startedAtMs;
+    if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return '-';
+
+    const totalSeconds = Math.floor(elapsedMs / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    if (hours > 0) {
+        return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+function formatRemainingSeconds(seconds: number | null | undefined): string {
+    if (!Number.isFinite(seconds) || (seconds ?? 0) < 0) return '-';
+
+    const totalSeconds = Math.round(seconds ?? 0);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const remainingSeconds = totalSeconds % 60;
+
+    if (hours > 0) {
+        return `${hours}:${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
+    }
+
+    return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
+}
+
 function actionTagType(
     action: string,
     itemType: string,
@@ -426,6 +461,14 @@ onMounted(loadTaskGroups);
                         {{ activeExecution.progress.statusMessage }}
                     </div>
                     <div v-if="activeExecutionPerformance" class="execution-performance-grid">
+                        <span>
+                            {{ t('task.executionElapsed') }}:
+                            {{ activeExecutionElapsed }}
+                        </span>
+                        <span>
+                            {{ t('task.executionEta') }}:
+                            {{ activeExecutionEta }}
+                        </span>
                         <span>
                             {{ t('task.performanceCurrentRate') }}:
                             {{ formatPerformanceRate(activeExecutionPerformance.currentDataRateMBPerSecond) }}

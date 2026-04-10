@@ -6,13 +6,13 @@ namespace TapeDrive.SCSICommands.LogSensePages;
 public class PerformanceDataLogPage
 {
     [Byte(0)]
-    public byte PageCode;
+    public byte PageCode = 0x34;
 
     [Word(2)]
-    public ushort PageLength;
+    public ushort PageLength = 30;
 
     [Word(4)]
-    public ushort ParameterCode = 0x0034;
+    public ushort ParameterCode;
 
     [Byte(7)]
     public byte ParameterLength;
@@ -20,16 +20,16 @@ public class PerformanceDataLogPage
     [Word(8)]
     public ushort RepositionsPer100MB;
 
-    [Word(10)]
+    [Word(14)]
     public ushort DataRateIntoBuffer;
 
-    [Word(12)]
+    [Word(20)]
     public ushort MaximumDataRate;
 
-    [Word(14)]
+    [Word(26)]
     public ushort CurrentDataRate;
 
-    [Word(16)]
+    [Word(32)]
     public ushort NativeDataRate;
 }
 

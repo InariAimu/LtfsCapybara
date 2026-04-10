@@ -1,1 +1,1 @@
-export const API_BASE = 'http://localhost:5003/';
+export const API_BASE = 'http://192.168.1.69:5003/';

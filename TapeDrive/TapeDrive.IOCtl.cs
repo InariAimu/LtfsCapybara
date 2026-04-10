@@ -106,84 +106,87 @@ public partial class LTOTapeDrive
 
     public override bool IOCtlDirect(byte[] cdb, IntPtr dataBuffer, uint bufferLength, byte dataIn = SCSI_IOCTL_DATA_OUT, uint timeoutSeconds = 600)
     {
-        if (_handle is null || _handle.IsInvalid)
-            return false;
-
-        _sptwb.spt.CdbLength = (byte)cdb.Length;
-        _sptwb.spt.DataIn = dataIn;
-        _sptwb.spt.DataTransferLength = bufferLength;
-        _sptwb.spt.DataBuffer = dataBuffer;
-        _sptwb.spt.TimeOutValue = timeoutSeconds;
-        _sptwb.spt.SenseInfoOffset = senseInfoOffset;
-
-        Array.Copy(cdb, _sptwb.spt.Cdb, cdb.Length);
-
-        if (bufferPtr == IntPtr.Zero)
-            bufferPtr = Marshal.AllocHGlobal((int)sptSize);
-
-        try
+        lock (_ioSync)
         {
-            Marshal.StructureToPtr(_sptwb, bufferPtr, false);
-            int bytesReturned = 0;
+            if (_handle is null || _handle.IsInvalid)
+                return false;
 
-            bool result = NativeMethods.DeviceIoControl(_handle, IOCTL_SCSI_PASS_THROUGH_DIRECT,
-                bufferPtr, sptSize, bufferPtr, sptSize, ref bytesReturned, IntPtr.Zero);
+            _sptwb.spt.CdbLength = (byte)cdb.Length;
+            _sptwb.spt.DataIn = dataIn;
+            _sptwb.spt.DataTransferLength = bufferLength;
+            _sptwb.spt.DataBuffer = dataBuffer;
+            _sptwb.spt.TimeOutValue = timeoutSeconds;
+            _sptwb.spt.SenseInfoOffset = senseInfoOffset;
 
-            if (!result)
+            Array.Copy(cdb, _sptwb.spt.Cdb, cdb.Length);
+
+            if (bufferPtr == IntPtr.Zero)
+                bufferPtr = Marshal.AllocHGlobal((int)sptSize);
+
+            try
             {
-                int error = Marshal.GetLastWin32Error();
-                ApplyIncidentPolicy(new TapeDriveIncident
+                Marshal.StructureToPtr(_sptwb, bufferPtr, false);
+                int bytesReturned = 0;
+
+                bool result = NativeMethods.DeviceIoControl(_handle, IOCTL_SCSI_PASS_THROUGH_DIRECT,
+                    bufferPtr, sptSize, bufferPtr, sptSize, ref bytesReturned, IntPtr.Zero);
+
+                if (!result)
                 {
-                    Source = TapeDriveIncidentSource.Win32Error,
-                    Severity = TapeDriveIncidentSeverity.Critical,
-                    Action = TapeDriveIncidentAction.StopAllOperations,
-                    Message = new Win32Exception(error).Message,
-                    Detail = $"DeviceIoControl failed with Win32Error={error}.",
-                    Win32ErrorCode = error,
-                    Cdb = [.. cdb],
-                });
-            }
-            else
-            {
-                var output = Marshal.PtrToStructure<SCSI_PASS_THROUGH_WITH_BUFFERS>(bufferPtr);
-                Sense = output.Sense;
-                LastStatus = output.spt.ScsiStatus;
-
-                switch (output.spt.ScsiStatus)
-                {
-                    case SCSI_STATUS_GOOD:
-                        break;
-
-                    case SCSI_STATUS_CHECK_CONDITION:
-                        ParseFixedFormatSense();
-                        if (ParsedSense != null)
-                        {
-                            HandleSense(cdb);
-                        }
-                        break;
-
-                    default:
-                        ApplyIncidentPolicy(new TapeDriveIncident
-                        {
-                            Source = TapeDriveIncidentSource.ScsiStatus,
-                            Severity = TapeDriveIncidentSeverity.Critical,
-                            Action = TapeDriveIncidentAction.StopAllOperations,
-                            Message = $"Unexpected SCSI status 0x{output.spt.ScsiStatus:X2}.",
-                            Detail = "The tape drive returned a non-success status that is not handled as recoverable.",
-                            ScsiStatus = output.spt.ScsiStatus,
-                            Cdb = [.. cdb],
-                        });
-                        break;
+                    int error = Marshal.GetLastWin32Error();
+                    ApplyIncidentPolicy(new TapeDriveIncident
+                    {
+                        Source = TapeDriveIncidentSource.Win32Error,
+                        Severity = TapeDriveIncidentSeverity.Critical,
+                        Action = TapeDriveIncidentAction.StopAllOperations,
+                        Message = new Win32Exception(error).Message,
+                        Detail = $"DeviceIoControl failed with Win32Error={error}.",
+                        Win32ErrorCode = error,
+                        Cdb = [.. cdb],
+                    });
                 }
-            }
+                else
+                {
+                    var output = Marshal.PtrToStructure<SCSI_PASS_THROUGH_WITH_BUFFERS>(bufferPtr);
+                    Sense = output.Sense;
+                    LastStatus = output.spt.ScsiStatus;
 
-            return result;
-        }
-        catch
-        {
-            Marshal.FreeHGlobal(bufferPtr);
-            bufferPtr = IntPtr.Zero;
-            throw;
+                    switch (output.spt.ScsiStatus)
+                    {
+                        case SCSI_STATUS_GOOD:
+                            break;
+
+                        case SCSI_STATUS_CHECK_CONDITION:
+                            ParseFixedFormatSense();
+                            if (ParsedSense != null)
+                            {
+                                HandleSense(cdb);
+                            }
+                            break;
+
+                        default:
+                            ApplyIncidentPolicy(new TapeDriveIncident
+                            {
+                                Source = TapeDriveIncidentSource.ScsiStatus,
+                                Severity = TapeDriveIncidentSeverity.Critical,
+                                Action = TapeDriveIncidentAction.StopAllOperations,
+                                Message = $"Unexpected SCSI status 0x{output.spt.ScsiStatus:X2}.",
+                                Detail = "The tape drive returned a non-success status that is not handled as recoverable.",
+                                ScsiStatus = output.spt.ScsiStatus,
+                                Cdb = [.. cdb],
+                            });
+                            break;
+                    }
+                }
+
+                return result;
+            }
+            catch
+            {
+                Marshal.FreeHGlobal(bufferPtr);
+                bufferPtr = IntPtr.Zero;
+                throw;
+            }
         }
     }
 

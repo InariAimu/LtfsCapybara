@@ -35,6 +35,14 @@ public sealed class LtfsTaskProgressSnapshot
     public LtfsTapePerformanceSnapshot? TapePerformance { get; init; }
 }
 
+public static class LtfsProgressNumberSanitizer
+{
+    public static double Sanitize(double value, double fallback = -1d)
+    {
+        return double.IsFinite(value) ? value : fallback;
+    }
+}
+
 public partial class Ltfs
 {
     public event EventHandler<LtfsTaskProgressSnapshot>? ProgressUpdated;
@@ -130,11 +138,11 @@ public partial class Ltfs
             var snapshot = new LtfsTapePerformanceSnapshot
             {
                 RepositionsPer100MB = performance.RepositionsPer100MB,
-                DataRateIntoBufferMBPerSecond = performance.DataRateIntoBuffer,
-                MaximumDataRateMBPerSecond = performance.MaximumDataRate,
-                CurrentDataRateMBPerSecond = performance.CurrentDataRate,
-                NativeDataRateMBPerSecond = performance.NativeDataRate,
-                CompressionRatio = performance.CompressionRatio,
+                DataRateIntoBufferMBPerSecond = LtfsProgressNumberSanitizer.Sanitize(performance.DataRateIntoBuffer),
+                MaximumDataRateMBPerSecond = LtfsProgressNumberSanitizer.Sanitize(performance.MaximumDataRate),
+                CurrentDataRateMBPerSecond = LtfsProgressNumberSanitizer.Sanitize(performance.CurrentDataRate),
+                NativeDataRateMBPerSecond = LtfsProgressNumberSanitizer.Sanitize(performance.NativeDataRate),
+                CompressionRatio = LtfsProgressNumberSanitizer.Sanitize(performance.CompressionRatio),
             };
 
             _lastTapePerformanceSnapshot = snapshot;
@@ -165,10 +173,12 @@ public partial class Ltfs
         var elapsedTicks = Math.Max(1, nowTicks - startTicks);
         var intervalTicks = Math.Max(1, nowTicks - lastTicks);
         var deltaBytes = processedBytes >= lastProcessed ? processedBytes - lastProcessed : 0ul;
-        var averageBytesPerSecond = processedBytes * 10000000.0 / elapsedTicks;
-        var instantBytesPerSecond = deltaBytes * 10000000.0 / intervalTicks;
+        var averageBytesPerSecond = LtfsProgressNumberSanitizer.Sanitize(processedBytes * 10000000.0 / elapsedTicks, 0d);
+        var instantBytesPerSecond = LtfsProgressNumberSanitizer.Sanitize(deltaBytes * 10000000.0 / intervalTicks, 0d);
         var remainingBytes = totalBytes > processedBytes ? totalBytes - processedBytes : 0ul;
-        var etaSeconds = averageBytesPerSecond > 0 ? remainingBytes / averageBytesPerSecond : double.PositiveInfinity;
+        var etaSeconds = averageBytesPerSecond > 0
+            ? LtfsProgressNumberSanitizer.Sanitize(remainingBytes / averageBytesPerSecond)
+            : -1d;
         var percent = totalBytes > 0 ? processedBytes * 100.0 / totalBytes : 0.0;
 
         lastTicks = nowTicks;
@@ -189,7 +199,7 @@ public partial class Ltfs
             EstimatedRemainingSeconds = etaSeconds,
             IsCompleted = isCompleted,
             TapePerformance = tapePerformance,
-            StatusMessage = $"{queueType}: {completedItems}/{totalItems} items, {FileSize.FormatSize(processedBytes)} / {FileSize.FormatSize(totalBytes)} {percent:f1}% ETA: {(double.IsInfinity(etaSeconds) ? "-" : etaSeconds.ToString("f0"))}s Speed: {FileSize.FormatSize((ulong)Math.Max(0, instantBytesPerSecond))}/s",
+            StatusMessage = $"{queueType}: {completedItems}/{totalItems} items, {FileSize.FormatSize(processedBytes)} / {FileSize.FormatSize(totalBytes)} {percent:f1}% ETA: {(etaSeconds < 0 ? "-" : etaSeconds.ToString("f0"))}s Speed: {FileSize.FormatSize((ulong)Math.Max(0, instantBytesPerSecond))}/s",
         };
     }
 }

@@ -508,6 +508,13 @@ watch(
     },
 );
 
+watch(
+    () => store.localTapeListRevision,
+    async () => {
+        await loadTapes(false);
+    },
+);
+
 function handleExpandedKeys(keys: Array<string | number>) {
     const previousExpanded = new Set(expandedKeys.value);
     const nextExpanded = new Set(keys);

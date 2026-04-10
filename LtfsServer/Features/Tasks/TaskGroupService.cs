@@ -33,6 +33,7 @@ public sealed class TaskGroupService : ITaskGroupService
         lock (_syncRoot)
         {
             return _groups.Values
+                .Where(g => g.Tasks.Count > 0)
                 .OrderBy(g => g.TapeBarcode, StringComparer.OrdinalIgnoreCase)
                 .Select(Clone)
                 .ToArray();
@@ -172,8 +173,43 @@ public sealed class TaskGroupService : ITaskGroupService
 
             group.UpdatedAtTicks = DateTime.UtcNow.Ticks;
             ValidateGroup(group, validateLocalPaths: false);
+            if (group.Tasks.Count == 0)
+            {
+                _groups.Remove(key);
+            }
             SaveToDisk();
             return Clone(group);
+        }
+    }
+
+    public void CompleteTasks(string tapeBarcode, IEnumerable<string> taskIds)
+    {
+        lock (_syncRoot)
+        {
+            var key = NormalizeBarcode(tapeBarcode);
+            if (!_groups.TryGetValue(key, out var group))
+                return;
+
+            var completedTaskIds = taskIds?
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Select(id => id.Trim())
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            if (completedTaskIds is null || completedTaskIds.Count == 0)
+                return;
+
+            var removedCount = group.Tasks.RemoveAll(task => completedTaskIds.Contains(task.Id));
+            if (removedCount == 0)
+                return;
+
+            group.UpdatedAtTicks = DateTime.UtcNow.Ticks;
+            ValidateGroup(group, validateLocalPaths: false);
+            if (group.Tasks.Count == 0)
+            {
+                _groups.Remove(key);
+            }
+
+            SaveToDisk();
         }
     }
 

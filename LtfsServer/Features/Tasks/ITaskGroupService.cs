@@ -13,6 +13,7 @@ public interface ITaskGroupService
     TapeFsTaskGroup AddServerFolderTask(string tapeBarcode, AddTapeFsServerFolderTaskRequest request);
     TapeFsTaskGroup AddFormatTask(string tapeBarcode, FormatTask? formatTask = null);
     TapeFsTaskGroup DeleteTask(string tapeBarcode, string taskId);
+    void CompleteTasks(string tapeBarcode, IEnumerable<string> taskIds);
 
     /// <summary>
     /// Smart-delete a path from the local index:

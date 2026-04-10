@@ -4,6 +4,8 @@ using System.Threading.Channels;
 
 using Ltfs;
 
+using LtfsServer.BootStrap;
+using LtfsServer.Features.LocalTapes;
 using LtfsServer.Features.TapeDrives;
 
 using Microsoft.Extensions.Logging;
@@ -14,6 +16,11 @@ namespace LtfsServer.Features.Tasks;
 
 public sealed class TaskExecutionService : ITaskExecutionService
 {
+    private static double SanitizeFinite(double value, double fallback = -1d)
+    {
+        return double.IsFinite(value) ? value : fallback;
+    }
+
     private sealed class ExecutionPreparation
     {
         public required string TapeBarcode { get; init; }
@@ -37,8 +44,10 @@ public sealed class TaskExecutionService : ITaskExecutionService
     }
 
     private readonly ITaskGroupService _taskGroupService;
+    private readonly ILocalTapeRegistry _localTapeRegistry;
     private readonly ITapeDriveRegistry _tapeDriveRegistry;
     private readonly ITapeDriveService _tapeDriveService;
+    private readonly AppData _appData;
     private readonly ILogger<TaskExecutionService> _logger;
     private readonly ConcurrentDictionary<string, ExecutionState> _executions = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, Channel<TaskExecutionEventEnvelope>> _subscribers = new(StringComparer.OrdinalIgnoreCase);
@@ -46,13 +55,17 @@ public sealed class TaskExecutionService : ITaskExecutionService
 
     public TaskExecutionService(
         ITaskGroupService taskGroupService,
+        ILocalTapeRegistry localTapeRegistry,
         ITapeDriveRegistry tapeDriveRegistry,
         ITapeDriveService tapeDriveService,
+        AppData appData,
         ILogger<TaskExecutionService> logger)
     {
         _taskGroupService = taskGroupService;
+        _localTapeRegistry = localTapeRegistry;
         _tapeDriveRegistry = tapeDriveRegistry;
         _tapeDriveService = tapeDriveService;
+        _appData = appData;
         _logger = logger;
     }
 
@@ -199,6 +212,7 @@ public sealed class TaskExecutionService : ITaskExecutionService
                 : new Ltfs.Ltfs();
 
             ltfs.SetTapeDrive(drive);
+            ltfs.LocalIndexRootPath = Path.Combine(_appData.Path, "local");
             ltfs.ProgressUpdated += (_, snapshot) =>
             {
                 lock (state.Sync)
@@ -213,20 +227,20 @@ public sealed class TaskExecutionService : ITaskExecutionService
                         CurrentItemPath = snapshot.CurrentItemPath,
                         CurrentItemBytes = snapshot.CurrentItemBytes,
                         CurrentItemTotalBytes = snapshot.CurrentItemTotalBytes,
-                        InstantBytesPerSecond = snapshot.InstantBytesPerSecond,
-                        AverageBytesPerSecond = snapshot.AverageBytesPerSecond,
-                        EstimatedRemainingSeconds = snapshot.EstimatedRemainingSeconds,
+                        InstantBytesPerSecond = SanitizeFinite(snapshot.InstantBytesPerSecond, 0d),
+                        AverageBytesPerSecond = SanitizeFinite(snapshot.AverageBytesPerSecond, 0d),
+                        EstimatedRemainingSeconds = SanitizeFinite(snapshot.EstimatedRemainingSeconds),
                         StatusMessage = snapshot.StatusMessage,
                         IsCompleted = snapshot.IsCompleted,
                         TimestampUtcTicks = snapshot.TimestampUtc.Ticks,
                         TapePerformance = snapshot.TapePerformance is null ? null : new TaskExecutionTapePerformanceDto
                         {
                             RepositionsPer100MB = snapshot.TapePerformance.RepositionsPer100MB,
-                            DataRateIntoBufferMBPerSecond = snapshot.TapePerformance.DataRateIntoBufferMBPerSecond,
-                            MaximumDataRateMBPerSecond = snapshot.TapePerformance.MaximumDataRateMBPerSecond,
-                            CurrentDataRateMBPerSecond = snapshot.TapePerformance.CurrentDataRateMBPerSecond,
-                            NativeDataRateMBPerSecond = snapshot.TapePerformance.NativeDataRateMBPerSecond,
-                            CompressionRatio = snapshot.TapePerformance.CompressionRatio,
+                                DataRateIntoBufferMBPerSecond = SanitizeFinite(snapshot.TapePerformance.DataRateIntoBufferMBPerSecond),
+                                MaximumDataRateMBPerSecond = SanitizeFinite(snapshot.TapePerformance.MaximumDataRateMBPerSecond),
+                                CurrentDataRateMBPerSecond = SanitizeFinite(snapshot.TapePerformance.CurrentDataRateMBPerSecond),
+                                NativeDataRateMBPerSecond = SanitizeFinite(snapshot.TapePerformance.NativeDataRateMBPerSecond),
+                                CompressionRatio = SanitizeFinite(snapshot.TapePerformance.CompressionRatio),
                         },
                     };
                     state.Snapshot.UpdatedAtTicks = DateTime.UtcNow.Ticks;
@@ -290,6 +304,17 @@ public sealed class TaskExecutionService : ITaskExecutionService
 
             PublishLog(state, "info", "Task execution completed.");
             _tapeDriveService.UpdateCachedLtfsContext(preparation.TapeDriveId, ltfs, group.TapeBarcode);
+            RefreshLocalIndexRegistry(group.TapeBarcode);
+
+            try
+            {
+                _taskGroupService.CompleteTasks(group.TapeBarcode, group.Tasks.Select(task => task.Id));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to clear completed tasks for tape '{TapeBarcode}'", group.TapeBarcode);
+            }
+
             UpdateStatus(state, TaskExecutionStatus.Completed);
         }
         catch (TapeDriveCommandException ex)
@@ -314,6 +339,19 @@ public sealed class TaskExecutionService : ITaskExecutionService
         finally
         {
             _executionGate.Release();
+        }
+    }
+
+    private void RefreshLocalIndexRegistry(string tapeBarcode)
+    {
+        var normalizedBarcode = NormalizeRequired(tapeBarcode, nameof(tapeBarcode));
+        var indexDirectory = Path.Combine(_appData.Path, "local", normalizedBarcode);
+        if (!Directory.Exists(indexDirectory))
+            return;
+
+        foreach (var filePath in Directory.EnumerateFiles(indexDirectory, "*.xml", SearchOption.TopDirectoryOnly))
+        {
+            _ = _localTapeRegistry.TryUpsertFile(normalizedBarcode, filePath);
         }
     }
 

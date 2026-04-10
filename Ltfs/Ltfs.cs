@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics.CodeAnalysis;
+using System.IO;
 
 using Ltfs.Index;
 using Ltfs.Label;
@@ -32,6 +33,7 @@ public partial class Ltfs
     public VCI VCI = new();
 
     public string Barcode { get; private set; } = string.Empty;
+    public string? LocalIndexRootPath { get; set; }
 
 
     // Backing field is created/managed internally; use null-forgiving to satisfy the
@@ -145,10 +147,10 @@ public partial class Ltfs
         LtfsMAMAttributes.Barcode.SetAsciiString(Barcode);
 
         LtfsMAMAttributes.ApplicationFormatVersion.SetAsciiString(Version);
-        LtfsMAMAttributes.MediaPool.SetTextString(formatParam.MediaPool);
+        //LtfsMAMAttributes.MediaPool.SetTextString(formatParam.MediaPool);
 
-        LtfsMAMAttributes.MediumGloballyUniqueIdentifier.SetAsciiString("");
-        LtfsMAMAttributes.MediaPoolGloballyUniqueIdentifier.SetAsciiString("");
+        //LtfsMAMAttributes.MediumGloballyUniqueIdentifier.SetAsciiString("");
+        //LtfsMAMAttributes.MediaPoolGloballyUniqueIdentifier.SetAsciiString("");
 
         LtfsMAMAttributes.WriteAll(writeFunc: _tapeDrive.SetMAMAttribute);
 
@@ -468,8 +470,11 @@ public partial class Ltfs
 
         try
         {
-            File.WriteAllText($"{Barcode}_P1_G{LtfsIndexB.GenerationNumber}_L{LtfsIndexB.Location.StartBlock}_T{DateTime.Now.Ticks}.xml",
-                LtfsIndex.ToXml(LtfsIndexB));
+            WriteLocalIndexXml(
+                partitionNumber: 1,
+                generationNumber: LtfsIndexB.GenerationNumber,
+                locationStartBlock: LtfsIndexB.Location.StartBlock,
+                xmlContent: LtfsIndex.ToXml(LtfsIndexB));
         }
         catch
         {
@@ -516,8 +521,11 @@ public partial class Ltfs
 
         try
         {
-            File.WriteAllText($"{Barcode}_P0_G{LtfsIndexA.GenerationNumber}_L{LtfsIndexA.Location.StartBlock}_T{DateTime.Now.Ticks}.xml",
-                LtfsIndex.ToXml(LtfsIndexA));
+            WriteLocalIndexXml(
+                partitionNumber: 0,
+                generationNumber: LtfsIndexA.GenerationNumber,
+                locationStartBlock: LtfsIndexA.Location.StartBlock,
+                xmlContent: LtfsIndex.ToXml(LtfsIndexA));
         }
         catch
         {
@@ -564,6 +572,25 @@ public partial class Ltfs
     {
         LtfsDataTempIndexs = LtfsDataTempIndexs.OrderByDescending(x => x.GenerationNumber).ToList();
         return LtfsDataTempIndexs.First();
+    }
+
+    private void WriteLocalIndexXml(int partitionNumber, long generationNumber, uint locationStartBlock, string xmlContent)
+    {
+        var directoryPath = ResolveLocalIndexDirectoryPath();
+        Directory.CreateDirectory(directoryPath);
+
+        var fileName = $"{Barcode}_P{partitionNumber}_G{generationNumber}_L{locationStartBlock}_T{DateTime.Now.Ticks}.xml";
+        File.WriteAllText(Path.Combine(directoryPath, fileName), xmlContent);
+    }
+
+    private string ResolveLocalIndexDirectoryPath()
+    {
+        if (!string.IsNullOrWhiteSpace(LocalIndexRootPath) && !string.IsNullOrWhiteSpace(Barcode))
+        {
+            return Path.Combine(LocalIndexRootPath, Barcode);
+        }
+
+        return Directory.GetCurrentDirectory();
     }
 
 }

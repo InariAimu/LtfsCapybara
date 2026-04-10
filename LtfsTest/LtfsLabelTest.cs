@@ -84,4 +84,24 @@ public class LtfsLabelTest
         Assert.Equal(LtfsLabel.Compression, deserialized.Compression);
     }
 
+    [Fact]
+    public void DefaultLabelUsesValidPartitionDefaults()
+    {
+        var label = LtfsLabel.Default();
+
+        Assert.Equal("a", label.Partitions.Index.Value);
+        Assert.Equal("b", label.Partitions.Data.Value);
+    }
+
+    [Fact]
+    public void TapePositionRejectsInvalidPartition()
+    {
+        var exception = Assert.Throws<ArgumentException>(() => new Ltfs.Index.TapePosition
+        {
+            Partition = "c"
+        });
+
+        Assert.Equal("Partition must be 'a' or 'b'", exception.Message);
+    }
+
 }

@@ -14,6 +14,7 @@ export const useFileStore = defineStore('file', {
         noLtfsTapeName: '',
         noLtfsFilesystem: false,
         taskGroups: [] as LtfsTaskGroup[],
+        localTapeListRevision: 0,
     }),
 
     actions: {
@@ -60,19 +61,31 @@ export const useFileStore = defineStore('file', {
         },
 
         setTaskGroups(groups: LtfsTaskGroup[]) {
-            this.taskGroups = groups;
+            this.taskGroups = groups.filter(group => (group.tasks?.length ?? 0) > 0);
         },
 
         upsertTaskGroup(group: LtfsTaskGroup) {
             const index = this.taskGroups.findIndex(
                 g => g.tapeBarcode.toLowerCase() === group.tapeBarcode.toLowerCase(),
             );
+
+            if ((group.tasks?.length ?? 0) === 0) {
+                if (index >= 0) {
+                    this.taskGroups.splice(index, 1);
+                }
+                return;
+            }
+
             if (index >= 0) {
                 this.taskGroups[index] = group;
                 return;
             }
 
             this.taskGroups.push(group);
+        },
+
+        bumpLocalTapeListRevision() {
+            this.localTapeListRevision += 1;
         },
     },
 });

@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http.Json;
+using Microsoft.Extensions.Options;
 using System.Text.Json;
 
 namespace LtfsServer.Features.Tasks;
@@ -58,7 +60,7 @@ public static class APITasks
             }
         });
 
-        app.MapGet("/api/tasks/events", async (HttpContext context, ITaskExecutionService executionService, CancellationToken cancellationToken) =>
+        app.MapGet("/api/tasks/events", async (HttpContext context, ITaskExecutionService executionService, IOptions<JsonOptions> jsonOptions, CancellationToken cancellationToken) =>
         {
             context.Response.Headers.CacheControl = "no-cache";
             context.Response.Headers.Connection = "keep-alive";
@@ -66,7 +68,7 @@ public static class APITasks
 
             await foreach (var item in executionService.SubscribeAsync(cancellationToken))
             {
-                var json = JsonSerializer.Serialize(item);
+                var json = JsonSerializer.Serialize(item, jsonOptions.Value.SerializerOptions);
                 await context.Response.WriteAsync($"data: {json}\n\n", cancellationToken);
                 await context.Response.Body.FlushAsync(cancellationToken);
             }

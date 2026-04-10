@@ -4,11 +4,38 @@ import { useMessage } from 'naive-ui';
 import { taskApi, type TaskExecutionEventEnvelope } from '@/api/modules/tasks';
 import { API_BASE } from '@/api/baseurl';
 import { useExecutionStore } from '@/stores/executionStore';
+import { useFileStore } from '@/stores/fileStore';
 
 const message = useMessage();
 const executionStore = useExecutionStore();
+const fileStore = useFileStore();
 
 let eventSource: EventSource | null = null;
+let taskGroupRefreshPromise: Promise<void> | null = null;
+
+function isTerminalStatus(status: string | null | undefined) {
+    return ['completed', 'failed', 'cancelled'].includes(String(status || '').toLowerCase());
+}
+
+function refreshTaskGroups() {
+    if (taskGroupRefreshPromise) {
+        return taskGroupRefreshPromise;
+    }
+
+    taskGroupRefreshPromise = taskApi
+        .listGroups()
+        .then(response => {
+            fileStore.setTaskGroups(response.data ?? []);
+        })
+        .catch(error => {
+            console.error('TaskExecutionBridge refreshTaskGroups error', error);
+        })
+        .finally(() => {
+            taskGroupRefreshPromise = null;
+        });
+
+    return taskGroupRefreshPromise;
+}
 
 function notifyIncident(event: TaskExecutionEventEnvelope) {
     const incident = event.incident;
@@ -47,7 +74,20 @@ function handleEvent(rawEvent: MessageEvent<string>) {
     const event = JSON.parse(rawEvent.data) as TaskExecutionEventEnvelope;
 
     if (event.execution) {
+        const previous = executionStore.executions.find(
+            execution => execution.executionId === event.execution?.executionId,
+        );
         executionStore.upsertExecution(event.execution);
+
+        if (
+            isTerminalStatus(event.execution.status) &&
+            (!previous || previous.status !== event.execution.status)
+        ) {
+            void refreshTaskGroups();
+            if (event.execution.status === 'completed') {
+                fileStore.bumpLocalTapeListRevision();
+            }
+        }
     }
 
     if (event.log) {

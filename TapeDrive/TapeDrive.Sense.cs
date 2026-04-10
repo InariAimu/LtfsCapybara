@@ -187,7 +187,7 @@ public partial class LTOTapeDrive : IDisposable
                 break;
 
             case 0x06: // UNIT ATTENTION
-                info.ErrorLevel = SenseErrorLevel.Warning;
+                info.ErrorLevel = SenseErrorLevel.Information;
                 consoleMessage.AppendLine("Tape drive operation condition may have changed");
                 break;
             case 0x07: // DATA PROTECTION

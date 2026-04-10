@@ -14,6 +14,7 @@ public partial class LTOTapeDrive : TapeDriveBase, IDisposable
 {
     private SafeFileHandle? _handle;
     private readonly string _devicePath;
+    private readonly object _ioSync = new();
 
     public bool IsOpened => _handle != null && !_handle.IsInvalid;
 
@@ -54,10 +55,13 @@ public partial class LTOTapeDrive : TapeDriveBase, IDisposable
 
     public void Close()
     {
-        if (_handle != null && !_handle.IsInvalid)
+        lock (_ioSync)
         {
-            _handle.Close();
-            _handle = null;
+            if (_handle != null && !_handle.IsInvalid)
+            {
+                _handle.Close();
+                _handle = null;
+            }
         }
     }
 

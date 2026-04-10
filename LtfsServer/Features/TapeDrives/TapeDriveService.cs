@@ -331,6 +331,7 @@ public class TapeDriveService : ITapeDriveService
 
                 var ltfs = new Ltfs.Ltfs();
                 ltfs.SetTapeDrive(drive);
+                ltfs.LocalIndexRootPath = Path.Combine(_appData.Path, "local");
                 ltfs.ExtraPartitionCount = effectiveFormatParam.ExtraPartitionCount;
                 ltfs.Format(effectiveFormatParam);
 
@@ -341,6 +342,8 @@ public class TapeDriveService : ITapeDriveService
                 context.LtfsVolumeName = effectiveFormatParam.VolumeName;
                 context.LtfsContext = ltfs;
                 context.MediaContextLoaded = true;
+
+                RefreshLocalIndexRegistry(effectiveFormatParam.Barcode);
 
                 TryRefreshCartridgeMemory(context, drive);
 
@@ -489,6 +492,8 @@ public class TapeDriveService : ITapeDriveService
             cm.FromBytes(raw);
             context.CartridgeMemory = cm;
 
+            SaveCmBinaryAndUpdateRegistry(raw, drive, cm);
+
             var barcode = ResolveBarcode(drive, cm);
             if (!string.IsNullOrWhiteSpace(barcode))
             {
@@ -498,6 +503,22 @@ public class TapeDriveService : ITapeDriveService
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "ReadDiagCM refresh failed for {TapeDriveId}", context.TapeDriveId);
+        }
+    }
+
+    private void RefreshLocalIndexRegistry(string tapeBarcode)
+    {
+        if (string.IsNullOrWhiteSpace(tapeBarcode))
+            return;
+
+        var safeBarcode = SanitizeBarcode(tapeBarcode);
+        var indexDirectory = Path.Combine(_appData.Path, "local", safeBarcode);
+        if (!Directory.Exists(indexDirectory))
+            return;
+
+        foreach (var filePath in Directory.EnumerateFiles(indexDirectory, "*.xml", SearchOption.TopDirectoryOnly))
+        {
+            _ = _localTapeRegistry.TryUpsertFile(safeBarcode, filePath);
         }
     }
 

@@ -16,7 +16,7 @@ public partial class TapePosition
         get => _partition;
         set
         {
-            if (_partition == string.Empty || (value != "a" && value != "b"))
+            if (string.IsNullOrEmpty(value) || (value != "a" && value != "b"))
             {
                 throw new ArgumentException("Partition must be 'a' or 'b'");
             }

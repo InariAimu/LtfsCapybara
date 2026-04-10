@@ -64,6 +64,8 @@ const activeExecution = computed(
         ) ?? null,
 );
 const activeExecutionPerformance = computed(() => activeExecution.value?.progress?.tapePerformance ?? null);
+const activeExecutionElapsed = computed(() => formatDurationFromTicks(activeExecution.value?.startedAtTicks));
+const activeExecutionEta = computed(() => formatRemainingSeconds(activeExecution.value?.progress?.estimatedRemainingSeconds));
 const driveLogs = computed(() =>
     executionStore.logs.filter(log => log.tapeDriveId === props.tapeDriveId),
 );
@@ -170,6 +172,100 @@ function formatCompressionRatio(ratio: number): string {
     return `${ratio.toFixed(2)}x`;
 }
 
+function formatDurationFromTicks(startedAtTicks: number | null | undefined): string {
+    if (!startedAtTicks) {
+        return '-';
+    }
+
+    const startedAtMs = startedAtTicks / 10000 - 62135596800000;
+    const elapsedMs = Date.now() - startedAtMs;
+    if (!Number.isFinite(elapsedMs) || elapsedMs < 0) {
+        return '-';
+    }
+
+    const totalSeconds = Math.floor(elapsedMs / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    if (hours > 0) {
+        return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+function formatRemainingSeconds(seconds: number | null | undefined): string {
+    if (!Number.isFinite(seconds) || (seconds ?? 0) < 0) {
+        return '-';
+    }
+
+    const totalSeconds = Math.round(seconds ?? 0);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const remainingSeconds = totalSeconds % 60;
+
+    if (hours > 0) {
+        return `${hours}:${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
+    }
+
+    return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
+}
+
+function getTaskTypeLabel(taskType: string): string {
+    switch ((taskType || '').toLowerCase()) {
+        case 'add':
+            return t('task.actionAdd');
+        case 'rename':
+            return t('task.typeRename');
+        case 'update':
+            return t('task.typeReplace');
+        case 'delete':
+            return t('task.typeDelete');
+        case 'read':
+            return t('task.typeRead');
+        case 'format':
+            return t('task.typeFormat');
+        default:
+            return taskType;
+    }
+}
+
+function getTaskTypeTagType(taskType: string): 'success' | 'warning' | 'error' | 'info' | 'default' {
+    switch ((taskType || '').toLowerCase()) {
+        case 'add':
+            return 'success';
+        case 'rename':
+            return 'info';
+        case 'update':
+        case 'format':
+            return 'warning';
+        case 'delete':
+            return 'error';
+        default:
+            return 'default';
+    }
+}
+
+function summarizeTaskTypes(group: TapeFsTaskGroup) {
+    const counts = new Map<string, number>();
+    const order = ['format', 'add', 'update', 'rename', 'delete', 'read'];
+
+    for (const task of group.tasks) {
+        const key = String(task.type || '').toLowerCase();
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+
+    return order
+        .filter(key => counts.has(key))
+        .map(key => ({
+            key,
+            count: counts.get(key) ?? 0,
+            label: getTaskTypeLabel(key),
+            type: getTaskTypeTagType(key),
+        }));
+}
+
 function can(action: TapeMachineAction) {
     const allowedActions = snapshot.value?.allowedActions ?? [];
     return allowedActions.some(allowedAction => normalizeAction(allowedAction) === action);
@@ -220,6 +316,9 @@ async function runAction(action: 'thread' | 'load' | 'unthread' | 'eject' | 'rea
         const res = await tapeMachineApi.execute(props.tapeDriveId, action);
         console.log('Action result', res.data);
         snapshot.value = res.data;
+        if (action === 'read-info') {
+            fileStore.bumpLocalTapeListRevision();
+        }
     } catch (err: any) {
         console.error('runAction error', err);
         const msg = err?.response?.data?.message;
@@ -264,6 +363,7 @@ async function handleFormatTape(formatParam: TapeFsFormatParam) {
     try {
         const res = await tapeMachineApi.format(props.tapeDriveId, formatParam);
         snapshot.value = res.data;
+        fileStore.bumpLocalTapeListRevision();
         showFormatDialog.value = false;
         message.success(t('tapeMachine.formatSuccess'));
     } catch (err: any) {
@@ -413,6 +513,14 @@ onMounted(() => {
                                     class="execution-performance-grid"
                                 >
                                     <span>
+                                        {{ t('task.executionElapsed') }}:
+                                        {{ activeExecutionElapsed }}
+                                    </span>
+                                    <span>
+                                        {{ t('task.executionEta') }}:
+                                        {{ activeExecutionEta }}
+                                    </span>
+                                    <span>
                                         {{ t('task.performanceCurrentRate') }}:
                                         {{
                                             formatPerformanceRate(
@@ -481,6 +589,16 @@ onMounted(() => {
                                                     })
                                                 }}
                                             </span>
+                                            <n-space :size="6">
+                                                <n-tag
+                                                    v-for="summary in summarizeTaskTypes(group)"
+                                                    :key="`${group.tapeBarcode}:${summary.key}`"
+                                                    size="small"
+                                                    :type="summary.type"
+                                                >
+                                                    {{ summary.label }} × {{ summary.count }}
+                                                </n-tag>
+                                            </n-space>
                                         </n-space>
                                         <n-button
                                             type="primary"
