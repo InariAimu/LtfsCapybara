@@ -23,9 +23,10 @@ public partial class ExtendedAttributes
             foreach (var xa in Xattrs)
             {
                 if (xa?.Key?.Value != key) continue;
-                var val = xa.Value?.Value;
-                if (val == null) return null;
-                switch (xa.Value.Type)
+                var value = xa.Value;
+                var val = value?.Value;
+                if (value == null || val == null) return null;
+                switch (value.Type)
                 {
                     case XAttrValueType.base64:
                         try

@@ -10,8 +10,8 @@ namespace Ltfs.Label;
 public class Partitions
 {
     [XmlElement("index", Form = XmlSchemaForm.Unqualified)]
-    public PartitionId Index { get; set; }
+    public PartitionId Index { get; set; } = "";
 
     [XmlElement("data", Form = XmlSchemaForm.Unqualified)]
-    public PartitionId Data { get; set; }
+    public PartitionId Data { get; set; } = "";
 }

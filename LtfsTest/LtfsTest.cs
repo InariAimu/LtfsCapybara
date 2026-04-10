@@ -231,8 +231,9 @@ public class LtfsTest
 
 
     [Fact]
-    public async Task LocalTapeRegistry_FindsLatestCmEntry()
+    public Task LocalTapeRegistry_FindsLatestCmEntry()
     {
+        return Task.CompletedTask;
     }
 
     [Fact]

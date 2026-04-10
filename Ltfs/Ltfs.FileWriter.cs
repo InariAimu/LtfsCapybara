@@ -107,7 +107,7 @@ public partial class Ltfs
             }
 
             Logger.Info($"Locating tape");
-            var dataPartition = label.Partitions.Data;
+            var dataPartition = label.Partitions.Data.ToString();
             _tapeDrive.Locate(0, PartitionToNumber(dataPartition), LocateType.EOD);
 
             overallMonitorCts = new CancellationTokenSource();
@@ -224,7 +224,7 @@ public partial class Ltfs
         var label = LtfsLabelA ?? throw new InvalidOperationException("LTFS label is not loaded.");
         var blockSize = label.Blocksize;
 
-        var dataPartition = label.Partitions.Data;
+        var dataPartition = label.Partitions.Data.ToString();
 
         var pos = _tapeDrive.ReadPosition();
         if (pos.BlockNumber <= writeBlockPos)

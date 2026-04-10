@@ -60,7 +60,8 @@ public class LtfsLabel : ICloneable
     }
     public object Clone()
     {
-        return LtfsLabel.FromXml(LtfsLabel.ToXml(this));
+        return LtfsLabel.FromXml(LtfsLabel.ToXml(this))
+            ?? throw new InvalidOperationException("Failed to clone LTFS label.");
     }
 
     public static LtfsLabel? FromXml(string xml)

@@ -39,7 +39,7 @@ public class PartitionId
     /// Implicit conversion from PartitionId to string.
     /// </summary>
     /// <param name="partitionId">The PartitionId to convert.</param>
-    public static implicit operator string(PartitionId partitionId)
+    public static implicit operator string?(PartitionId? partitionId)
     {
         return partitionId?._value;
     }

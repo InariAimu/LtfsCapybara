@@ -93,7 +93,7 @@ public struct Vol1Label
         GCHandle handle = GCHandle.Alloc(bytes, GCHandleType.Pinned);
         try
         {
-            result = (Vol1Label)Marshal.PtrToStructure(handle.AddrOfPinnedObject(), typeof(Vol1Label));
+            result = Marshal.PtrToStructure<Vol1Label>(handle.AddrOfPinnedObject());
         }
         finally
         {

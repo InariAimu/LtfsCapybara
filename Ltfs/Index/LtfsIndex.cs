@@ -110,7 +110,8 @@ public partial class LtfsIndex : ICloneable
 
     public object Clone()
     {
-        return LtfsIndex.FromXml(LtfsIndex.ToXml(this));
+        return LtfsIndex.FromXml(LtfsIndex.ToXml(this))
+            ?? throw new InvalidOperationException("Failed to clone LTFS index.");
     }
 
     public static LtfsIndex? FromXml(string xml)

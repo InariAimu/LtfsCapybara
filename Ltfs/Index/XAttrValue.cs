@@ -13,5 +13,5 @@ public partial class XAttrValue
     public XAttrValueType Type { get; set; } = XAttrValueType.text;
 
     [XmlText()]
-    public string Value { get; set; }
+    public string Value { get; set; } = "";
 }

@@ -230,27 +230,31 @@ public partial class Ltfs
         _tapeDrive.WriteFileMark();
 
         // write label a
-        LtfsLabelA = (LtfsLabel?)LtfsLabelB.Clone();
-        LtfsLabelA.Location.Partitions[0] = "a";
-        _tapeDrive.Write(LtfsLabel.ToByteArray(LtfsLabelA), (int)blocksize);
+        var labelB = LtfsLabelB ?? throw new InvalidOperationException("LTFS label B is not initialized.");
+        LtfsLabelA = (LtfsLabel)labelB.Clone();
+        var labelA = RequireLabelA();
+        labelA.Location.Partitions[0] = "a";
+        _tapeDrive.Write(LtfsLabel.ToByteArray(labelA), (int)blocksize);
 
         _tapeDrive.WriteFileMarks(2);
 
         // write index a
         startBlock = _tapeDrive.ReadPosition().BlockNumber;
-        LtfsIndexA = (LtfsIndex)LtfsIndexB.Clone();
-        LtfsIndexA.Location = new TapePosition
+        var indexB = LtfsIndexB ?? throw new InvalidOperationException("LTFS index B is not initialized.");
+        LtfsIndexA = (LtfsIndex)indexB.Clone();
+        var indexA = RequireIndexA();
+        indexA.Location = new TapePosition
         {
             Partition = "a",
             StartBlock = (uint)startBlock
         };
-        LtfsIndexA.PreviousGenerationLocation = new TapePosition
+        indexA.PreviousGenerationLocation = new TapePosition
         {
-            Partition = LtfsIndexB.Location.Partition,
-            StartBlock = LtfsIndexB.Location.StartBlock,
+            Partition = indexB.Location.Partition,
+            StartBlock = indexB.Location.StartBlock,
         };
-        LtfsDataTempIndexs.Add(LtfsIndexA);
-        _tapeDrive.Write(LtfsIndex.ToByteArray(LtfsIndexA), (int)blocksize);
+        LtfsDataTempIndexs.Add(indexA);
+        _tapeDrive.Write(LtfsIndex.ToByteArray(indexA), (int)blocksize);
 
         _tapeDrive.WriteFileMark();
 
@@ -283,6 +287,21 @@ public partial class Ltfs
 
     public Task<bool> FormatAsync(FormatParam param) => Task.Run(() => Format(param));
 
+    private LtfsLabel RequireLabelA()
+    {
+        return LtfsLabelA ?? throw new InvalidOperationException("LTFS label A is not loaded.");
+    }
+
+    private LtfsIndex RequireIndexA()
+    {
+        return LtfsIndexA ?? throw new InvalidOperationException("LTFS index A is not loaded.");
+    }
+
+    private LtfsIndex RequireIndexB()
+    {
+        return LtfsIndexB ?? throw new InvalidOperationException("LTFS index B is not loaded.");
+    }
+
     public bool ReadLtfs()
     {
         try
@@ -301,6 +320,8 @@ public partial class Ltfs
 
     public bool WriteLtfsIndex()
     {
+        var labelA = RequireLabelA();
+
         Logger.Info("Writing LTFS Index to Data Partition...");
         WriteIndexToDataPartition();
 
@@ -313,13 +334,13 @@ public partial class Ltfs
         VCI.vciA = vcia.RawData[^4..];
         VCI.vciB = vcia.RawData[^4..];
 
-        VCI.blockLocationA = LtfsIndexA.Location.StartBlock;
-        VCI.blockLocationB = LtfsIndexB.Location.StartBlock;
+        VCI.blockLocationA = RequireIndexA().Location.StartBlock;
+        VCI.blockLocationB = RequireIndexB().Location.StartBlock;
 
-        VCI.uuidA = LtfsLabelA.Volumeuuid.ToString();
-        VCI.uuidB = LtfsLabelA.Volumeuuid.ToString();
+        VCI.uuidA = labelA.Volumeuuid.ToString();
+        VCI.uuidB = labelA.Volumeuuid.ToString();
 
-        VCI.generation = LtfsIndexA.GenerationNumber;
+        VCI.generation = RequireIndexA().GenerationNumber;
 
         _tapeDrive.SetMAMAttribute(0x080c, VCI.BlockAToByteArray(), AttributeFormat.Binary, 0);
         _tapeDrive.SetMAMAttribute(0x080c, VCI.BlockBToByteArray(), AttributeFormat.Binary, 1);
@@ -374,17 +395,23 @@ public partial class Ltfs
         _tapeDrive.ReadFileMark();
 
         byte[] ltfsIndexData = _tapeDrive.ReadToFileMark();
-        LtfsIndexA = LtfsIndex.FromByteArray(ltfsIndexData);
+        LtfsIndexA = LtfsIndex.FromByteArray(ltfsIndexData)
+            ?? throw new InvalidOperationException("Failed to read LTFS index A.");
 
-        _tapeDrive.SetBlockSize((ulong)LtfsLabelA.Blocksize);
+        var labelA = RequireLabelA();
+        var indexA = RequireIndexA();
+        _tapeDrive.SetBlockSize((ulong)labelA.Blocksize);
 
-        LtfsIndexB = (LtfsIndex)LtfsIndexA.Clone();
-        LtfsIndexB.Location.Partition = LtfsIndexB.PreviousGenerationLocation.Partition;
-        LtfsIndexB.Location.StartBlock = LtfsIndexB.PreviousGenerationLocation.StartBlock;
+        LtfsIndexB = (LtfsIndex)indexA.Clone();
+        var indexB = RequireIndexB();
+        var previousLocation = indexB.PreviousGenerationLocation
+            ?? throw new InvalidOperationException("LTFS index A is missing previous generation location.");
+        indexB.Location.Partition = previousLocation.Partition;
+        indexB.Location.StartBlock = previousLocation.StartBlock;
 
-        LtfsDataTempIndexs.Add(LtfsIndexB);
+        LtfsDataTempIndexs.Add(indexB);
 
-        LtfsIndexCurr = (LtfsIndex)LtfsIndexA.Clone();
+        LtfsIndexCurr = (LtfsIndex)indexA.Clone();
 
         return true;
     }
@@ -398,9 +425,10 @@ public partial class Ltfs
         _tapeDrive.ReadFileMark();
 
         byte[] ltfsIndexData = _tapeDrive.ReadToFileMark();
-        LtfsIndexB = LtfsIndex.FromByteArray(ltfsIndexData);
+        LtfsIndexB = LtfsIndex.FromByteArray(ltfsIndexData)
+            ?? throw new InvalidOperationException("Failed to read LTFS index B.");
 
-        LtfsIndexCurr = (LtfsIndex)LtfsIndexB.Clone();
+        LtfsIndexCurr = (LtfsIndex)RequireIndexB().Clone();
         LtfsDataTempIndexs.Add(LtfsIndexCurr);
 
         return true;
@@ -410,6 +438,8 @@ public partial class Ltfs
     {
         if (LtfsIndexCurr is null)
             throw new Exception("LtfsIndexCurr is null");
+
+        var labelA = RequireLabelA();
 
         _tapeDrive.Locate(0, DATA_PARTITION, LocateType.EOD);
         var pos = _tapeDrive.ReadPosition();
@@ -447,7 +477,7 @@ public partial class Ltfs
             Logger.Warn("Warning: Failed to write index XML 1 to local file.");
         }
 
-        _tapeDrive.Write(LtfsIndex.ToByteArray(tmpIndex), LtfsLabelA.Blocksize);
+        _tapeDrive.Write(LtfsIndex.ToByteArray(tmpIndex), labelA.Blocksize);
         _tapeDrive.WriteFileMark();
 
         return true;
@@ -455,6 +485,8 @@ public partial class Ltfs
 
     public bool WriteIndexToIndexPartition(bool lcgCompatible = false)
     {
+        var labelA = RequireLabelA();
+
         if (lcgCompatible)
         {
             _tapeDrive.Locate(3, INDEX_PARTITION, LocateType.FileMark);
@@ -493,7 +525,7 @@ public partial class Ltfs
             Logger.Warn("Warning: Failed to write index XML 0 to local file.");
         }
 
-        _tapeDrive.Write(LtfsIndex.ToByteArray(tmpIndex), LtfsLabelA.Blocksize);
+        _tapeDrive.Write(LtfsIndex.ToByteArray(tmpIndex), labelA.Blocksize);
         _tapeDrive.WriteFileMark();
         _tapeDrive.Flush();
         return true;
@@ -517,7 +549,7 @@ public partial class Ltfs
             };
     }
 
-    public byte PartitionToNumber(string partition)
+    public byte PartitionToNumber(string? partition)
     {
         return partition switch
         {

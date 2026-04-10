@@ -26,7 +26,7 @@ public struct XDateTime : IXmlSerializable
     }
 
     #region IXmlSerializable
-    public XmlSchema GetSchema() => null;
+    public XmlSchema? GetSchema() => null;
 
     public void ReadXml(XmlReader reader)
     {
