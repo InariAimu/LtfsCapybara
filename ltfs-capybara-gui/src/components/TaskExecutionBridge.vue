@@ -84,6 +84,7 @@ function handleEvent(rawEvent: MessageEvent<string>) {
             (!previous || previous.status !== event.execution.status)
         ) {
             void refreshTaskGroups();
+            fileStore.bumpTapeDriveStateRevision();
             if (event.execution.status === 'completed') {
                 fileStore.bumpLocalTapeListRevision();
             }

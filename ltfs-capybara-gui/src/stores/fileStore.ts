@@ -15,6 +15,7 @@ export const useFileStore = defineStore('file', {
         noLtfsFilesystem: false,
         taskGroups: [] as LtfsTaskGroup[],
         localTapeListRevision: 0,
+        tapeDriveStateRevision: 0,
     }),
 
     actions: {
@@ -86,6 +87,10 @@ export const useFileStore = defineStore('file', {
 
         bumpLocalTapeListRevision() {
             this.localTapeListRevision += 1;
+        },
+
+        bumpTapeDriveStateRevision() {
+            this.tapeDriveStateRevision += 1;
         },
     },
 });

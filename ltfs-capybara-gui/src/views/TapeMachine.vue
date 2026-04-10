@@ -316,6 +316,7 @@ async function runAction(action: 'thread' | 'load' | 'unthread' | 'eject' | 'rea
         const res = await tapeMachineApi.execute(props.tapeDriveId, action);
         console.log('Action result', res.data);
         snapshot.value = res.data;
+        fileStore.bumpTapeDriveStateRevision();
         if (action === 'read-info') {
             fileStore.bumpLocalTapeListRevision();
         }
@@ -363,6 +364,7 @@ async function handleFormatTape(formatParam: TapeFsFormatParam) {
     try {
         const res = await tapeMachineApi.format(props.tapeDriveId, formatParam);
         snapshot.value = res.data;
+        fileStore.bumpTapeDriveStateRevision();
         fileStore.bumpLocalTapeListRevision();
         showFormatDialog.value = false;
         message.success(t('tapeMachine.formatSuccess'));

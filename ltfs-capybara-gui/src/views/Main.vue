@@ -32,6 +32,10 @@ const currentPageComponent = computed(() => {
         return TapeMachine;
     }
 
+    if (selectedMenuKey.value === 'ltfs' || selectedMenuKey.value.startsWith('ltfs:')) {
+        return Ltfs;
+    }
+
     switch (selectedMenuKey.value) {
         case 'overview':
             return Overview;
@@ -47,8 +51,6 @@ const currentPageComponent = computed(() => {
             return Test;
         case 'tape-library':
             return TapeLibrary;
-        case 'ltfs':
-            return Ltfs;
         default:
             return Overview;
     }
@@ -63,9 +65,26 @@ const selectedTapeDriveId = computed(() => {
     return key.substring('tape-machine:'.length);
 });
 
-const currentPageProps = computed(() =>
-    currentPageComponent.value === TapeMachine ? { tapeDriveId: selectedTapeDriveId.value } : {},
-);
+const selectedLtfsDriveId = computed(() => {
+    const key = selectedMenuKey.value;
+    if (!key.startsWith('ltfs:')) {
+        return null;
+    }
+
+    return key.substring('ltfs:'.length);
+});
+
+const currentPageProps = computed(() => {
+    if (currentPageComponent.value === TapeMachine) {
+        return { tapeDriveId: selectedTapeDriveId.value };
+    }
+
+    if (currentPageComponent.value === Ltfs) {
+        return { tapeDriveId: selectedLtfsDriveId.value };
+    }
+
+    return {};
+});
 
 watch(
     selectedTapeDriveId,

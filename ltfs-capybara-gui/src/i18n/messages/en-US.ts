@@ -14,6 +14,8 @@
         noTapeDrives: 'No Tape Drives',
         tapeLibrary: 'Tape Library',
         ltfs: 'LTFS',
+        ltfsNotAvailable: 'N/A',
+        ltfsUnformatted: 'Unformatted',
         localIndex: 'Local Index',
         task: 'Task',
         aiChat: 'AI Chat',
@@ -25,6 +27,11 @@
         failedToLoadPath: 'Failed to load path.',
         unableToOpenPath: 'Unable to open path: {path}',
         noLtfsFilesystem: 'tape do not have a ltfs filesystem',
+    },
+    ltfs: {
+        loading: 'Loading LTFS directory...',
+        notAvailable: 'N/A',
+        unformatted: 'Unformatted',
     },
     table: {
         name: 'Name',

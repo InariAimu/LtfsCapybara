@@ -13,9 +13,11 @@ import {
     BeakerOutline,
 } from '@vicons/ionicons5';
 import { NIcon, NMenu, NLayoutSider } from 'naive-ui';
-import { h, ref, computed, onMounted } from 'vue';
+import { h, ref, computed, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { tapeDriveApi } from '@/api/modules/tapedrives';
+import { tapeMachineApi } from '@/api/modules/tapemachine';
+import { useFileStore } from '@/stores/fileStore';
 
 function renderIcon(icon: Component) {
     return () => h(NIcon, null, { default: () => h(icon) });
@@ -34,6 +36,7 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+const fileStore = useFileStore();
 
 type FlatMenuOption = {
     label: string;
@@ -42,6 +45,27 @@ type FlatMenuOption = {
 };
 
 const tapeMachineChildren = ref<FlatMenuOption[]>([]);
+const ltfsChildren = ref<FlatMenuOption[]>([]);
+
+function resolveLtfsNodeLabel(snapshot: {
+    state?: string | null;
+    hasLtfsFilesystem?: boolean | null;
+    loadedBarcode?: string | null;
+}) {
+    if (snapshot.state === 'Empty' || !snapshot.loadedBarcode) {
+        return t('menu.ltfsNotAvailable');
+    }
+
+    if (snapshot.hasLtfsFilesystem === false) {
+        return t('menu.ltfsUnformatted');
+    }
+
+    if (snapshot.hasLtfsFilesystem === true) {
+        return snapshot.loadedBarcode;
+    }
+
+    return t('menu.ltfsNotAvailable');
+}
 
 async function loadTapeDrives() {
     try {
@@ -51,9 +75,34 @@ async function loadTapeDrives() {
             label: drive.displayName || drive.devicePath,
             key: `tape-machine:${drive.id}`,
         }));
+
+        const snapshots = await Promise.all(
+            drives.map(async drive => {
+                try {
+                    const snapshotResponse = await tapeMachineApi.getState(drive.id);
+                    return { drive, snapshot: snapshotResponse.data };
+                } catch (error) {
+                    console.error(`Failed to load LTFS state for drive ${drive.id}`, error);
+                    return {
+                        drive,
+                        snapshot: {
+                            state: 'Unknown',
+                            hasLtfsFilesystem: null,
+                            loadedBarcode: null,
+                        },
+                    };
+                }
+            }),
+        );
+
+        ltfsChildren.value = snapshots.map(({ drive, snapshot }) => ({
+            label: resolveLtfsNodeLabel(snapshot),
+            key: `ltfs:${drive.id}`,
+        }));
     } catch (err) {
         console.error('Failed to load tape drives', err);
         tapeMachineChildren.value = [];
+        ltfsChildren.value = [];
     }
 
     if (tapeMachineChildren.value.length === 0) {
@@ -61,6 +110,16 @@ async function loadTapeDrives() {
             {
                 label: t('menu.noTapeDrives'),
                 key: 'tape-machine:none',
+                disabled: true,
+            },
+        ];
+    }
+
+    if (ltfsChildren.value.length === 0) {
+        ltfsChildren.value = [
+            {
+                label: t('menu.ltfsNotAvailable'),
+                key: 'ltfs:none',
                 disabled: true,
             },
         ];
@@ -89,6 +148,7 @@ const menuOptions = computed<MenuOption[]>(() => [
         label: t('menu.ltfs'),
         key: 'ltfs',
         icon: renderIcon(FileTraySharp),
+        children: ltfsChildren.value,
     },
     {
         label: t('menu.localIndex'),
@@ -122,6 +182,13 @@ const inverted = ref(true);
 onMounted(() => {
     void loadTapeDrives();
 });
+
+watch(
+    () => fileStore.tapeDriveStateRevision,
+    () => {
+        void loadTapeDrives();
+    },
+);
 
 function handleMenuSelect(key: string) {
     emit('select', key);

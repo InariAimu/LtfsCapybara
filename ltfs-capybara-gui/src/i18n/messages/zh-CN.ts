@@ -14,6 +14,8 @@ export default {
         noTapeDrives: '无磁带设备',
         tapeLibrary: '磁带库',
         ltfs: 'LTFS',
+        ltfsNotAvailable: 'N/A',
+        ltfsUnformatted: 'Unformatted',
         localIndex: '本地索引',
         task: '任务',
         aiChat: 'AI 对话',
@@ -25,6 +27,11 @@ export default {
         failedToLoadPath: '加载路径失败。',
         unableToOpenPath: '无法打开路径：{path}',
         noLtfsFilesystem: '磁带没有 LTFS 文件系统',
+    },
+    ltfs: {
+        loading: '正在加载 LTFS 目录...',
+        notAvailable: 'N/A',
+        unformatted: 'Unformatted',
     },
     table: {
         name: '名称',
