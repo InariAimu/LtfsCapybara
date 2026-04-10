@@ -134,14 +134,14 @@ public partial class LTOTapeDrive : IDisposable
                 {
                     case 0x3700: // Rounded parameter
                         break;
-                        
+
                     case 0x5d00: // Failure prediction threshold exceeded
                         {
                             CurrentAlertLevel = TapeAlertLevel.Information;
                             var alertPageData = LogSense(PageCodes.TapeAlertResponseLog);
                             var alertPage = StructParser.Parse<TapeAlertResponsePage>(alertPageData);
 
-                            CurrentAlertIndexs = TapeAlert.ParseMostSignificantBytesIntoIndexes(alertPage.ParameterValue);
+                            CurrentAlertIndexs = TapeAlert.ParseBytesIntoIndexes(alertPage.ParameterValue);
                             var incidents = new List<TapeDriveIncident>(CurrentAlertIndexs.Count);
                             foreach (var index in CurrentAlertIndexs)
                             {

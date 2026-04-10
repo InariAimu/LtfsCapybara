@@ -17,30 +17,27 @@ public class TapeAlertItem(string flag, TapeAlertLevel type, string recommendedH
 
 public class TapeAlert
 {
-    public static List<int> ParseMostSignificantBytesIntoIndexes(byte[] bytes)
+    public static List<int> ParseBytesIntoIndexes(byte[] bytes)
     {
         var indexes = new List<int>();
 
         for (int i = 0; i < bytes.Length; i++)
         {
-            for (int bit = 0; bit < 8; bit++)
-            {
-                if ((bytes[i] & (1 << (7 - bit))) != 0)
-                {
-                    indexes.Add(i * 8 + bit + 1);
-                }
-            }
+            if (bytes[i] == 0)
+                continue;
+
+            indexes.Add(i);
         }
 
         return indexes;
     }
-    
+
     public static readonly Dictionary<int, TapeAlertItem> Items = new()
     {
         [1] = new(
-            "Read warning", 
-            TapeAlertLevel.Warning, 
-            "The tape drive is having problems reading data. No data has been lost,but there has been a reduction in the capacity of the tape.", 
+            "Read warning",
+            TapeAlertLevel.Warning,
+            "The tape drive is having problems reading data. No data has been lost,but there has been a reduction in the capacity of the tape.",
             "The drive is having severe trouble reading."
         ),
         [2] = new(

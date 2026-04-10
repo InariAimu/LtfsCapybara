@@ -50,6 +50,21 @@ public class DWordAttribute(int byteIndex, int length = 4) : Attribute
     public int Length { get; init; } = length;
 }
 
+[AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
+public class TLVAttribute(int parameterIndex, int length = 4) : Attribute
+{
+    public int ParameterIndex { get; init; } = parameterIndex;
+    public int Length { get; init; } = length;
+}
+
+[AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
+public class TLVListAttribute(int offset, int valueLength, int totalLength) : Attribute
+{
+    public int Offset { get; init; } = offset;
+    public int ValueLength { get; init; } = valueLength;
+    public int TotalLength { get; init; } = totalLength;
+}
+
 
 
 [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]

@@ -11,25 +11,19 @@ public class PerformanceDataLogPage
     [Word(2)]
     public ushort PageLength = 30;
 
-    [Word(4)]
-    public ushort ParameterCode;
-
-    [Byte(7)]
-    public byte ParameterLength;
-
-    [Word(8)]
+    [TLV(0, 2)]
     public ushort RepositionsPer100MB;
 
-    [Word(14)]
+    [TLV(1, 2)]
     public ushort DataRateIntoBuffer;
 
-    [Word(20)]
+    [TLV(2, 2)]
     public ushort MaximumDataRate;
 
-    [Word(26)]
+    [TLV(3, 2)]
     public ushort CurrentDataRate;
 
-    [Word(32)]
+    [TLV(4, 2)]
     public ushort NativeDataRate;
 }
 

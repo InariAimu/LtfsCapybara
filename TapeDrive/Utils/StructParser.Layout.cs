@@ -19,7 +19,9 @@ public static partial class StructParser
                 member.GetCustomAttribute<WordAttribute>() != null ||
                 member.GetCustomAttribute<DWordAttribute>() != null ||
                 member.GetCustomAttribute<RefByteListAttribute>() != null ||
-                member.GetCustomAttribute<ByteListAttribute>() != null)
+                member.GetCustomAttribute<ByteListAttribute>() != null ||
+                member.GetCustomAttribute<TLVAttribute>() != null ||
+                member.GetCustomAttribute<TLVListAttribute>() != null)
             .OrderBy(member => member.MetadataToken);
     }
 
@@ -94,6 +96,38 @@ public static partial class StructParser
             ValidateDWordLength(dwordAttribute.Length);
             EnsureRangeAvailable(data, dwordAttribute.ByteIndex, dwordAttribute.Length);
             return ReadDWordValue(layout.MemberType, data, dwordAttribute.ByteIndex, dwordAttribute.Length);
+        }
+
+        if (layout.TLVAttribute is TLVAttribute tlvAttribute)
+        {
+            var entry = FindTlvEntry(data, tlvAttribute.ParameterIndex);
+            ValidateTlvValueLength(layout.Member.Name, tlvAttribute.Length, entry.ValueLength);
+
+            var buffer = new byte[entry.ValueLength];
+            Array.Copy(data, entry.ValueByteIndex, buffer, 0, entry.ValueLength);
+            return ReadTlvValue(layout.MemberType, buffer);
+        }
+
+        if (layout.TLVListAttribute is TLVListAttribute tlvListAttribute)
+        {
+            if (layout.MemberType != typeof(byte[]))
+            {
+                throw new InvalidOperationException($"Member {layout.Member.Name} must be of type byte[] when using {nameof(TLVListAttribute)}.");
+            }
+
+            var entries = ParseTlvEntries(data);
+            ValidateTlvListShape(layout.Member.Name, tlvListAttribute, entries.Count);
+
+            var itemCount = tlvListAttribute.TotalLength / tlvListAttribute.ValueLength;
+            var buffer = new byte[tlvListAttribute.TotalLength];
+            for (var index = 0; index < itemCount; index++)
+            {
+                var entry = entries[tlvListAttribute.Offset + index];
+                ValidateTlvValueLength(layout.Member.Name, tlvListAttribute.ValueLength, entry.ValueLength);
+                Array.Copy(data, entry.ValueByteIndex, buffer, index * tlvListAttribute.ValueLength, tlvListAttribute.ValueLength);
+            }
+
+            return buffer;
         }
 
         throw new InvalidOperationException($"Member {layout.Member.Name} does not have a supported parser attribute.");
@@ -321,6 +355,8 @@ public static partial class StructParser
             DWordAttribute = member.GetCustomAttribute<DWordAttribute>(),
             RefByteListAttribute = member.GetCustomAttribute<RefByteListAttribute>(),
             ByteListAttribute = member.GetCustomAttribute<ByteListAttribute>(),
+            TLVAttribute = member.GetCustomAttribute<TLVAttribute>(),
+            TLVListAttribute = member.GetCustomAttribute<TLVListAttribute>(),
             MetadataAttribute = member.GetCustomAttribute<MetadataAttribute>(),
         };
 
@@ -399,6 +435,49 @@ public static partial class StructParser
             layout.ValueByteLength = ResolveByteListValueLength(layout, data, instance);
             layout.ValueByteIndex = layout.ByteIndex + layout.LengthPrefixByteLength;
             layout.ByteLength = layout.LengthPrefixByteLength + layout.ValueByteLength;
+            return layout;
+        }
+
+        if (layout.TLVAttribute is TLVAttribute tlvAttribute)
+        {
+            if (data == null)
+            {
+                throw new InvalidOperationException($"Member {member.Name} uses {nameof(TLVAttribute)} and can only be laid out while parsing source data.");
+            }
+
+            var entry = FindTlvEntry(data, tlvAttribute.ParameterIndex);
+            ValidateTlvValueLength(member.Name, tlvAttribute.Length, entry.ValueLength);
+
+            layout.Encoding = "tlv";
+            layout.ByteIndex = entry.ValueByteIndex;
+            layout.ByteLength = entry.ValueLength;
+            layout.ValueByteIndex = entry.ValueByteIndex;
+            layout.ValueByteLength = entry.ValueLength;
+            return layout;
+        }
+
+        if (layout.TLVListAttribute is TLVListAttribute tlvListAttribute)
+        {
+            if (data == null)
+            {
+                throw new InvalidOperationException($"Member {member.Name} uses {nameof(TLVListAttribute)} and can only be laid out while parsing source data.");
+            }
+
+            if (memberType != typeof(byte[]))
+            {
+                throw new InvalidOperationException($"Member {member.Name} must be of type byte[] when using {nameof(TLVListAttribute)}.");
+            }
+
+            var entries = ParseTlvEntries(data);
+            ValidateTlvListShape(member.Name, tlvListAttribute, entries.Count);
+
+            var firstEntry = entries[tlvListAttribute.Offset];
+            layout.Encoding = "tlvList";
+            layout.LengthSource = "tlv";
+            layout.ByteIndex = firstEntry.ValueByteIndex;
+            layout.ByteLength = tlvListAttribute.TotalLength;
+            layout.ValueByteIndex = firstEntry.ValueByteIndex;
+            layout.ValueByteLength = tlvListAttribute.TotalLength;
             return layout;
         }
 
@@ -715,6 +794,105 @@ public static partial class StructParser
         }
     }
 
+    private static TlvEntry FindTlvEntry(byte[] data, int parameterIndex)
+    {
+        var entry = ParseTlvEntries(data).FirstOrDefault(item => item.ParameterCode == parameterIndex);
+        if (entry == null)
+        {
+            throw new InvalidOperationException($"TLV parameter 0x{parameterIndex:X4} was not found in the log sense payload.");
+        }
+
+        return entry;
+    }
+
+    private static List<TlvEntry> ParseTlvEntries(byte[] data)
+    {
+        if (data.Length < 4)
+        {
+            throw new ArgumentException("Log sense payload must include the 4-byte page header.", nameof(data));
+        }
+
+        var entries = new List<TlvEntry>();
+        var offset = 4;
+        while (offset < data.Length)
+        {
+            EnsureRangeAvailable(data, offset, 4);
+
+            var parameterCode = BigEndianBitConverter.ToUInt16(data, offset);
+            var control = data[offset + 2];
+            var valueLength = data[offset + 3];
+            var valueByteIndex = offset + 4;
+            EnsureRangeAvailable(data, valueByteIndex, valueLength);
+
+            entries.Add(new TlvEntry
+            {
+                ParameterCode = parameterCode,
+                Control = control,
+                ValueLength = valueLength,
+                ValueByteIndex = valueByteIndex,
+            });
+
+            offset = valueByteIndex + valueLength;
+        }
+
+        return entries;
+    }
+
+    private static void ValidateTlvValueLength(string memberName, int expectedLength, int actualLength)
+    {
+        if (expectedLength != actualLength)
+        {
+            throw new InvalidOperationException($"Member {memberName} expected TLV value length {expectedLength}, but received {actualLength}.");
+        }
+    }
+
+    private static void ValidateTlvListShape(string memberName, TLVListAttribute attribute, int entryCount)
+    {
+        if (attribute.Offset < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(attribute.Offset), attribute.Offset, $"Member {memberName} requires a non-negative TLV offset.");
+        }
+
+        if (attribute.ValueLength <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(attribute.ValueLength), attribute.ValueLength, $"Member {memberName} requires a positive TLV value length.");
+        }
+
+        if (attribute.TotalLength < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(attribute.TotalLength), attribute.TotalLength, $"Member {memberName} requires a non-negative TLV total length.");
+        }
+
+        if (attribute.TotalLength % attribute.ValueLength != 0)
+        {
+            throw new InvalidOperationException($"Member {memberName} total TLV list length {attribute.TotalLength} is not divisible by item length {attribute.ValueLength}.");
+        }
+
+        var requiredEntryCount = attribute.TotalLength / attribute.ValueLength;
+        if (attribute.Offset + requiredEntryCount > entryCount)
+        {
+            throw new InvalidOperationException($"Member {memberName} requires {requiredEntryCount} TLV entries starting at offset {attribute.Offset}, but only {entryCount} entries are available.");
+        }
+    }
+
+    private static object ReadTlvValue(Type memberType, byte[] buffer)
+    {
+        if (memberType == typeof(byte[]))
+        {
+            return buffer;
+        }
+
+        return buffer.Length switch
+        {
+            1 => ConvertNumericValue(memberType, buffer[0]),
+            2 => memberType == typeof(short)
+                ? BigEndianBitConverter.ToInt16(buffer, 0)
+                : ConvertNumericValue(memberType, BigEndianBitConverter.ToUInt16(buffer, 0)),
+            >= 1 and <= 4 => ReadDWordValue(memberType, buffer, 0, buffer.Length),
+            _ => throw new InvalidOperationException($"Unsupported TLV value length {buffer.Length} for member type {memberType.Name}."),
+        };
+    }
+
     private static uint ReadDWordRawValue(byte[] data, int byteIndex, int length)
     {
         ValidateDWordLength(length);
@@ -763,6 +941,8 @@ internal sealed class StructFieldLayout
     public DWordAttribute? DWordAttribute { get; init; }
     public RefByteListAttribute? RefByteListAttribute { get; init; }
     public ByteListAttribute? ByteListAttribute { get; init; }
+    public TLVAttribute? TLVAttribute { get; init; }
+    public TLVListAttribute? TLVListAttribute { get; init; }
     public MetadataAttribute? MetadataAttribute { get; init; }
     public string Encoding { get; set; } = string.Empty;
     public string? LengthSource { get; set; }
@@ -778,4 +958,12 @@ internal sealed class StructFieldLayout
     public int ValueByteLength { get; set; }
     public int? BitIndex { get; set; }
     public int? BitLength { get; set; }
+}
+
+internal sealed class TlvEntry
+{
+    public required int ParameterCode { get; init; }
+    public required byte Control { get; init; }
+    public required int ValueLength { get; init; }
+    public required int ValueByteIndex { get; init; }
 }

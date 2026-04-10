@@ -290,6 +290,43 @@ public class StructParserTest
     }
 
     [Fact]
+    public void Parse_SupportsTlvAttribute()
+    {
+        byte[] bytes =
+        [
+            0x34, 0x00, 0x00, 0x0C,
+            0x00, 0x01, 0x00, 0x02, 0x12, 0x34,
+            0x00, 0x02, 0x00, 0x02, 0x56, 0x78,
+        ];
+
+        var parsed = StructParser.Parse<TestLogSenseTlvPage>(bytes);
+
+        Assert.Equal((byte)0x34, parsed.PageCode);
+        Assert.Equal((ushort)0x000C, parsed.PageLength);
+        Assert.Equal((ushort)0x1234, parsed.FirstValue);
+        Assert.Equal((ushort)0x5678, parsed.SecondValue);
+    }
+
+    [Fact]
+    public void Parse_SupportsTlvListAttribute()
+    {
+        byte[] bytes =
+        [
+            0x2E, 0x00, 0x00, 0x10,
+            0x00, 0x00, 0x00, 0x01, 0x99,
+            0x00, 0x01, 0x00, 0x01, 0xAA,
+            0x00, 0x02, 0x00, 0x01, 0xBB,
+            0x00, 0x03, 0x00, 0x01, 0xCC,
+        ];
+
+        var parsed = StructParser.Parse<TestLogSenseTlvListPage>(bytes);
+
+        Assert.Equal((byte)0x2E, parsed.PageCode);
+        Assert.Equal((ushort)0x0010, parsed.PageLength);
+        Assert.Equal(new byte[] { 0xAA, 0xBB, 0xCC }, parsed.Values);
+    }
+
+    [Fact]
     public void ToBytes_SynchronizesReferencedByteListLengths()
     {
         var response = new SenseResponse
@@ -410,5 +447,34 @@ public class StructParserTest
 
         [Byte(5)]
         public byte Control { get; set; }
+    }
+
+    [MSBFirstStruct]
+    private class TestLogSenseTlvPage
+    {
+        [Byte(0)]
+        public byte PageCode { get; set; }
+
+        [Word(2)]
+        public ushort PageLength { get; set; }
+
+        [TLV(0x0001, 2)]
+        public ushort FirstValue { get; set; }
+
+        [TLV(0x0002, 2)]
+        public ushort SecondValue { get; set; }
+    }
+
+    [MSBFirstStruct]
+    private class TestLogSenseTlvListPage
+    {
+        [Byte(0)]
+        public byte PageCode { get; set; }
+
+        [Word(2)]
+        public ushort PageLength { get; set; }
+
+        [TLVList(1, 1, 3)]
+        public byte[] Values { get; set; } = [];
     }
 }
