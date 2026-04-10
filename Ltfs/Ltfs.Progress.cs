@@ -2,7 +2,19 @@ using System.Threading;
 
 using Ltfs.Utils;
 
+using TapeDrive;
+
 namespace Ltfs;
+
+public sealed class LtfsTapePerformanceSnapshot
+{
+    public int RepositionsPer100MB { get; init; }
+    public double DataRateIntoBufferMBPerSecond { get; init; }
+    public double MaximumDataRateMBPerSecond { get; init; }
+    public double CurrentDataRateMBPerSecond { get; init; }
+    public double NativeDataRateMBPerSecond { get; init; }
+    public double CompressionRatio { get; init; }
+}
 
 public sealed class LtfsTaskProgressSnapshot
 {
@@ -20,11 +32,14 @@ public sealed class LtfsTaskProgressSnapshot
     public double EstimatedRemainingSeconds { get; init; }
     public string StatusMessage { get; init; } = string.Empty;
     public bool IsCompleted { get; init; }
+    public LtfsTapePerformanceSnapshot? TapePerformance { get; init; }
 }
 
 public partial class Ltfs
 {
     public event EventHandler<LtfsTaskProgressSnapshot>? ProgressUpdated;
+
+    private LtfsTapePerformanceSnapshot? _lastTapePerformanceSnapshot;
 
     private void PublishProgress(LtfsTaskProgressSnapshot snapshot)
     {
@@ -80,6 +95,7 @@ public partial class Ltfs
         {
             while (!token.IsCancellationRequested)
             {
+                var tapePerformance = TryReadTapePerformanceSnapshot();
                 PublishProgress(BuildProgressSnapshot(
                     queueType,
                     totalItems,
@@ -89,6 +105,7 @@ public partial class Ltfs
                     getCurrentItemPath(),
                     getCurrentItemBytes(),
                     getCurrentItemTotalBytes(),
+                    tapePerformance,
                     startTicks,
                     ref lastTicks,
                     ref lastProcessed,
@@ -102,6 +119,33 @@ public partial class Ltfs
         }
     }
 
+    private LtfsTapePerformanceSnapshot? TryReadTapePerformanceSnapshot()
+    {
+        if (_tapeDrive is not LTOTapeDrive tapeDrive)
+            return _lastTapePerformanceSnapshot;
+
+        try
+        {
+            var performance = tapeDrive.ReadPerformanceData();
+            var snapshot = new LtfsTapePerformanceSnapshot
+            {
+                RepositionsPer100MB = performance.RepositionsPer100MB,
+                DataRateIntoBufferMBPerSecond = performance.DataRateIntoBuffer,
+                MaximumDataRateMBPerSecond = performance.MaximumDataRate,
+                CurrentDataRateMBPerSecond = performance.CurrentDataRate,
+                NativeDataRateMBPerSecond = performance.NativeDataRate,
+                CompressionRatio = performance.CompressionRatio,
+            };
+
+            _lastTapePerformanceSnapshot = snapshot;
+            return snapshot;
+        }
+        catch
+        {
+            return _lastTapePerformanceSnapshot;
+        }
+    }
+
     private LtfsTaskProgressSnapshot BuildProgressSnapshot(
         LtfsTaskQueueType queueType,
         int totalItems,
@@ -111,6 +155,7 @@ public partial class Ltfs
         string? currentItemPath,
         long currentItemBytes,
         long currentItemTotalBytes,
+        LtfsTapePerformanceSnapshot? tapePerformance,
         long startTicks,
         ref long lastTicks,
         ref ulong lastProcessed,
@@ -143,6 +188,7 @@ public partial class Ltfs
             AverageBytesPerSecond = averageBytesPerSecond,
             EstimatedRemainingSeconds = etaSeconds,
             IsCompleted = isCompleted,
+            TapePerformance = tapePerformance,
             StatusMessage = $"{queueType}: {completedItems}/{totalItems} items, {FileSize.FormatSize(processedBytes)} / {FileSize.FormatSize(totalBytes)} {percent:f1}% ETA: {(double.IsInfinity(etaSeconds) ? "-" : etaSeconds.ToString("f0"))}s Speed: {FileSize.FormatSize((ulong)Math.Max(0, instantBytesPerSecond))}/s",
         };
     }

@@ -1,5 +1,15 @@
 namespace LtfsServer.Features.Tasks;
 
+public sealed class TaskExecutionTapePerformanceDto
+{
+    public int RepositionsPer100MB { get; set; }
+    public double DataRateIntoBufferMBPerSecond { get; set; }
+    public double MaximumDataRateMBPerSecond { get; set; }
+    public double CurrentDataRateMBPerSecond { get; set; }
+    public double NativeDataRateMBPerSecond { get; set; }
+    public double CompressionRatio { get; set; }
+}
+
 public static class TaskExecutionStatus
 {
     public const string Pending = "pending";
@@ -26,6 +36,7 @@ public sealed class TaskExecutionProgressDto
     public string StatusMessage { get; set; } = string.Empty;
     public bool IsCompleted { get; set; }
     public long TimestampUtcTicks { get; set; }
+    public TaskExecutionTapePerformanceDto? TapePerformance { get; set; }
 }
 
 public sealed class TaskExecutionIncidentDto

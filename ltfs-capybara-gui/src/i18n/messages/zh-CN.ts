@@ -244,6 +244,12 @@ export default {
         executionStarted: '任务执行已启动。',
         executionStartFailed: '启动任务执行失败。',
         selectDriveFirst: '请先选择磁带机。',
+        performanceCurrentRate: '当前速率',
+        performanceBufferRate: '入缓冲速率',
+        performanceNativeRate: '原生速率',
+        performanceMaxRate: '最大速率',
+        performanceCompressionRatio: '压缩比',
+        performanceRepositions: '重定位/100MB',
     },
     tapeMachine: {
         selectDriveHint: '请先在左侧面板选择一个磁带机。',

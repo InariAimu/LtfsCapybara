@@ -211,6 +211,7 @@ public partial class Ltfs
                 null,
                 0,
                 0,
+                _lastTapePerformanceSnapshot,
                 lastTicks,
                 ref lastTicks,
                 ref lastProcessed,

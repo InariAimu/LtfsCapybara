@@ -63,6 +63,7 @@ const activeExecution = computed(
             ['pending', 'running', 'waiting-for-confirmation'].includes(execution.status),
         ) ?? null,
 );
+const activeExecutionPerformance = computed(() => activeExecution.value?.progress?.tapePerformance ?? null);
 const driveLogs = computed(() =>
     executionStore.logs.filter(log => log.tapeDriveId === props.tapeDriveId),
 );
@@ -151,6 +152,22 @@ function formatLogLevel(level: string): 'info' | 'warning' | 'error' | 'default'
         default:
             return 'default';
     }
+}
+
+function formatPerformanceRate(rate: number): string {
+    if (!Number.isFinite(rate) || rate < 0) {
+        return '-';
+    }
+
+    return `${rate.toFixed(rate >= 100 ? 0 : 1)} MB/s`;
+}
+
+function formatCompressionRatio(ratio: number): string {
+    if (!Number.isFinite(ratio) || ratio <= 0) {
+        return '-';
+    }
+
+    return `${ratio.toFixed(2)}x`;
 }
 
 function can(action: TapeMachineAction) {
@@ -391,6 +408,55 @@ onMounted(() => {
                                 <span v-if="activeExecution.progress?.statusMessage">
                                     · {{ activeExecution.progress.statusMessage }}
                                 </span>
+                                <div
+                                    v-if="activeExecutionPerformance"
+                                    class="execution-performance-grid"
+                                >
+                                    <span>
+                                        {{ t('task.performanceCurrentRate') }}:
+                                        {{
+                                            formatPerformanceRate(
+                                                activeExecutionPerformance.currentDataRateMBPerSecond,
+                                            )
+                                        }}
+                                    </span>
+                                    <span>
+                                        {{ t('task.performanceBufferRate') }}:
+                                        {{
+                                            formatPerformanceRate(
+                                                activeExecutionPerformance.dataRateIntoBufferMBPerSecond,
+                                            )
+                                        }}
+                                    </span>
+                                    <span>
+                                        {{ t('task.performanceNativeRate') }}:
+                                        {{
+                                            formatPerformanceRate(
+                                                activeExecutionPerformance.nativeDataRateMBPerSecond,
+                                            )
+                                        }}
+                                    </span>
+                                    <span>
+                                        {{ t('task.performanceMaxRate') }}:
+                                        {{
+                                            formatPerformanceRate(
+                                                activeExecutionPerformance.maximumDataRateMBPerSecond,
+                                            )
+                                        }}
+                                    </span>
+                                    <span>
+                                        {{ t('task.performanceCompressionRatio') }}:
+                                        {{
+                                            formatCompressionRatio(
+                                                activeExecutionPerformance.compressionRatio,
+                                            )
+                                        }}
+                                    </span>
+                                    <span>
+                                        {{ t('task.performanceRepositions') }}:
+                                        {{ activeExecutionPerformance.repositionsPer100MB }}
+                                    </span>
+                                </div>
                             </n-alert>
 
                             <n-empty
@@ -468,6 +534,16 @@ onMounted(() => {
         />
     </div>
 </template>
+
+<style scoped>
+.execution-performance-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 4px 12px;
+    margin-top: 8px;
+    font-size: 12px;
+}
+</style>
 
 <style scoped>
 .tape-machine-page {

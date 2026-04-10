@@ -39,6 +39,7 @@ const selectedPath = ref('/');
 const activeExecution = computed(() =>
     executionStore.executions.find(execution => execution.tapeBarcode === selectedTape.value) ?? null,
 );
+const activeExecutionPerformance = computed(() => activeExecution.value?.progress?.tapePerformance ?? null);
 
 const canExecute = computed(
     () => Boolean(selectedTape.value) && Boolean(store.currentTapeDriveId) && !executionStore.activeExecution,
@@ -239,6 +240,16 @@ function formatTimestamp(ticks: number): string {
     return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString();
 }
 
+function formatPerformanceRate(rate: number): string {
+    if (!Number.isFinite(rate) || rate < 0) return '-';
+    return `${rate.toFixed(rate >= 100 ? 0 : 1)} MB/s`;
+}
+
+function formatCompressionRatio(ratio: number): string {
+    if (!Number.isFinite(ratio) || ratio <= 0) return '-';
+    return `${ratio.toFixed(2)}x`;
+}
+
 function actionTagType(
     action: string,
     itemType: string,
@@ -414,6 +425,32 @@ onMounted(loadTaskGroups);
                     <div v-if="activeExecution.progress?.statusMessage">
                         {{ activeExecution.progress.statusMessage }}
                     </div>
+                    <div v-if="activeExecutionPerformance" class="execution-performance-grid">
+                        <span>
+                            {{ t('task.performanceCurrentRate') }}:
+                            {{ formatPerformanceRate(activeExecutionPerformance.currentDataRateMBPerSecond) }}
+                        </span>
+                        <span>
+                            {{ t('task.performanceBufferRate') }}:
+                            {{ formatPerformanceRate(activeExecutionPerformance.dataRateIntoBufferMBPerSecond) }}
+                        </span>
+                        <span>
+                            {{ t('task.performanceNativeRate') }}:
+                            {{ formatPerformanceRate(activeExecutionPerformance.nativeDataRateMBPerSecond) }}
+                        </span>
+                        <span>
+                            {{ t('task.performanceMaxRate') }}:
+                            {{ formatPerformanceRate(activeExecutionPerformance.maximumDataRateMBPerSecond) }}
+                        </span>
+                        <span>
+                            {{ t('task.performanceCompressionRatio') }}:
+                            {{ formatCompressionRatio(activeExecutionPerformance.compressionRatio) }}
+                        </span>
+                        <span>
+                            {{ t('task.performanceRepositions') }}:
+                            {{ activeExecutionPerformance.repositionsPer100MB }}
+                        </span>
+                    </div>
                     <div v-if="activeExecution.pendingIncident?.message">
                         {{ activeExecution.pendingIncident.message }}
                     </div>
@@ -427,5 +464,13 @@ onMounted(loadTaskGroups);
 <style scoped>
 .task-page {
     height: 100%;
+}
+
+.execution-performance-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 4px 12px;
+    margin-top: 8px;
+    font-size: 12px;
 }
 </style>

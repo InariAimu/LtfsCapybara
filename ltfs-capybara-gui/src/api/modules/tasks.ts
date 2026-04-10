@@ -101,6 +101,16 @@ export interface TaskExecutionProgress {
     statusMessage: string;
     isCompleted: boolean;
     timestampUtcTicks: number;
+    tapePerformance: TaskExecutionTapePerformance | null;
+}
+
+export interface TaskExecutionTapePerformance {
+    repositionsPer100MB: number;
+    dataRateIntoBufferMBPerSecond: number;
+    maximumDataRateMBPerSecond: number;
+    currentDataRateMBPerSecond: number;
+    nativeDataRateMBPerSecond: number;
+    compressionRatio: number;
 }
 
 export interface TaskExecutionIncident {

@@ -69,6 +69,8 @@ public partial class Ltfs
             _tapeDrive.Dispose();
             _tapeDrive = default!;
         }
+
+        _lastTapePerformanceSnapshot = null;
         return true;
     }
 
@@ -86,6 +88,7 @@ public partial class Ltfs
     public void SetTapeDrive(TapeDriveBase drive)
     {
         _tapeDrive = drive ?? throw new ArgumentNullException(nameof(drive));
+        _lastTapePerformanceSnapshot = null;
         ConfigureTapeDrive(_tapeDrive);
     }
 

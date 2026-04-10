@@ -48,6 +48,15 @@ public partial class LTOTapeDrive : IDisposable
             (byte)((pageLength >> 8) & 0xff), (byte)(pageLength & 0xff), 0], pageLength + 4);
     }
 
+    public PerformanceData ReadPerformanceData()
+    {
+        byte[] data = LogSense(0x34);
+        
+        PerformanceData performanceData = new();
+        performanceData.ParseFromLogPageData(data);
+        return performanceData;
+    }
+
     public byte[] ReadWERLPage()
     {
         byte[] header = ScsiRead(

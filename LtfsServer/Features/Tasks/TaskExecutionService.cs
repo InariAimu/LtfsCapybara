@@ -219,6 +219,15 @@ public sealed class TaskExecutionService : ITaskExecutionService
                         StatusMessage = snapshot.StatusMessage,
                         IsCompleted = snapshot.IsCompleted,
                         TimestampUtcTicks = snapshot.TimestampUtc.Ticks,
+                        TapePerformance = snapshot.TapePerformance is null ? null : new TaskExecutionTapePerformanceDto
+                        {
+                            RepositionsPer100MB = snapshot.TapePerformance.RepositionsPer100MB,
+                            DataRateIntoBufferMBPerSecond = snapshot.TapePerformance.DataRateIntoBufferMBPerSecond,
+                            MaximumDataRateMBPerSecond = snapshot.TapePerformance.MaximumDataRateMBPerSecond,
+                            CurrentDataRateMBPerSecond = snapshot.TapePerformance.CurrentDataRateMBPerSecond,
+                            NativeDataRateMBPerSecond = snapshot.TapePerformance.NativeDataRateMBPerSecond,
+                            CompressionRatio = snapshot.TapePerformance.CompressionRatio,
+                        },
                     };
                     state.Snapshot.UpdatedAtTicks = DateTime.UtcNow.Ticks;
                 }
@@ -509,6 +518,15 @@ public sealed class TaskExecutionService : ITaskExecutionService
                 StatusMessage = snapshot.Progress.StatusMessage,
                 IsCompleted = snapshot.Progress.IsCompleted,
                 TimestampUtcTicks = snapshot.Progress.TimestampUtcTicks,
+                TapePerformance = snapshot.Progress.TapePerformance is null ? null : new TaskExecutionTapePerformanceDto
+                {
+                    RepositionsPer100MB = snapshot.Progress.TapePerformance.RepositionsPer100MB,
+                    DataRateIntoBufferMBPerSecond = snapshot.Progress.TapePerformance.DataRateIntoBufferMBPerSecond,
+                    MaximumDataRateMBPerSecond = snapshot.Progress.TapePerformance.MaximumDataRateMBPerSecond,
+                    CurrentDataRateMBPerSecond = snapshot.Progress.TapePerformance.CurrentDataRateMBPerSecond,
+                    NativeDataRateMBPerSecond = snapshot.Progress.TapePerformance.NativeDataRateMBPerSecond,
+                    CompressionRatio = snapshot.Progress.TapePerformance.CompressionRatio,
+                },
             },
             PendingIncident = snapshot.PendingIncident is null ? null : CloneIncident(snapshot.PendingIncident),
         };

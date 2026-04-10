@@ -247,6 +247,12 @@
         executionStarted: 'Task execution started.',
         executionStartFailed: 'Failed to start task execution.',
         selectDriveFirst: 'Please select a tape drive first.',
+        performanceCurrentRate: 'Current',
+        performanceBufferRate: 'Buffer In',
+        performanceNativeRate: 'Native',
+        performanceMaxRate: 'Max',
+        performanceCompressionRatio: 'Compression',
+        performanceRepositions: 'Repositions/100MB',
     },
     tapeMachine: {
         selectDriveHint: 'Select a tape drive from the left panel to control it.',
