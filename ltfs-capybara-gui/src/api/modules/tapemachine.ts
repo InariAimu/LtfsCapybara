@@ -1,5 +1,6 @@
 import { apiClient } from '../client';
 import type { TapeInfo } from '@/api/types/tapeInfo';
+import type { TapeFsFormatParam } from '@/api/modules/tasks';
 
 const DEFAULT_LONG_RUNNING_ACTION_TIMEOUT_MS = 180000;
 const LONG_RUNNING_ACTIONS = new Set(['thread', 'unthread', 'eject']);
@@ -49,6 +50,13 @@ export const tapeMachineApi = {
             `/tapedrives/${encodeURIComponent(tapeDriveId)}/machine/${action}`,
             undefined,
             requestConfig,
+        );
+    },
+    format(tapeDriveId: string, formatParam: TapeFsFormatParam) {
+        return apiClient.post<TapeMachineSnapshot>(
+            `/tapedrives/${encodeURIComponent(tapeDriveId)}/machine/format`,
+            { formatParam },
+            { timeout: 0 },
         );
     },
 };

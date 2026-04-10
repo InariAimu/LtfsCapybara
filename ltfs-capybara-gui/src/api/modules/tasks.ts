@@ -24,12 +24,34 @@ export interface TapeFsReadTaskPayload {
 export interface TapeFsFormatParam {
     barcode: string;
     volumeName: string;
+    mediaPool: string;
     extraPartitionCount: number;
     blockSize: number;
     immediateMode: boolean;
     capacity: number;
     p0Size: number;
     p1Size: number;
+    encryptionKey: string | null;
+}
+
+export function createDefaultTapeFsFormatParam(
+    barcode = '',
+    volumeName = barcode,
+    overrides?: Partial<TapeFsFormatParam>,
+): TapeFsFormatParam {
+    return {
+        barcode,
+        volumeName: volumeName || barcode,
+        mediaPool: '',
+        extraPartitionCount: 1,
+        blockSize: 524288,
+        immediateMode: true,
+        capacity: 65535,
+        p0Size: 1,
+        p1Size: 65535,
+        encryptionKey: null,
+        ...overrides,
+    };
 }
 
 export interface TapeFsFolderTaskPayload {

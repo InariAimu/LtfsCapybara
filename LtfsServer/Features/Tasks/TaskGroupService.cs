@@ -122,12 +122,7 @@ public sealed class TaskGroupService : ITaskGroupService
             var group = GetOrCreateGroupCore(key);
             EnsureNoFormatTask(group);
 
-            var safeFormatTask = formatTask ?? new FormatTask
-            {
-                FormatParam = new FormatParam(),
-            };
-            if (string.IsNullOrWhiteSpace(safeFormatTask.FormatParam.Barcode))
-                safeFormatTask.FormatParam.Barcode = key;
+            var safeFormatTask = FormatTaskDefaults.NormalizeFormatTask(formatTask, key, group.Name);
 
             var task = new TapeFsTask
             {
@@ -273,14 +268,7 @@ public sealed class TaskGroupService : ITaskGroupService
 
         if (type == TapeFsTaskType.Format)
         {
-            var formatTask = request.FormatTask ?? new FormatTask
-            {
-                FormatParam = new FormatParam(),
-            };
-            if (string.IsNullOrWhiteSpace(formatTask.FormatParam.Barcode))
-                formatTask.FormatParam.Barcode = group.TapeBarcode;
-
-            task.FormatTask = formatTask;
+            task.FormatTask = FormatTaskDefaults.NormalizeFormatTask(request.FormatTask, group.TapeBarcode, group.Name);
             return task;
         }
 
@@ -597,12 +585,7 @@ public sealed class TaskGroupService : ITaskGroupService
 
             if (task.Type == TapeFsTaskType.Format)
             {
-                task.FormatTask ??= new FormatTask
-                {
-                    FormatParam = new FormatParam(),
-                };
-                if (string.IsNullOrWhiteSpace(task.FormatTask.FormatParam.Barcode))
-                    task.FormatTask.FormatParam.Barcode = group.TapeBarcode;
+                task.FormatTask = FormatTaskDefaults.NormalizeFormatTask(task.FormatTask, group.TapeBarcode, group.Name);
             }
 
             task.WriteTask = null;

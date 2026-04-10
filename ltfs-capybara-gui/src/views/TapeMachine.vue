@@ -13,12 +13,18 @@ import {
     useMessage,
 } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
+import FormatParamDialog from '@/components/FormatParamDialog.vue';
 import {
     tapeMachineApi,
     type TapeMachineAction,
     type TapeMachineSnapshot,
 } from '@/api/modules/tapemachine';
-import { taskApi, type TapeFsTaskGroup } from '@/api/modules/tasks';
+import {
+    createDefaultTapeFsFormatParam,
+    taskApi,
+    type TapeFsFormatParam,
+    type TapeFsTaskGroup,
+} from '@/api/modules/tasks';
 import { useExecutionStore } from '@/stores/executionStore';
 import { useFileStore } from '@/stores/fileStore';
 import TapeInfo from '@/views/TapeInfo.vue';
@@ -36,10 +42,12 @@ const fileStore = useFileStore();
 
 const loading = ref(false);
 const actionLoading = ref(false);
+const formatLoading = ref(false);
 const taskLoading = ref(false);
 const snapshot = ref<TapeMachineSnapshot | null>(null);
 const error = ref<string | null>(null);
 const activeTab = ref('operations');
+const showFormatDialog = ref(false);
 
 const stateByIndex = ['Unknown', 'Empty', 'Loaded', 'Threaded', 'Faulted'] as const;
 const actionByIndex = ['ThreadTape', 'LoadTape', 'UnthreadTape', 'EjectTape', 'ReadInfo'] as const;
@@ -65,12 +73,19 @@ const matchingTaskGroups = computed(() => {
         return [];
     }
 
-    return taskGroups.value.filter(
-        group => group.tapeBarcode.toLowerCase() === barcode,
-    );
+    return taskGroups.value.filter(group => group.tapeBarcode.toLowerCase() === barcode);
 });
 const canRunTasks = computed(
     () => hasSelectedDrive.value && hasLoadedTape.value && !activeExecution.value,
+);
+const canFormatTape = computed(
+    () => hasSelectedDrive.value && hasLoadedTape.value && !activeExecution.value,
+);
+const formatDialogDefaults = computed(() =>
+    createDefaultTapeFsFormatParam(
+        snapshot.value?.loadedBarcode ?? '',
+        snapshot.value?.ltfsVolumeName ?? snapshot.value?.loadedBarcode ?? '',
+    ),
 );
 
 function normalizeState(state: unknown): string {
@@ -214,6 +229,36 @@ async function runTaskGroup(group: TapeFsTaskGroup) {
     }
 }
 
+function openFormatDialog() {
+    if (!canFormatTape.value) {
+        return;
+    }
+
+    showFormatDialog.value = true;
+}
+
+async function handleFormatTape(formatParam: TapeFsFormatParam) {
+    if (!props.tapeDriveId || !canFormatTape.value) {
+        return;
+    }
+
+    formatLoading.value = true;
+    error.value = null;
+    try {
+        const res = await tapeMachineApi.format(props.tapeDriveId, formatParam);
+        snapshot.value = res.data;
+        showFormatDialog.value = false;
+        message.success(t('tapeMachine.formatSuccess'));
+    } catch (err: any) {
+        console.error('handleFormatTape error', err);
+        const msg = err?.response?.data?.message;
+        error.value = msg || t('tapeMachine.errors.formatFailed');
+        message.error(msg || t('tapeMachine.errors.formatFailed'));
+    } finally {
+        formatLoading.value = false;
+    }
+}
+
 watch(
     () => props.tapeDriveId,
     () => {
@@ -292,12 +337,29 @@ onMounted(() => {
                                 >
                                     {{ t('tapeMachine.actions.readInfo') }}
                                 </n-button>
+                                <n-button
+                                    type="warning"
+                                    :loading="formatLoading"
+                                    :disabled="loading || actionLoading || !canFormatTape"
+                                    @click="openFormatDialog"
+                                >
+                                    {{ t('tapeMachine.actions.formatTape') }}
+                                </n-button>
                             </n-space>
 
                             <n-alert v-if="snapshot?.loadedBarcode" type="info">
-                                {{ t('tapeMachine.currentTape', { barcode: snapshot.loadedBarcode }) }}
+                                {{
+                                    t('tapeMachine.currentTape', {
+                                        barcode: snapshot.loadedBarcode,
+                                    })
+                                }}
                                 <span v-if="snapshot.ltfsVolumeName">
-                                    · {{ t('tapeMachine.currentVolume', { name: snapshot.ltfsVolumeName }) }}
+                                    ·
+                                    {{
+                                        t('tapeMachine.currentVolume', {
+                                            name: snapshot.ltfsVolumeName,
+                                        })
+                                    }}
                                 </span>
                             </n-alert>
 
@@ -314,11 +376,18 @@ onMounted(() => {
                             <n-alert v-if="!hasLoadedTape" type="info">
                                 {{ t('tapeMachine.noTapeLoaded') }}
                             </n-alert>
-                            <n-alert v-else-if="snapshot?.hasLtfsFilesystem === false" type="warning">
+                            <n-alert
+                                v-else-if="snapshot?.hasLtfsFilesystem === false"
+                                type="warning"
+                            >
                                 {{ t('tapeMachine.autoFormatHint') }}
                             </n-alert>
                             <n-alert v-if="activeExecution" type="info">
-                                {{ t('tapeMachine.executionStatus', { status: activeExecution.status }) }}
+                                {{
+                                    t('tapeMachine.executionStatus', {
+                                        status: activeExecution.status,
+                                    })
+                                }}
                                 <span v-if="activeExecution.progress?.statusMessage">
                                     · {{ activeExecution.progress.statusMessage }}
                                 </span>
@@ -340,7 +409,11 @@ onMounted(() => {
                                         <n-space vertical :size="4">
                                             <strong>{{ group.name || group.tapeBarcode }}</strong>
                                             <span>
-                                                {{ t('tapeMachine.taskCount', { count: group.tasks.length }) }}
+                                                {{
+                                                    t('tapeMachine.taskCount', {
+                                                        count: group.tasks.length,
+                                                    })
+                                                }}
                                             </span>
                                         </n-space>
                                         <n-button
@@ -381,6 +454,18 @@ onMounted(() => {
                 </n-tabs>
             </n-space>
         </n-card>
+
+        <format-param-dialog
+            v-model:show="showFormatDialog"
+            :loading="formatLoading"
+            :title="t('tapeMachine.formatDialogTitle')"
+            :submit-text="t('tapeMachine.actions.formatTape')"
+            :description="t('tapeMachine.formatWarning')"
+            :initial-format-param="formatDialogDefaults"
+            :barcode="snapshot?.loadedBarcode ?? ''"
+            :volume-name="snapshot?.ltfsVolumeName ?? snapshot?.loadedBarcode ?? ''"
+            @submit="handleFormatTape"
+        />
     </div>
 </template>
 

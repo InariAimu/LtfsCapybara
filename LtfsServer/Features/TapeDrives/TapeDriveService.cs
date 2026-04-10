@@ -9,6 +9,7 @@ using Ltfs;
 
 using LtfsServer.BootStrap;
 using LtfsServer.Features.LocalTapes;
+using LtfsServer.Features.Tasks;
 
 using LtoTape;
 
@@ -288,6 +289,73 @@ public class TapeDriveService : ITapeDriveService
         }
     }
 
+    public TapeDriveSnapshot Format(string tapeDriveId, FormatParam? formatParam)
+    {
+        var lockObj = _locks.GetOrAdd(tapeDriveId, _ => new object());
+
+        lock (lockObj)
+        {
+            var driveInfo = ResolveDrive(tapeDriveId);
+            if (!_registry.TryGet(tapeDriveId, out var drive) || drive is null)
+            {
+                throw new InvalidOperationException($"Tape drive '{tapeDriveId}' is unavailable.");
+            }
+
+            var context = UpdateOrCreateContext(driveInfo);
+            EnsureMediaContextLoaded(context, drive);
+
+            if (context.State == TapeDriveState.Empty)
+            {
+                throw new InvalidOperationException($"Tape drive '{tapeDriveId}' does not have a loaded tape.");
+            }
+
+            if (context.State == TapeDriveState.Faulted)
+            {
+                throw new InvalidOperationException($"Tape drive '{tapeDriveId}' is faulted and cannot be formatted right now.");
+            }
+
+            try
+            {
+                if (context.State == TapeDriveState.Loaded)
+                {
+                    drive.Load();
+                }
+
+                var fallbackBarcode = !string.IsNullOrWhiteSpace(context.LoadedBarcode)
+                    ? context.LoadedBarcode
+                    : tapeDriveId;
+                var effectiveFormatParam = FormatTaskDefaults.NormalizeFormatParam(
+                    formatParam,
+                    fallbackBarcode,
+                    context.LtfsVolumeName ?? fallbackBarcode);
+
+                var ltfs = new Ltfs.Ltfs();
+                ltfs.SetTapeDrive(drive);
+                ltfs.ExtraPartitionCount = effectiveFormatParam.ExtraPartitionCount;
+                ltfs.Format(effectiveFormatParam);
+
+                context.State = TapeDriveState.Threaded;
+                context.LastError = null;
+                context.LoadedBarcode = effectiveFormatParam.Barcode;
+                context.HasLtfsFilesystem = true;
+                context.LtfsVolumeName = effectiveFormatParam.VolumeName;
+                context.LtfsContext = ltfs;
+                context.MediaContextLoaded = true;
+
+                TryRefreshCartridgeMemory(context, drive);
+
+                return ToSnapshot(context);
+            }
+            catch (Exception ex)
+            {
+                context.State = TapeDriveState.Faulted;
+                context.LastError = ex.Message;
+                _logger.LogWarning(ex, "Tape format failed for {TapeDriveId}", tapeDriveId);
+                throw;
+            }
+        }
+    }
+
     private void EnsureMediaContextLoaded(MachineContext context, TapeDriveBase drive, bool forceRefresh = false)
     {
         if (context.State == TapeDriveState.Empty)
@@ -405,6 +473,32 @@ public class TapeDriveService : ITapeDriveService
         _ = _localTapeRegistry.TryUpsertFile(barcode, outputPath);
 
         _logger.LogInformation("Saved CM binary to {Path}", outputPath);
+    }
+
+    private void TryRefreshCartridgeMemory(MachineContext context, TapeDriveBase drive)
+    {
+        try
+        {
+            var raw = drive.ReadDiagCM();
+            if (raw.Length == 0)
+            {
+                return;
+            }
+
+            var cm = new CartridgeMemory();
+            cm.FromBytes(raw);
+            context.CartridgeMemory = cm;
+
+            var barcode = ResolveBarcode(drive, cm);
+            if (!string.IsNullOrWhiteSpace(barcode))
+            {
+                context.LoadedBarcode = barcode;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "ReadDiagCM refresh failed for {TapeDriveId}", context.TapeDriveId);
+        }
     }
 
     private static string ResolveBarcode(TapeDriveBase drive, CartridgeMemory cm)

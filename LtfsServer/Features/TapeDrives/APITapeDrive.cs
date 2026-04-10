@@ -25,6 +25,26 @@ public static class APITapeDrive
             }
         });
 
+        app.MapPost("/api/tapedrives/{id}/machine/format", (string id, FormatMountedTapeRequest? request, ITapeDriveService tapeDriveService) =>
+        {
+            try
+            {
+                return Results.Ok(tapeDriveService.Format(id, request?.FormatParam));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return Results.NotFound(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return Results.BadRequest(new { message = ex.Message });
+            }
+        });
+
         app.MapPost("/api/tapedrives/{id}/machine/{action}", (string id, string action, ITapeDriveService tapeDriveService) =>
         {
             if (!TapeDriveActionParser.TryParseAction(action, out var parsedAction))

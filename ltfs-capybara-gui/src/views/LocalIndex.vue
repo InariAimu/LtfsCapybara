@@ -2,13 +2,18 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { NLayout, NLayoutHeader, NLayoutSider, NCard, NButton, NEmpty, useMessage } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
+import FormatParamDialog from '@/components/FormatParamDialog.vue';
 import PathBar from './PathBar.vue';
 import FileTreeList from './FileTreeList.vue';
 import FileList from './FileList.vue';
 import ActionBar from './ActionBar.vue';
 import TapeInfo from './TapeInfo.vue';
 import { localTapeApi } from '@/api/modules/localtapes';
-import { taskApi } from '@/api/modules/tasks';
+import {
+    createDefaultTapeFsFormatParam,
+    taskApi,
+    type TapeFsFormatParam,
+} from '@/api/modules/tasks';
 import formatFileSize from '@/utils/formatFileSize';
 import { useFileStore } from '@/stores/fileStore';
 import { getPathName, normalizePath } from '@/utils/path';
@@ -17,6 +22,8 @@ const store = useFileStore();
 const { t } = useI18n();
 const message = useMessage();
 const showTapeInfo = ref(false);
+const showFormatTaskDialog = ref(false);
+const formatTaskLoading = ref(false);
 const treeRefreshToken = ref(0);
 
 const isRootNodeSelected = computed(
@@ -165,23 +172,27 @@ async function handleAddFormatTask() {
         return;
     }
 
+    showFormatTaskDialog.value = true;
+}
+
+async function handleSubmitFormatTask(formatParam: TapeFsFormatParam) {
+    const tapeName = store.currentTapeName;
+    if (!tapeName) {
+        return;
+    }
+
+    formatTaskLoading.value = true;
     try {
-        const response = await taskApi.addFormatTask(tapeName, {
-            barcode: tapeName,
-            volumeName: tapeName,
-            extraPartitionCount: 1,
-            blockSize: 524288,
-            immediateMode: true,
-            capacity: 65535,
-            p0Size: 1,
-            p1Size: 65535,
-        });
+        const response = await taskApi.addFormatTask(tapeName, formatParam);
         store.upsertTaskGroup(response.data);
+        showFormatTaskDialog.value = false;
         treeRefreshToken.value += 1;
         message.success(t('task.addFormatTaskSuccess'));
     } catch (err) {
         console.error('handleAddFormatTask error', err);
         message.error(t('task.addFormatTaskFailed'));
+    } finally {
+        formatTaskLoading.value = false;
     }
 }
 
@@ -332,6 +343,20 @@ async function handleDeleteCurrentPathTask() {
                 </div>
             </n-layout>
         </n-layout>
+
+        <format-param-dialog
+            v-model:show="showFormatTaskDialog"
+            :loading="formatTaskLoading"
+            :title="t('task.configureFormatTask')"
+            :submit-text="t('task.addFormatTask')"
+            :description="t('task.configureFormatTaskHint')"
+            :initial-format-param="
+                createDefaultTapeFsFormatParam(store.currentTapeName, store.currentTapeName)
+            "
+            :barcode="store.currentTapeName"
+            :volume-name="store.currentTapeName"
+            @submit="handleSubmitFormatTask"
+        />
     </n-layout>
 </template>
 

@@ -234,14 +234,7 @@ public sealed class TaskExecutionService : ITaskExecutionService
             var formatTask = group.Tasks.FirstOrDefault(task => string.Equals(task.Type, TapeFsTaskType.Format, StringComparison.OrdinalIgnoreCase));
             if (preparation.NeedsAutoFormat)
             {
-                var effectiveFormatTask = formatTask?.FormatTask ?? new Ltfs.Tasks.FormatTask
-                {
-                    FormatParam = new FormatParam
-                    {
-                        Barcode = group.TapeBarcode,
-                        VolumeName = group.Name,
-                    }
-                };
+                var effectiveFormatTask = FormatTaskDefaults.NormalizeFormatTask(formatTask?.FormatTask, group.TapeBarcode, group.Name);
 
                 ltfs.ExtraPartitionCount = effectiveFormatTask.FormatParam.ExtraPartitionCount;
                 PublishLog(state, "warning", "No LTFS filesystem detected. Formatting tape before applying queued tasks.");
@@ -249,23 +242,17 @@ public sealed class TaskExecutionService : ITaskExecutionService
             }
             else if (formatTask?.FormatTask is not null)
             {
-                ltfs.ExtraPartitionCount = formatTask.FormatTask.FormatParam.ExtraPartitionCount;
+                var effectiveFormatTask = FormatTaskDefaults.NormalizeFormatTask(formatTask.FormatTask, group.TapeBarcode, group.Name);
+                ltfs.ExtraPartitionCount = effectiveFormatTask.FormatParam.ExtraPartitionCount;
                 PublishLog(state, "info", "Running explicit format task before applying queued tasks.");
-                ltfs.Format(formatTask.FormatTask.FormatParam);
+                ltfs.Format(effectiveFormatTask.FormatParam);
             }
             else
             {
                 PublishLog(state, "info", "Loaded existing LTFS filesystem from mounted tape.");
                 if (!ltfs.ReadLtfs())
                 {
-                    var fallbackFormat = new Ltfs.Tasks.FormatTask
-                    {
-                        FormatParam = new FormatParam
-                        {
-                            Barcode = group.TapeBarcode,
-                            VolumeName = group.Name,
-                        }
-                    };
+                    var fallbackFormat = FormatTaskDefaults.NormalizeFormatTask(null, group.TapeBarcode, group.Name);
 
                     ltfs.ExtraPartitionCount = fallbackFormat.FormatParam.ExtraPartitionCount;
                     PublishLog(state, "warning", "LTFS read failed during execution. Falling back to formatting before queued tasks.");

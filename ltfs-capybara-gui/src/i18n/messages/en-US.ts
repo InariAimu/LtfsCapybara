@@ -85,9 +85,11 @@
     },
     aiChat: {
         title: 'Chat with LtfsCapybara',
-        subtitle: 'Provide natural language instructions to analyze LTFS tapes, generate tasks, and more.',
+        subtitle:
+            'Provide natural language instructions to analyze LTFS tapes, generate tasks, and more.',
         emptyState: 'Send a message to start chat.',
-        promptPlaceholder: 'Ask anything about the tape, e.g. "What is on this tape?", "Analyze the tape and generate some tasks for me.", "What are the health status and remaining lifespan of this tape?"',
+        promptPlaceholder:
+            'Ask anything about the tape, e.g. "What is on this tape?", "Analyze the tape and generate some tasks for me.", "What are the health status and remaining lifespan of this tape?"',
         sendHint: 'Enter to send, Shift+Enter for new line',
         blobs: {
             selecting: 'Tool Selection',
@@ -170,10 +172,37 @@
         empty: 'No test data.',
         loadFailed: 'Failed to load test data.',
     },
+    formatForm: {
+        title: 'Format Parameters',
+        submit: 'Save',
+        encryptionHint:
+            'Encryption key is optional. If provided, use a Base64 string so it matches C# byte[] JSON serialization.',
+        labels: {
+            barcode: 'Barcode',
+            volumeName: 'Volume Name',
+            mediaPool: 'Media Pool',
+            extraPartitionCount: 'Extra Partition Count',
+            blockSize: 'Block Size',
+            immediateMode: 'Immediate Mode',
+            capacity: 'Capacity',
+            p0Size: 'P0 Size',
+            p1Size: 'P1 Size',
+            encryptionKey: 'Encryption Key',
+        },
+        placeholders: {
+            barcode: 'For example C00001L6, matching physical barcode if available',
+            volumeName: 'For example C00001L6',
+            mediaPool: 'Optional media pool name',
+            encryptionKey: 'Leave empty to disable encryption',
+        },
+    },
     task: {
         refresh: 'Refresh',
         noLtfsTitle: 'No LTFS Filesystem',
         addFormatTask: 'Add Format Task',
+        configureFormatTask: 'Configure Format Task',
+        configureFormatTaskHint:
+            'These parameters will be used when the format task runs in the task group.',
         addFormatTaskSuccess: 'Format task added.',
         addFormatTaskFailed: 'Failed to add format task.',
         addFolder: 'Add Folder',
@@ -231,7 +260,8 @@
         currentTape: 'Mounted tape: {barcode}',
         currentVolume: 'Volume: {name}',
         noTapeLoaded: 'No loaded tape is available for task execution on this drive.',
-        autoFormatHint: 'No LTFS filesystem was detected on this tape. Task execution will format it first.',
+        autoFormatHint:
+            'No LTFS filesystem was detected on this tape. Task execution will format it first.',
         noMatchingTaskGroups: 'No task group matches the mounted tape barcode.',
         runTaskGroup: 'Run Task Group',
         taskCount: '{count} tasks',
@@ -243,7 +273,12 @@
             unthreadTape: 'Unthread Tape',
             ejectTape: 'Eject Tape',
             readInfo: 'Read Info',
+            formatTape: 'Format Tape',
         },
+        formatDialogTitle: 'Format Mounted Tape',
+        formatWarning:
+            'This starts formatting immediately on the mounted tape and overwrites the existing LTFS contents.',
+        formatSuccess: 'Tape format completed.',
         filesystem: {
             unknown: 'Filesystem Unknown',
             ready: 'LTFS Detected',
@@ -266,6 +301,7 @@
             selectDriveFirst: 'Please select a tape drive first.',
             loadStateFailed: 'Failed to load tape machine state.',
             actionFailed: 'Failed to run tape machine action.',
+            formatFailed: 'Failed to format the mounted tape.',
         },
     },
     tapeInfo: {
