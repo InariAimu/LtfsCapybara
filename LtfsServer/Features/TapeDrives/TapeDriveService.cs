@@ -131,6 +131,19 @@ public class TapeDriveService : ITapeDriveService
         }
     }
 
+    public void ReleaseCachedLtfsContext(string tapeDriveId)
+    {
+        if (!_contexts.TryGetValue(tapeDriveId, out var context))
+        {
+            return;
+        }
+
+        lock (GetDriveLock(tapeDriveId))
+        {
+            context.LtfsContext = null;
+        }
+    }
+
     private void RemoveMissingDrives(HashSet<string> discoveredIds)
     {
         foreach (var id in _managedIds.Where(id => !discoveredIds.Contains(id)).ToArray())

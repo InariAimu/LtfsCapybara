@@ -118,6 +118,50 @@
     pages: {
         comingSoon: 'This page is coming soon.',
     },
+    overview: {
+        loadFailed: 'Failed to load overview.',
+        empty: 'No overview data available.',
+        cards: {
+            drives: {
+                title: 'Tape Drives',
+                description: 'Server-side aggregated cache, updated at {time}',
+            },
+            tapes: {
+                title: 'Tapes',
+                description: 'Capacity totals aggregated from cached local tape summaries.',
+            },
+            tasks: {
+                title: 'Tasks',
+                description: 'Queued task counts and execution status summary from the server.',
+            },
+        },
+        metrics: {
+            fake: 'Fake drives',
+            mounted: 'Mounted tapes',
+            ltfsReady: 'LTFS ready',
+            totalCapacity: 'Total capacity',
+            freeCapacity: 'Free capacity',
+            usedCapacity: 'Used capacity',
+            taskGroups: 'Task groups',
+            executions: 'Executions',
+            activeExecutions: 'Active executions',
+        },
+        driveState: {
+            threaded: 'Threaded',
+            loaded: 'Loaded',
+            empty: 'Empty',
+            faulted: 'Faulted',
+            unknown: 'Unknown',
+        },
+        taskStatus: {
+            pending: 'Pending',
+            running: 'Running',
+            waitingForConfirmation: 'Waiting for confirmation',
+            completed: 'Completed',
+            failed: 'Failed',
+            cancelled: 'Cancelled',
+        },
+    },
     test: {
         title: 'Struct Test',
         description: 'This page shows sample StructMetadata returned by LtfsServer.',

@@ -67,20 +67,20 @@ public class MAMAttributes
     /// Media Pool
     /// This attribute may be set to a media pool name and/or additional information as specified in Annex F.4.
     /// </summary>
-    //public LtfsMAMAttribute MediaPool { get; } = new(0x0808, 160, AttributeFormat.Text, false);
+    public MAMAttribute MediaPool { get; } = new(0x0808, 160, AttributeFormat.Text, false);
 
     /// <summary>
     /// Medium Globally Unique Identifier
     /// This attribute may be used to store the volume UUID, generated when a volume is formatted.
     /// It provides access to the UUID of the volume without requiring it to be mounted.
     /// </summary>
-    //public LtfsMAMAttribute MediumGloballyUniqueIdentifier { get; } = new(0x0820, 36, AttributeFormat.Binary, false);
+    public MAMAttribute MediumGloballyUniqueIdentifier { get; } = new(0x0820, 36, AttributeFormat.Binary, false);
 
     /// <summary>
     /// Media Pool Globally Unique Identifier
     /// This attribute may be set to a media pool UUID as specified in Annex F.4.
     /// </summary>
-    //public LtfsMAMAttribute MediaPoolGloballyUniqueIdentifier { get; } = new(0x0821, 36, AttributeFormat.Binary, false);
+    public MAMAttribute MediaPoolGloballyUniqueIdentifier { get; } = new(0x0821, 36, AttributeFormat.Binary, false);
 
 
     /// <summary>

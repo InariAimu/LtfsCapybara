@@ -43,4 +43,5 @@ public interface ITapeDriveService
     TapeDriveSnapshot Execute(string tapeDriveId, TapeDriveAction action);
     Ltfs.Ltfs? GetCachedLtfsContext(string tapeDriveId);
     void UpdateCachedLtfsContext(string tapeDriveId, Ltfs.Ltfs? ltfs, string? loadedBarcode = null);
+    void ReleaseCachedLtfsContext(string tapeDriveId);
 }

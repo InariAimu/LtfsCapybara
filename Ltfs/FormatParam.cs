@@ -4,6 +4,7 @@ public class FormatParam
 {
     public string Barcode { get; set; } = string.Empty;
     public string VolumeName { get; set; } = string.Empty;
+    public string MediaPool { get; set; } = string.Empty;
     public byte ExtraPartitionCount { get; set; } = 1;
     public ulong BlockSize { get; set; } = 524288;
     public bool ImmediateMode { get; set; } = true;

@@ -8,6 +8,7 @@ using LtfsServer.Features.LocalIndex;
 using LtfsServer.Features.LocalFileSystem;
 using LtfsServer.Features.ServerSettings;
 using LtfsServer.Features.Tasks;
+using LtfsServer.Features.Overview;
 using LtfsServer.Features.AI;
 using LtfsServer.Features.AI.Tools;
 using LtfsServer.Features.Test;
@@ -40,6 +41,7 @@ builder.Services.AddSingleton<IServerSettingsService, ServerSettingsService>();
 builder.Services.AddSingleton<ITaskGroupService, TaskGroupService>();
 builder.Services.AddSingleton<ITaskExecutionService, TaskExecutionService>();
 builder.Services.AddSingleton<ILocalIndexQueryService, LocalIndexQueryService>();
+builder.Services.AddSingleton<IOverviewService, OverviewService>();
 
 builder.Services.AddHttpClient("AiServerProxy");
 builder.Services.AddAiToolModules(typeof(Program).Assembly);
@@ -88,6 +90,8 @@ app.MapLocalFileSystemApi();
 app.MapServerSettingsApi();
 // Register task group API endpoints
 app.MapTasksApi();
+// Register overview API endpoint
+app.MapOverviewApi();
 // Register AI chat proxy API endpoints
 app.MapAiApi();
 // Register test/demo endpoints

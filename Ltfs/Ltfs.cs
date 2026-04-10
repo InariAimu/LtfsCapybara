@@ -142,10 +142,10 @@ public partial class Ltfs
         LtfsMAMAttributes.Barcode.SetAsciiString(Barcode);
 
         LtfsMAMAttributes.ApplicationFormatVersion.SetAsciiString(Version);
-        //LtfsMAMAttributes.MediaPool.SetTextString("");
+        LtfsMAMAttributes.MediaPool.SetTextString(formatParam.MediaPool);
 
-        //LtfsMAMAttributes.MediumGloballyUniqueIdentifier.SetAsciiString("");
-        //LtfsMAMAttributes.MediaPoolGloballyUniqueIdentifier.SetAsciiString("");
+        LtfsMAMAttributes.MediumGloballyUniqueIdentifier.SetAsciiString("");
+        LtfsMAMAttributes.MediaPoolGloballyUniqueIdentifier.SetAsciiString("");
 
         LtfsMAMAttributes.WriteAll(writeFunc: _tapeDrive.SetMAMAttribute);
 

@@ -118,6 +118,50 @@ export default {
     pages: {
         comingSoon: '该页面即将上线。',
     },
+    overview: {
+        loadFailed: '加载总览失败。',
+        empty: '暂无总览数据。',
+        cards: {
+            drives: {
+                title: '磁带机',
+                description: '服务端聚合缓存，更新时间：{time}',
+            },
+            tapes: {
+                title: '磁带',
+                description: '基于本地缓存磁带摘要汇总容量信息。',
+            },
+            tasks: {
+                title: '任务',
+                description: '队列任务数量与执行状态均由服务端汇总。',
+            },
+        },
+        metrics: {
+            fake: '模拟设备',
+            mounted: '已识别磁带',
+            ltfsReady: '已识别 LTFS',
+            totalCapacity: '总容量',
+            freeCapacity: '可用容量',
+            usedCapacity: '已用容量',
+            taskGroups: '任务组',
+            executions: '执行记录',
+            activeExecutions: '活动执行',
+        },
+        driveState: {
+            threaded: '已加载',
+            loaded: '已进仓',
+            empty: '无磁带',
+            faulted: '故障',
+            unknown: '未知',
+        },
+        taskStatus: {
+            pending: '待开始',
+            running: '执行中',
+            waitingForConfirmation: '等待确认',
+            completed: '已完成',
+            failed: '失败',
+            cancelled: '已取消',
+        },
+    },
     test: {
         title: '结构测试',
         description: '这里展示 LtfsServer 返回的 StructMetadata 测试数据。',
