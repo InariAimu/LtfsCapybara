@@ -13,7 +13,7 @@ function resolveLongRunningActionTimeoutMs(): number {
 
 const longRunningActionTimeoutMs = resolveLongRunningActionTimeoutMs();
 
-export type TapeMachineState = 'Unknown' | 'Empty' | 'Loaded' | 'Threaded' | 'Faulted';
+export type TapeMachineState = 'Unknown' | 'Empty' | 'Loaded';
 
 export type TapeMachineAction =
     | 'ThreadTape'

@@ -122,7 +122,7 @@ Success response (200):
   "tapeDriveId": "tape0",
   "devicePath": "\\\\.\\Tape0",
   "state": "Empty",
-  "allowedActions": ["ThreadTape", "LoadTape"],
+  "allowedActions": ["ThreadTape", "LoadTape", "UnthreadTape", "EjectTape", "ReadInfo"],
   "lastError": null,
   "isFake": true,
   "cartridgeMemory": null
@@ -150,11 +150,10 @@ Success response (200): same shape as machine snapshot.
 Errors:
 - 400 for unsupported action
 - 404 for unknown drive
-- 400 for invalid action in current state
 
 AI coding notes:
 - Always call GET /api/tapedrives first, then machine snapshot/action APIs.
-- Use allowedActions from snapshot to gate UI actions.
+- Do not gate machine actions by snapshot state; let the command run and handle the returned error.
 
 ---
 
@@ -573,7 +572,7 @@ When generating client code for this API:
 3. URL-encode all path query values for fschildren/fsfiles.
 4. Handle mixed error payloads: error, message, and ProblemDetails.
 5. For task workflows, fetch group first, then mutate, then refresh from response.
-6. For machine actions, read allowedActions before posting action.
+6. For machine actions, post directly and handle command errors from the response.
 7. For local index browsing, use overlayed tree endpoints (/api/local/...) as source of truth for pending operations.
 
 ## 10) Suggested Future Enhancements

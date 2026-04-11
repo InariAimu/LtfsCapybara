@@ -28,8 +28,6 @@ public class TapeDriveService : ITapeDriveService
         public required string DevicePath { get; init; }
         public required string DisplayName { get; set; }
         public required bool IsFake { get; init; }
-        public TapeDriveState State { get; set; } = TapeDriveState.Empty;
-        public string? LastError { get; set; }
         public CartridgeMemory? CartridgeMemory { get; set; }
         public string? LoadedBarcode { get; set; }
         public bool? HasLtfsFilesystem { get; set; }
@@ -39,6 +37,14 @@ public class TapeDriveService : ITapeDriveService
     }
 
     private const int MaxTapeDeviceCount = 32;
+    private static readonly IReadOnlyList<TapeDriveAction> SupportedActions =
+    [
+        TapeDriveAction.ThreadTape,
+        TapeDriveAction.LoadTape,
+        TapeDriveAction.UnthreadTape,
+        TapeDriveAction.EjectTape,
+        TapeDriveAction.ReadInfo,
+    ];
 
     private readonly ITapeDriveRegistry _registry;
     private readonly ILogger<TapeDriveService> _logger;
@@ -234,33 +240,24 @@ public class TapeDriveService : ITapeDriveService
 
             var context = UpdateOrCreateContext(driveInfo);
 
-            EnsureActionAllowed(context.State, action, tapeDriveId);
-
             try
             {
                 switch (action)
                 {
                     case TapeDriveAction.ThreadTape:
                         drive.Load();
-                        context.State = TapeDriveState.Threaded;
-                        context.LastError = null;
                         InvalidateMediaContext(context, clearCartridgeMemory: false);
                         break;
                     case TapeDriveAction.LoadTape:
                         drive.LoadUnthread();
-                        context.State = TapeDriveState.Loaded;
-                        context.LastError = null;
                         InvalidateMediaContext(context, clearCartridgeMemory: false);
                         break;
                     case TapeDriveAction.UnthreadTape:
                         drive.Unthread();
-                        context.State = TapeDriveState.Loaded;
-                        context.LastError = null;
+                        InvalidateMediaContext(context, clearCartridgeMemory: false);
                         break;
                     case TapeDriveAction.EjectTape:
                         drive.Unload();
-                        context.State = TapeDriveState.Empty;
-                        context.LastError = null;
                         InvalidateMediaContext(context, clearCartridgeMemory: true);
                         break;
                     case TapeDriveAction.ReadInfo:
@@ -270,7 +267,7 @@ public class TapeDriveService : ITapeDriveService
                         context.CartridgeMemory = cm;
                         context.LoadedBarcode = ResolveBarcode(drive, cm);
                         SaveCmBinaryAndUpdateRegistry(raw, drive, cm);
-                        context.LastError = null;
+                        context.MediaContextLoaded = true;
                         break;
                     default:
                         throw new ArgumentOutOfRangeException(nameof(action), action, "Unknown tape action.");
@@ -278,13 +275,11 @@ public class TapeDriveService : ITapeDriveService
             }
             catch (Exception ex)
             {
-                context.State = TapeDriveState.Faulted;
-                context.LastError = ex.Message;
                 _logger.LogWarning(ex, "Tape action {Action} failed for {TapeDriveId}", action, tapeDriveId);
                 throw;
             }
 
-            EnsureMediaContextLoaded(context, drive, forceRefresh: action is TapeDriveAction.ThreadTape or TapeDriveAction.LoadTape or TapeDriveAction.ReadInfo);
+            EnsureMediaContextLoaded(context, drive, forceRefresh: true);
             return ToSnapshot(context);
         }
     }
@@ -304,22 +299,14 @@ public class TapeDriveService : ITapeDriveService
             var context = UpdateOrCreateContext(driveInfo);
             EnsureMediaContextLoaded(context, drive);
 
-            if (context.State == TapeDriveState.Empty)
+            if (ResolveSnapshotState(context) == TapeDriveState.Empty)
             {
                 throw new InvalidOperationException($"Tape drive '{tapeDriveId}' does not have a loaded tape.");
             }
 
-            if (context.State == TapeDriveState.Faulted)
-            {
-                throw new InvalidOperationException($"Tape drive '{tapeDriveId}' is faulted and cannot be formatted right now.");
-            }
-
             try
             {
-                if (context.State == TapeDriveState.Loaded)
-                {
-                    drive.Load();
-                }
+                drive.Load();
 
                 var fallbackBarcode = !string.IsNullOrWhiteSpace(context.LoadedBarcode)
                     ? context.LoadedBarcode
@@ -335,8 +322,6 @@ public class TapeDriveService : ITapeDriveService
                 ltfs.ExtraPartitionCount = effectiveFormatParam.ExtraPartitionCount;
                 ltfs.Format(effectiveFormatParam);
 
-                context.State = TapeDriveState.Threaded;
-                context.LastError = null;
                 context.LoadedBarcode = effectiveFormatParam.Barcode;
                 context.HasLtfsFilesystem = true;
                 context.LtfsVolumeName = effectiveFormatParam.VolumeName;
@@ -351,8 +336,6 @@ public class TapeDriveService : ITapeDriveService
             }
             catch (Exception ex)
             {
-                context.State = TapeDriveState.Faulted;
-                context.LastError = ex.Message;
                 _logger.LogWarning(ex, "Tape format failed for {TapeDriveId}", tapeDriveId);
                 throw;
             }
@@ -361,12 +344,6 @@ public class TapeDriveService : ITapeDriveService
 
     private void EnsureMediaContextLoaded(MachineContext context, TapeDriveBase drive, bool forceRefresh = false)
     {
-        if (context.State == TapeDriveState.Empty)
-        {
-            InvalidateMediaContext(context, clearCartridgeMemory: true);
-            return;
-        }
-
         if (context.MediaContextLoaded && !forceRefresh)
         {
             return;
@@ -377,6 +354,8 @@ public class TapeDriveService : ITapeDriveService
 
     private void RefreshMediaContextCore(MachineContext context, TapeDriveBase drive)
     {
+        context.CartridgeMemory = null;
+        context.LoadedBarcode = null;
         context.LtfsContext = null;
         context.HasLtfsFilesystem = null;
         context.LtfsVolumeName = null;
@@ -427,7 +406,7 @@ public class TapeDriveService : ITapeDriveService
         }
         catch (Exception ex)
         {
-            context.HasLtfsFilesystem = false;
+            context.HasLtfsFilesystem = null;
             context.LtfsVolumeName = null;
             context.LtfsContext = null;
             _logger.LogDebug(ex, "ReadLtfs probe failed for {TapeDriveId}", context.TapeDriveId);
@@ -584,39 +563,26 @@ public class TapeDriveService : ITapeDriveService
                 DevicePath = driveInfo.DevicePath,
                 DisplayName = driveInfo.DisplayName,
                 IsFake = driveInfo.IsFake,
-                State = TapeDriveState.Empty,
             },
             (_, old) =>
             {
                 old.DisplayName = driveInfo.DisplayName;
-                old.State = old.State == TapeDriveState.Unknown ? TapeDriveState.Empty : old.State;
                 return old;
             });
     }
 
     private object GetDriveLock(string tapeDriveId) => _locks.GetOrAdd(tapeDriveId, _ => new object());
 
-    private static void EnsureActionAllowed(TapeDriveState state, TapeDriveAction action, string tapeDriveId)
+    private static TapeDriveState ResolveSnapshotState(MachineContext context)
     {
-        if (GetAllowedActions(state).Contains(action))
+        if (!string.IsNullOrWhiteSpace(context.LoadedBarcode)
+            || context.CartridgeMemory is not null
+            || context.HasLtfsFilesystem.HasValue)
         {
-            return;
+            return TapeDriveState.Loaded;
         }
 
-        throw new InvalidOperationException(
-            $"Action '{action}' is not allowed when tape drive '{tapeDriveId}' is in state '{state}'.");
-    }
-
-    private static IReadOnlyList<TapeDriveAction> GetAllowedActions(TapeDriveState state)
-    {
-        return state switch
-        {
-            TapeDriveState.Empty => [TapeDriveAction.ThreadTape, TapeDriveAction.LoadTape],
-            TapeDriveState.Loaded => [TapeDriveAction.ThreadTape, TapeDriveAction.EjectTape, TapeDriveAction.ReadInfo],
-            TapeDriveState.Threaded => [TapeDriveAction.UnthreadTape, TapeDriveAction.EjectTape, TapeDriveAction.ReadInfo],
-            TapeDriveState.Faulted => [TapeDriveAction.EjectTape],
-            _ => [TapeDriveAction.ThreadTape, TapeDriveAction.LoadTape],
-        };
+        return TapeDriveState.Empty;
     }
 
     private static TapeDriveSnapshot ToSnapshot(MachineContext context)
@@ -624,9 +590,9 @@ public class TapeDriveService : ITapeDriveService
         return new TapeDriveSnapshot(
             context.TapeDriveId,
             context.DevicePath,
-            context.State,
-            GetAllowedActions(context.State),
-            context.LastError,
+            ResolveSnapshotState(context),
+            SupportedActions,
+            null,
             context.IsFake,
             context.CartridgeMemory,
             context.LoadedBarcode,

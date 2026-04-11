@@ -15,11 +15,7 @@ import {
 } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import FormatParamDialog from '@/components/FormatParamDialog.vue';
-import {
-    tapeMachineApi,
-    type TapeMachineAction,
-    type TapeMachineSnapshot,
-} from '@/api/modules/tapemachine';
+import { tapeMachineApi, type TapeMachineSnapshot } from '@/api/modules/tapemachine';
 import {
     createDefaultTapeFsFormatParam,
     taskApi,
@@ -42,19 +38,18 @@ const { t } = useI18n();
 const message = useMessage();
 const executionStore = useExecutionStore();
 const fileStore = useFileStore();
+type TapeMachineOperation = 'thread' | 'load' | 'unthread' | 'eject' | 'read-info' | 'format';
 
 const loading = ref(false);
-const actionLoading = ref(false);
-const formatLoading = ref(false);
 const taskLoading = ref(false);
 const isMetricsToggleLoading = ref(false);
+const pendingOperation = ref<TapeMachineOperation | null>(null);
 const snapshot = ref<TapeMachineSnapshot | null>(null);
 const error = ref<string | null>(null);
 const activeTab = ref('operations');
 const showFormatDialog = ref(false);
 
-const stateByIndex = ['Unknown', 'Empty', 'Loaded', 'Threaded', 'Faulted'] as const;
-const actionByIndex = ['ThreadTape', 'LoadTape', 'UnthreadTape', 'EjectTape', 'ReadInfo'] as const;
+const stateByIndex = ['Unknown', 'Empty', 'Loaded'] as const;
 
 const hasSelectedDrive = computed(() => !!props.tapeDriveId && props.tapeDriveId !== 'none');
 const taskGroups = computed(() => fileStore.taskGroups);
@@ -82,6 +77,7 @@ const activeExecutionSpeedHistory = computed(
 const activeExecutionChannelErrorRateHistory = computed(
     () => activeExecution.value?.progress?.channelErrorRateHistory ?? [],
 );
+const operationBusy = computed(() => loading.value || pendingOperation.value !== null);
 const activeExecutionElapsed = computed(() =>
     formatDurationFromTicks(activeExecution.value?.startedAtTicks),
 );
@@ -94,7 +90,8 @@ const scsiMetricsEnabled = computed(
 const driveLogs = computed(() =>
     executionStore.logs.filter(log => log.tapeDriveId === props.tapeDriveId),
 );
-const hasLoadedTape = computed(() => snapshot.value?.state && snapshot.value.state !== 'Empty');
+const normalizedSnapshotState = computed(() => normalizeState(snapshot.value?.state));
+const hasLoadedTape = computed(() => normalizedSnapshotState.value === 'Loaded');
 const matchingTaskGroups = computed(() => {
     const barcode = snapshot.value?.loadedBarcode?.toLowerCase();
     if (!barcode) {
@@ -128,24 +125,12 @@ function normalizeState(state: unknown): string {
     return 'Unknown';
 }
 
-function normalizeAction(action: unknown): string {
-    if (typeof action === 'string') {
-        return action;
-    }
-
-    if (typeof action === 'number') {
-        return actionByIndex[action] ?? '';
-    }
-
-    return '';
-}
-
 const stateLabel = computed(() => {
     if (!snapshot.value) {
         return t('tapeMachine.state.unknown');
     }
 
-    const state = normalizeState(snapshot.value.state).toLowerCase();
+    const state = normalizedSnapshotState.value.toLowerCase();
     return t(`tapeMachine.state.${state}`);
 });
 
@@ -314,9 +299,8 @@ function summarizeTaskTypes(group: TapeFsTaskGroup) {
         }));
 }
 
-function can(action: TapeMachineAction) {
-    const allowedActions = snapshot.value?.allowedActions ?? [];
-    return allowedActions.some(allowedAction => normalizeAction(allowedAction) === action);
+function isOperationLoading(action: TapeMachineOperation) {
+    return pendingOperation.value === action;
 }
 
 async function loadState() {
@@ -352,13 +336,13 @@ async function loadTaskGroups() {
     }
 }
 
-async function runAction(action: 'thread' | 'load' | 'unthread' | 'eject' | 'read-info') {
+async function runAction(action: Exclude<TapeMachineOperation, 'format'>) {
     if (!hasSelectedDrive.value || !props.tapeDriveId) {
         message.warning(t('tapeMachine.errors.selectDriveFirst'));
         return;
     }
 
-    actionLoading.value = true;
+    pendingOperation.value = action;
     error.value = null;
     try {
         const res = await tapeMachineApi.execute(props.tapeDriveId, action);
@@ -373,7 +357,9 @@ async function runAction(action: 'thread' | 'load' | 'unthread' | 'eject' | 'rea
         const msg = err?.response?.data?.message;
         error.value = msg || t('tapeMachine.errors.actionFailed');
     } finally {
-        actionLoading.value = false;
+        if (pendingOperation.value === action) {
+            pendingOperation.value = null;
+        }
     }
 }
 
@@ -430,7 +416,7 @@ async function handleFormatTape(formatParam: TapeFsFormatParam) {
         return;
     }
 
-    formatLoading.value = true;
+    pendingOperation.value = 'format';
     error.value = null;
     try {
         const res = await tapeMachineApi.format(props.tapeDriveId, formatParam);
@@ -445,7 +431,9 @@ async function handleFormatTape(formatParam: TapeFsFormatParam) {
         error.value = msg || t('tapeMachine.errors.formatFailed');
         message.error(msg || t('tapeMachine.errors.formatFailed'));
     } finally {
-        formatLoading.value = false;
+        if (pendingOperation.value === 'format') {
+            pendingOperation.value = null;
+        }
     }
 }
 
@@ -492,45 +480,45 @@ onMounted(() => {
                         <n-space vertical :size="12">
                             <n-space>
                                 <n-button
-                                    :loading="actionLoading"
-                                    :disabled="loading || !can('ThreadTape')"
+                                    :loading="isOperationLoading('thread')"
+                                    :disabled="operationBusy"
                                     @click="runAction('thread')"
                                 >
                                     {{ t('tapeMachine.actions.threadTape') }}
                                 </n-button>
                                 <n-button
-                                    :loading="actionLoading"
-                                    :disabled="loading || !can('LoadTape')"
+                                    :loading="isOperationLoading('load')"
+                                    :disabled="operationBusy"
                                     @click="runAction('load')"
                                 >
                                     {{ t('tapeMachine.actions.loadTape') }}
                                 </n-button>
                                 <n-button
-                                    :loading="actionLoading"
-                                    :disabled="loading || !can('UnthreadTape')"
+                                    :loading="isOperationLoading('unthread')"
+                                    :disabled="operationBusy"
                                     @click="runAction('unthread')"
                                 >
                                     {{ t('tapeMachine.actions.unthreadTape') }}
                                 </n-button>
                                 <n-button
-                                    :loading="actionLoading"
-                                    :disabled="loading || !can('EjectTape')"
+                                    :loading="isOperationLoading('eject')"
+                                    :disabled="operationBusy"
                                     @click="runAction('eject')"
                                 >
                                     {{ t('tapeMachine.actions.ejectTape') }}
                                 </n-button>
                                 <n-button
                                     type="primary"
-                                    :loading="actionLoading"
-                                    :disabled="loading || !can('ReadInfo')"
+                                    :loading="isOperationLoading('read-info')"
+                                    :disabled="operationBusy"
                                     @click="runAction('read-info')"
                                 >
                                     {{ t('tapeMachine.actions.readInfo') }}
                                 </n-button>
                                 <n-button
                                     type="warning"
-                                    :loading="formatLoading"
-                                    :disabled="loading || actionLoading || !canFormatTape"
+                                    :loading="isOperationLoading('format')"
+                                    :disabled="operationBusy || !canFormatTape"
                                     @click="openFormatDialog"
                                 >
                                     {{ t('tapeMachine.actions.formatTape') }}
@@ -556,7 +544,7 @@ onMounted(() => {
                             <tape-info
                                 v-if="snapshot?.cartridgeMemory"
                                 :tape-info-data="snapshot.cartridgeMemory"
-                                :loading="actionLoading"
+                                :loading="operationBusy"
                             />
                         </n-space>
                     </n-tab-pane>
@@ -772,7 +760,7 @@ onMounted(() => {
 
         <format-param-dialog
             v-model:show="showFormatDialog"
-            :loading="formatLoading"
+            :loading="isOperationLoading('format')"
             :title="t('tapeMachine.formatDialogTitle')"
             :submit-text="t('tapeMachine.actions.formatTape')"
             :description="t('tapeMachine.formatWarning')"

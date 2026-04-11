@@ -95,7 +95,7 @@ public sealed class OverviewService : IOverviewService
             }
             catch (Exception ex)
             {
-                stateCounts[ToDriveStateKey(TapeDriveState.Faulted)] += 1;
+                stateCounts[ToDriveStateKey(TapeDriveState.Unknown)] += 1;
                 _logger.LogWarning(ex, "Failed to capture overview snapshot for tape drive {TapeDriveId}", driveInfo.Id);
             }
             finally

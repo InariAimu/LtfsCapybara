@@ -12,7 +12,7 @@ const message = useMessage();
 const isLoading = ref(false);
 const overview = ref<OverviewSnapshot | null>(null);
 
-const driveStateOrder = ['threaded', 'loaded', 'empty', 'faulted', 'unknown'];
+const driveStateOrder = ['loaded', 'empty', 'unknown'];
 const taskStatusOrder = [
     'running',
     'waiting-for-confirmation',
@@ -23,10 +23,8 @@ const taskStatusOrder = [
 ];
 
 const driveStateKeyMap: Record<string, string> = {
-    threaded: 'threaded',
     loaded: 'loaded',
     empty: 'empty',
-    faulted: 'faulted',
     unknown: 'unknown',
 };
 
@@ -71,12 +69,8 @@ function mapCounts(items: OverviewCountItem[], order: string[], getLabel: (key: 
 
 function driveStateTagType(key: string) {
     switch (key) {
-        case 'threaded':
-            return 'success';
         case 'loaded':
-            return 'info';
-        case 'faulted':
-            return 'error';
+            return 'success';
         case 'unknown':
             return 'warning';
         default:

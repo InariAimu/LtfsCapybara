@@ -159,10 +159,8 @@
             activeExecutions: 'Active executions',
         },
         driveState: {
-            threaded: 'Threaded',
             loaded: 'Loaded',
             empty: 'Empty',
-            faulted: 'Faulted',
             unknown: 'Unknown',
         },
         taskStatus: {
@@ -321,8 +319,6 @@
             unknown: 'Unknown',
             empty: 'Empty',
             loaded: 'Loaded',
-            threaded: 'Threaded',
-            faulted: 'Faulted',
         },
         info: {
             barcode: 'Barcode',

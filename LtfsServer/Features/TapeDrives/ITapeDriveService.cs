@@ -11,8 +11,6 @@ public enum TapeDriveState
     Unknown,
     Empty,
     Loaded,
-    Threaded,
-    Faulted,
 }
 
 public enum TapeDriveAction

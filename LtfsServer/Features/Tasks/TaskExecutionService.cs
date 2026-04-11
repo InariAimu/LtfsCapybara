@@ -474,46 +474,39 @@ public sealed class TaskExecutionService : ITaskExecutionService
             Action = incident.Action.ToString(),
             Message = incident.Message,
             Detail = incident.Detail,
-            RequiresConfirmation = incident.Action == TapeDriveIncidentAction.PauseCurrentTasks,
+            RequiresConfirmation = false,
             CreatedAtTicks = DateTime.UtcNow.Ticks,
         };
 
-        if (incident.Action == TapeDriveIncidentAction.NotifyOnly)
+        if (incident.Severity != TapeDriveIncidentSeverity.Critical)
         {
-            PublishLog(state, "warning", dto.Message);
-            Publish(new TaskExecutionEventEnvelope { Type = "incident-raised", Incident = dto, Execution = CloneSnapshot(state.Snapshot) });
+            PublishLog(
+                state,
+                incident.Severity == TapeDriveIncidentSeverity.Warning ? "warning" : "info",
+                dto.Message);
+            Publish(new TaskExecutionEventEnvelope
+            {
+                Type = "incident-raised",
+                Incident = CloneIncident(dto),
+                Execution = CloneSnapshot(state.Snapshot),
+            });
             return TapeDriveIncidentResolution.Continue;
         }
 
-        if (incident.Action == TapeDriveIncidentAction.StopAllOperations)
-        {
-            lock (state.Sync)
-            {
-                state.Snapshot.Error = dto.Message;
-                state.Snapshot.UpdatedAtTicks = DateTime.UtcNow.Ticks;
-            }
-            PublishLog(state, "error", dto.Message);
-            Publish(new TaskExecutionEventEnvelope { Type = "incident-raised", Incident = dto, Execution = CloneSnapshot(state.Snapshot) });
-            return TapeDriveIncidentResolution.Abort;
-        }
-
-        var pending = new PendingIncidentState
-        {
-            Incident = dto,
-            Completion = new TaskCompletionSource<TapeDriveIncidentResolution>(TaskCreationOptions.RunContinuationsAsynchronously),
-        };
-
         lock (state.Sync)
         {
-            state.PendingIncident = pending;
-            state.Snapshot.PendingIncident = dto;
-            state.Snapshot.Status = TaskExecutionStatus.WaitingForConfirmation;
+            state.Snapshot.Error = dto.Message;
             state.Snapshot.UpdatedAtTicks = DateTime.UtcNow.Ticks;
         }
 
-        PublishLog(state, "warning", dto.Message);
-        Publish(new TaskExecutionEventEnvelope { Type = "incident-raised", Incident = CloneIncident(dto), Execution = CloneSnapshot(state.Snapshot) });
-        return pending.Completion.Task.GetAwaiter().GetResult();
+        PublishLog(state, "error", dto.Message);
+        Publish(new TaskExecutionEventEnvelope
+        {
+            Type = "incident-raised",
+            Incident = CloneIncident(dto),
+            Execution = CloneSnapshot(state.Snapshot),
+        });
+        return TapeDriveIncidentResolution.Abort;
     }
 
     private static void MapTask(Ltfs.Ltfs ltfs, TapeFsTask task)

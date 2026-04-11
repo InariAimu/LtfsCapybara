@@ -157,10 +157,8 @@ export default {
             activeExecutions: '活动执行',
         },
         driveState: {
-            threaded: '已加载',
             loaded: '已进仓',
             empty: '无磁带',
-            faulted: '故障',
             unknown: '未知',
         },
         taskStatus: {
@@ -315,8 +313,6 @@ export default {
             unknown: '未知',
             empty: '无磁带',
             loaded: '已进仓',
-            threaded: '已加载',
-            faulted: '故障',
         },
         info: {
             barcode: '条码',
