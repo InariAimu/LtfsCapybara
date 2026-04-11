@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Threading;
 
 using Ltfs.Utils;
@@ -33,6 +34,7 @@ public sealed class LtfsTaskProgressSnapshot
     public string StatusMessage { get; init; } = string.Empty;
     public bool IsCompleted { get; init; }
     public LtfsTapePerformanceSnapshot? TapePerformance { get; init; }
+    public double[]? ChannelErrorRates { get; init; }
 }
 
 public static class LtfsProgressNumberSanitizer
@@ -47,7 +49,10 @@ public partial class Ltfs
 {
     public event EventHandler<LtfsTaskProgressSnapshot>? ProgressUpdated;
 
+    public Func<bool>? ShouldSampleScsiMetrics { get; set; }
+
     private LtfsTapePerformanceSnapshot? _lastTapePerformanceSnapshot;
+    private double[]? _lastChannelErrorRates;
 
     private void PublishProgress(LtfsTaskProgressSnapshot snapshot)
     {
@@ -103,7 +108,11 @@ public partial class Ltfs
         {
             while (!token.IsCancellationRequested)
             {
-                var tapePerformance = TryReadTapePerformanceSnapshot();
+                var scsiMetricsEnabled = IsScsiMetricsSamplingEnabled();
+                var tapePerformance = scsiMetricsEnabled ? TryReadTapePerformanceSnapshot() : null;
+                var channelErrorRates = scsiMetricsEnabled && queueType == LtfsTaskQueueType.Write
+                    ? TryReadChannelErrorRates()
+                    : null;
                 PublishProgress(BuildProgressSnapshot(
                     queueType,
                     totalItems,
@@ -114,6 +123,7 @@ public partial class Ltfs
                     getCurrentItemBytes(),
                     getCurrentItemTotalBytes(),
                     tapePerformance,
+                    channelErrorRates,
                     startTicks,
                     ref lastTicks,
                     ref lastProcessed,
@@ -124,6 +134,18 @@ public partial class Ltfs
         }
         catch (OperationCanceledException)
         {
+        }
+    }
+
+    private bool IsScsiMetricsSamplingEnabled()
+    {
+        try
+        {
+            return ShouldSampleScsiMetrics?.Invoke() ?? true;
+        }
+        catch
+        {
+            return true;
         }
     }
 
@@ -153,6 +175,24 @@ public partial class Ltfs
         }
     }
 
+    private double[]? TryReadChannelErrorRates()
+    {
+        if (!_tapeDrive.TryReadChannelErrorRates(out var channelErrorRates) || channelErrorRates is null)
+            return _lastChannelErrorRates;
+
+        try
+        {
+            var snapshot = channelErrorRates.Take(16).ToArray();
+
+            _lastChannelErrorRates = snapshot;
+            return snapshot;
+        }
+        catch
+        {
+            return _lastChannelErrorRates;
+        }
+    }
+
     private LtfsTaskProgressSnapshot BuildProgressSnapshot(
         LtfsTaskQueueType queueType,
         int totalItems,
@@ -163,6 +203,7 @@ public partial class Ltfs
         long currentItemBytes,
         long currentItemTotalBytes,
         LtfsTapePerformanceSnapshot? tapePerformance,
+        double[]? channelErrorRates,
         long startTicks,
         ref long lastTicks,
         ref ulong lastProcessed,
@@ -198,6 +239,7 @@ public partial class Ltfs
             EstimatedRemainingSeconds = etaSeconds,
             IsCompleted = isCompleted,
             TapePerformance = tapePerformance,
+            ChannelErrorRates = channelErrorRates is null ? null : channelErrorRates.ToArray(),
             StatusMessage = $"{queueType}: {completedItems}/{totalItems} items, {FileSize.FormatSize(processedBytes)} / {FileSize.FormatSize(totalBytes)} {percent:f1}% ETA: {(etaSeconds < 0 ? "-" : etaSeconds.ToString("f0"))}s Speed: {FileSize.FormatSize((ulong)Math.Max(0, instantBytesPerSecond))}/s",
         };
     }

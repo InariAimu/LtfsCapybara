@@ -2,7 +2,11 @@
 import { computed, ref, watch } from 'vue';
 import { NAlert, NCard, NCode, NEmpty, NTag } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
-import type { StructMetadataDocument, StructMetadataField, StructMetadataListLayout } from '@/api/types/structMetadata';
+import type {
+    StructMetadataDocument,
+    StructMetadataField,
+    StructMetadataListLayout,
+} from '@/api/types/structMetadata';
 
 interface Props {
     payload: StructMetadataDocument | string | null;
@@ -92,7 +96,9 @@ const sortedFields = computed(() =>
 
 const gridRows = computed<GridRow[]>(() => {
     const rowCount = parsedState.value.document?.byteLength ?? 0;
-    const occupancy = Array.from({ length: rowCount }, () => Array.from({ length: 8 }, () => false));
+    const occupancy = Array.from({ length: rowCount }, () =>
+        Array.from({ length: 8 }, () => false),
+    );
     const startCells = new Map<string, RenderFieldCell>();
 
     sortedFields.value.forEach((field, index) => {
@@ -102,7 +108,11 @@ const gridRows = computed<GridRow[]>(() => {
         const colSpan = getColumnSpan(field);
 
         for (let rowIndex = startRow; rowIndex < startRow + rowSpan; rowIndex += 1) {
-            for (let columnIndex = startColumn; columnIndex < startColumn + colSpan; columnIndex += 1) {
+            for (
+                let columnIndex = startColumn;
+                columnIndex < startColumn + colSpan;
+                columnIndex += 1
+            ) {
                 if (rowIndex >= 0 && rowIndex < rowCount && columnIndex >= 0 && columnIndex < 8) {
                     occupancy[rowIndex][columnIndex] = true;
                 }
@@ -160,7 +170,9 @@ watch(
         }
 
         if (!fields.some(field => field.memberName === selectedMemberName.value)) {
-            selectedMemberName.value = (fields.find(field => !field.isReserved) ?? fields[0]).memberName;
+            selectedMemberName.value = (
+                fields.find(field => !field.isReserved) ?? fields[0]
+            ).memberName;
         }
     },
     { immediate: true },
@@ -170,9 +182,7 @@ function formatLocation(row: StructMetadataField): string {
     const location = row.location;
     const byteLabel = `${t('structInspector.location.byte')} ${location.byteIndex}`;
     const endByteLabel =
-        location.endByteIndex !== location.byteIndex
-            ? `-${location.endByteIndex}`
-            : '';
+        location.endByteIndex !== location.byteIndex ? `-${location.endByteIndex}` : '';
     const bitLabel =
         location.bitIndex == null || location.bitLength == null
             ? ''
@@ -202,7 +212,11 @@ function formatLengthSource(listLayout: StructMetadataListLayout): string {
 function formatLengthEncoding(listLayout: StructMetadataListLayout): string {
     const segments = [listLayout.lengthEncoding];
     if (listLayout.isLengthMSBFirst != null) {
-        segments.push(listLayout.isLengthMSBFirst ? t('structInspector.msbFirst') : t('structInspector.lsbFirst'));
+        segments.push(
+            listLayout.isLengthMSBFirst
+                ? t('structInspector.msbFirst')
+                : t('structInspector.lsbFirst'),
+        );
     }
 
     return segments.join(' · ');
@@ -259,7 +273,11 @@ function getFieldStyle(colorIndex: number): Record<string, string> {
             </div>
         </template>
 
-        <n-alert v-if="parsedState.error" type="error" :title="t('structInspector.invalidJsonTitle')">
+        <n-alert
+            v-if="parsedState.error"
+            type="error"
+            :title="t('structInspector.invalidJsonTitle')"
+        >
             {{ parsedState.error }}
         </n-alert>
 
@@ -302,7 +320,8 @@ function getFieldStyle(colorIndex: number): Record<string, string> {
                                             class="struct-grid-field"
                                             :class="{
                                                 'struct-grid-field-selected':
-                                                    selectedField?.memberName === cell.field.memberName,
+                                                    selectedField?.memberName ===
+                                                    cell.field.memberName,
                                             }"
                                             :rowspan="cell.rowSpan"
                                             :colspan="cell.colSpan"
@@ -342,7 +361,12 @@ function getFieldStyle(colorIndex: number): Record<string, string> {
                             <n-tag size="small" type="info" :bordered="false">
                                 {{ selectedField.encoding }}
                             </n-tag>
-                            <n-tag v-if="selectedField.isReserved" size="small" type="warning" :bordered="false">
+                            <n-tag
+                                v-if="selectedField.isReserved"
+                                size="small"
+                                type="warning"
+                                :bordered="false"
+                            >
                                 {{ t('structInspector.reservedTag') }}
                             </n-tag>
                             <n-tag size="small" :bordered="false">
@@ -352,58 +376,89 @@ function getFieldStyle(colorIndex: number): Record<string, string> {
 
                         <div class="struct-detail-grid">
                             <div class="struct-detail-item">
-                                <span class="struct-detail-label">{{ t('structInspector.fields.value') }}</span>
+                                <span class="struct-detail-label">{{
+                                    t('structInspector.fields.value')
+                                }}</span>
                                 <n-code :code="selectedField.formattedValue || '-'" word-wrap />
                             </div>
 
                             <div class="struct-detail-item">
-                                <span class="struct-detail-label">{{ t('structInspector.fields.location') }}</span>
+                                <span class="struct-detail-label">{{
+                                    t('structInspector.fields.location')
+                                }}</span>
                                 <span>{{ formatLocation(selectedField) }}</span>
                             </div>
 
                             <div class="struct-detail-item">
-                                <span class="struct-detail-label">{{ t('structInspector.fields.raw') }}</span>
+                                <span class="struct-detail-label">{{
+                                    t('structInspector.fields.raw')
+                                }}</span>
                                 <n-code :code="selectedField.rawHex || '-'" word-wrap />
                             </div>
 
                             <div v-if="selectedField.listLayout" class="struct-detail-item">
-                                <span class="struct-detail-label">{{ t('structInspector.fields.lengthSource') }}</span>
+                                <span class="struct-detail-label">{{
+                                    t('structInspector.fields.lengthSource')
+                                }}</span>
                                 <span>{{ formatLengthSource(selectedField.listLayout) }}</span>
                             </div>
 
                             <div v-if="selectedField.listLayout" class="struct-detail-item">
-                                <span class="struct-detail-label">{{ t('structInspector.fields.lengthField') }}</span>
+                                <span class="struct-detail-label">{{
+                                    t('structInspector.fields.lengthField')
+                                }}</span>
                                 <span>
-                                    {{ formatByteRange(
-                                        selectedField.listLayout.lengthByteIndex,
-                                        selectedField.listLayout.lengthEndByteIndex,
-                                        selectedField.listLayout.lengthByteLength,
-                                    ) }}
+                                    {{
+                                        formatByteRange(
+                                            selectedField.listLayout.lengthByteIndex,
+                                            selectedField.listLayout.lengthEndByteIndex,
+                                            selectedField.listLayout.lengthByteLength,
+                                        )
+                                    }}
                                     · {{ formatLengthEncoding(selectedField.listLayout) }}
                                 </span>
                             </div>
 
                             <div v-if="selectedField.listLayout" class="struct-detail-item">
-                                <span class="struct-detail-label">{{ t('structInspector.fields.valueRange') }}</span>
+                                <span class="struct-detail-label">{{
+                                    t('structInspector.fields.valueRange')
+                                }}</span>
                                 <span>
-                                    {{ formatByteRange(
-                                        selectedField.listLayout.valueByteIndex,
-                                        selectedField.listLayout.valueEndByteIndex,
-                                        selectedField.listLayout.valueByteLength,
-                                    ) }}
+                                    {{
+                                        formatByteRange(
+                                            selectedField.listLayout.valueByteIndex,
+                                            selectedField.listLayout.valueEndByteIndex,
+                                            selectedField.listLayout.valueByteLength,
+                                        )
+                                    }}
                                 </span>
                             </div>
 
                             <div class="struct-detail-item">
-                                <span class="struct-detail-label">{{ t('structInspector.fields.description') }}</span>
-                                <span v-if="selectedField.description || selectedField.matchedValueDescription">
-                                    {{ selectedField.description || t('structInspector.noDescription') }}
+                                <span class="struct-detail-label">{{
+                                    t('structInspector.fields.description')
+                                }}</span>
+                                <span
+                                    v-if="
+                                        selectedField.description ||
+                                        selectedField.matchedValueDescription
+                                    "
+                                >
+                                    {{
+                                        selectedField.description ||
+                                        t('structInspector.noDescription')
+                                    }}
                                 </span>
                                 <span v-else>{{ t('structInspector.noDescription') }}</span>
                             </div>
 
-                            <div v-if="selectedField.matchedValueDescription" class="struct-detail-item">
-                                <span class="struct-detail-label">{{ t('structInspector.currentValueLabel') }}</span>
+                            <div
+                                v-if="selectedField.matchedValueDescription"
+                                class="struct-detail-item"
+                            >
+                                <span class="struct-detail-label">{{
+                                    t('structInspector.currentValueLabel')
+                                }}</span>
                                 <span class="struct-description-current">
                                     {{ selectedField.matchedValueDescription }}
                                 </span>
@@ -413,11 +468,24 @@ function getFieldStyle(colorIndex: number): Record<string, string> {
                                 v-if="selectedField.valueDescriptions.length > 0"
                                 class="struct-detail-item"
                             >
-                                <span class="struct-detail-label">{{ t('structInspector.fields.valueDescriptions') }}</span>
+                                <span class="struct-detail-label">{{
+                                    t('structInspector.fields.valueDescriptions')
+                                }}</span>
                                 <div class="struct-value-descriptions">
-                                    <span v-for="item in selectedField.valueDescriptions" class="struct-description-current"
-                                    :class="item.isCurrent ? 'struct-tag-description-current':'struct-tag-description'">
-                                        {{ item.description ? `${item.value}: ${item.description}` : item.value }}
+                                    <span
+                                        v-for="item in selectedField.valueDescriptions"
+                                        class="struct-description-current"
+                                        :class="
+                                            item.isCurrent
+                                                ? 'struct-tag-description-current'
+                                                : 'struct-tag-description'
+                                        "
+                                    >
+                                        {{
+                                            item.description
+                                                ? `${item.value}: ${item.description}`
+                                                : item.value
+                                        }}
                                     </span>
                                     <!-- <n-tag
                                         v-for="item in selectedField.valueDescriptions"

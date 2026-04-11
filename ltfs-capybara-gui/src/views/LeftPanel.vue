@@ -25,10 +25,12 @@ function renderIcon(icon: Component) {
 
 interface Props {
     selectedKey?: string;
+    embedded?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
     selectedKey: 'overview',
+    embedded: false,
 });
 
 const emit = defineEmits<{
@@ -196,7 +198,18 @@ function handleMenuSelect(key: string) {
 </script>
 
 <template>
-    <n-layout-sider bordered :collapsed-width="48" :width="180" :inverted="inverted">
+    <div v-if="props.embedded" class="embedded-panel">
+        <n-menu
+            :indent="16"
+            :inverted="inverted"
+            :collapsed-width="64"
+            :collapsed-icon-size="22"
+            :options="menuOptions"
+            :value="props.selectedKey"
+            @update:value="handleMenuSelect"
+        />
+    </div>
+    <n-layout-sider v-else bordered :collapsed-width="48" :width="180" :inverted="inverted">
         <n-menu
             :indent="16"
             :inverted="inverted"
@@ -209,4 +222,9 @@ function handleMenuSelect(key: string) {
     </n-layout-sider>
 </template>
 
-<style scoped></style>
+<style scoped>
+.embedded-panel {
+    min-height: 100%;
+    background: rgb(24, 24, 28);
+}
+</style>

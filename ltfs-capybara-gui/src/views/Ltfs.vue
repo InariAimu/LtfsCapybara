@@ -37,9 +37,15 @@ const treeData = ref<LtfsTreeNode[]>([]);
 const nodeMap = new Map<string, LtfsTreeNode>();
 
 const currentTapeName = computed(() => snapshot.value?.loadedBarcode ?? '');
-const noTapeLoaded = computed(() => !snapshot.value || snapshot.value.state === 'Empty' || !snapshot.value.loadedBarcode);
-const unformatted = computed(() => Boolean(snapshot.value?.loadedBarcode) && snapshot.value?.hasLtfsFilesystem === false);
-const ready = computed(() => Boolean(snapshot.value?.loadedBarcode) && snapshot.value?.hasLtfsFilesystem === true);
+const noTapeLoaded = computed(
+    () => !snapshot.value || snapshot.value.state === 'Empty' || !snapshot.value.loadedBarcode,
+);
+const unformatted = computed(
+    () => Boolean(snapshot.value?.loadedBarcode) && snapshot.value?.hasLtfsFilesystem === false,
+);
+const ready = computed(
+    () => Boolean(snapshot.value?.loadedBarcode) && snapshot.value?.hasLtfsFilesystem === true,
+);
 const canBrowse = computed(() => ready.value && Boolean(currentTapeName.value));
 
 function resetTreeState() {
@@ -96,10 +102,12 @@ function applyDirectoryItems(path: string, items: any[]) {
     const normalizedPath = normalizePath(path);
     const directories = items
         .filter(item => item.type !== 'file')
-        .map(item => createNode(
-            normalizedPath === '/' ? `/${item.name}` : `${normalizedPath}/${item.name}`,
-            item.name,
-        ));
+        .map(item =>
+            createNode(
+                normalizedPath === '/' ? `/${item.name}` : `${normalizedPath}/${item.name}`,
+                item.name,
+            ),
+        );
     setNodeChildren(normalizedPath, directories);
 
     const files = items
@@ -137,10 +145,14 @@ async function loadPath(path: string, ensureAncestors = false) {
                     const currentData = await fetchDirectory(currentPath);
                     if (currentData) {
                         const dirs = (currentData.items || []).filter(item => item.type !== 'file');
-                        const children = dirs.map(item => createNode(
-                            currentPath === '/' ? `/${item.name}` : `${currentPath}/${item.name}`,
-                            item.name,
-                        ));
+                        const children = dirs.map(item =>
+                            createNode(
+                                currentPath === '/'
+                                    ? `/${item.name}`
+                                    : `${currentPath}/${item.name}`,
+                                item.name,
+                            ),
+                        );
                         setNodeChildren(currentPath, children);
                     }
                 }
@@ -162,7 +174,9 @@ async function loadPath(path: string, ensureAncestors = false) {
             const paths: string[] = [];
             let current = normalizedPath;
             while (current !== '/') {
-                current = current.includes('/') ? current.slice(0, current.lastIndexOf('/')) || '/' : '/';
+                current = current.includes('/')
+                    ? current.slice(0, current.lastIndexOf('/')) || '/'
+                    : '/';
                 paths.push(makeScopedPathKey(currentTapeName.value, current));
             }
             expandedKeys.value = Array.from(new Set([...expandedKeys.value, ...paths]));
@@ -268,9 +282,21 @@ onMounted(() => {
         </n-layout-header>
         <n-layout has-sider position="absolute" style="top: 43px; bottom: 0">
             <n-layout-sider bordered content-style="padding: 0px 5px 0 10px;">
-                <n-empty v-if="treeLoading" :description="t('ltfs.loading')" style="margin-top: 20px" />
-                <n-empty v-else-if="noTapeLoaded" :description="t('ltfs.notAvailable')" style="margin-top: 20px" />
-                <n-empty v-else-if="unformatted" :description="t('ltfs.unformatted')" style="margin-top: 20px" />
+                <n-empty
+                    v-if="treeLoading"
+                    :description="t('ltfs.loading')"
+                    style="margin-top: 20px"
+                />
+                <n-empty
+                    v-else-if="noTapeLoaded"
+                    :description="t('ltfs.notAvailable')"
+                    style="margin-top: 20px"
+                />
+                <n-empty
+                    v-else-if="unformatted"
+                    :description="t('ltfs.unformatted')"
+                    style="margin-top: 20px"
+                />
                 <n-tree
                     v-else
                     block-line

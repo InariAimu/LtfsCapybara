@@ -72,6 +72,12 @@ public abstract class TapeDriveBase : IDisposable
         return false;
     }
 
+    public virtual bool TryReadChannelErrorRates(out double[]? channelErrorRates)
+    {
+        channelErrorRates = null;
+        return false;
+    }
+
     // Higher-level operations exposed by LTOTapeDrive used by the rest of the codebase.
     // Provide virtual defaults so tests can override only what they need.
     public virtual bool TestUnitReady() => true;

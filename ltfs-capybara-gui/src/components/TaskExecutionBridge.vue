@@ -59,15 +59,15 @@ function notifyIncident(event: TaskExecutionEventEnvelope) {
         return;
     }
 
-    const accepted = window.confirm([incident.message, incident.detail].filter(Boolean).join('\n\n'));
-    void taskApi.resolveIncident(
-        incident.executionId,
-        incident.incidentId,
-        accepted ? 'continue' : 'abort',
-    ).catch(error => {
-        console.error('resolveIncident error', error);
-        message.error('Failed to resolve tape incident.');
-    });
+    const accepted = window.confirm(
+        [incident.message, incident.detail].filter(Boolean).join('\n\n'),
+    );
+    void taskApi
+        .resolveIncident(incident.executionId, incident.incidentId, accepted ? 'continue' : 'abort')
+        .catch(error => {
+            console.error('resolveIncident error', error);
+            message.error('Failed to resolve tape incident.');
+        });
 }
 
 function handleEvent(rawEvent: MessageEvent<string>) {

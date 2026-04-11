@@ -5,6 +5,7 @@ import {
     NButton,
     NCard,
     NEmpty,
+    NSwitch,
     NSpace,
     NTabPane,
     NTag,
@@ -25,6 +26,8 @@ import {
     type TapeFsFormatParam,
     type TapeFsTaskGroup,
 } from '@/api/modules/tasks';
+import ExecutionChannelHeatBar from '@/components/ExecutionChannelHeatBar.vue';
+import ExecutionSpeedChart from '@/components/ExecutionSpeedChart.vue';
 import { useExecutionStore } from '@/stores/executionStore';
 import { useFileStore } from '@/stores/fileStore';
 import TapeInfo from '@/views/TapeInfo.vue';
@@ -44,6 +47,7 @@ const loading = ref(false);
 const actionLoading = ref(false);
 const formatLoading = ref(false);
 const taskLoading = ref(false);
+const isMetricsToggleLoading = ref(false);
 const snapshot = ref<TapeMachineSnapshot | null>(null);
 const error = ref<string | null>(null);
 const activeTab = ref('operations');
@@ -63,9 +67,30 @@ const activeExecution = computed(
             ['pending', 'running', 'waiting-for-confirmation'].includes(execution.status),
         ) ?? null,
 );
-const activeExecutionPerformance = computed(() => activeExecution.value?.progress?.tapePerformance ?? null);
-const activeExecutionElapsed = computed(() => formatDurationFromTicks(activeExecution.value?.startedAtTicks));
-const activeExecutionEta = computed(() => formatRemainingSeconds(activeExecution.value?.progress?.estimatedRemainingSeconds));
+const activeExecutionPerformance = computed(
+    () => activeExecution.value?.progress?.tapePerformance ?? null,
+);
+const activeExecutionChannelErrorRates = computed(
+    () => activeExecution.value?.progress?.channelErrorRates ?? null,
+);
+const activeExecutionHighestErrorRate = computed(
+    () => activeExecution.value?.progress?.highestChannelErrorRate ?? null,
+);
+const activeExecutionSpeedHistory = computed(
+    () => activeExecution.value?.progress?.speedHistory ?? [],
+);
+const activeExecutionChannelErrorRateHistory = computed(
+    () => activeExecution.value?.progress?.channelErrorRateHistory ?? [],
+);
+const activeExecutionElapsed = computed(() =>
+    formatDurationFromTicks(activeExecution.value?.startedAtTicks),
+);
+const activeExecutionEta = computed(() =>
+    formatRemainingSeconds(activeExecution.value?.progress?.estimatedRemainingSeconds),
+);
+const scsiMetricsEnabled = computed(
+    () => activeExecution.value?.scsiMetricsEnabled ?? executionStore.scsiMetricsEnabledPreference,
+);
 const driveLogs = computed(() =>
     executionStore.logs.filter(log => log.tapeDriveId === props.tapeDriveId),
 );
@@ -172,6 +197,27 @@ function formatCompressionRatio(ratio: number): string {
     return `${ratio.toFixed(2)}x`;
 }
 
+function formatPercent(value: number | null | undefined): string {
+    if (!Number.isFinite(value ?? NaN)) {
+        return '-';
+    }
+
+    return `${(value ?? 0).toFixed(1)}%`;
+}
+
+function formatHighestErrorRate(): string {
+    return activeExecutionHighestErrorRate.value?.displayValue ?? '-';
+}
+
+function formatCurrentItemStatus(): string {
+    const progress = activeExecution.value?.progress;
+    if (!progress?.currentItemName) {
+        return '-';
+    }
+
+    return `${progress.currentItemName} (${formatPercent(progress.currentItemPercentComplete)})`;
+}
+
 function formatDurationFromTicks(startedAtTicks: number | null | undefined): string {
     if (!startedAtTicks) {
         return '-';
@@ -231,7 +277,9 @@ function getTaskTypeLabel(taskType: string): string {
     }
 }
 
-function getTaskTypeTagType(taskType: string): 'success' | 'warning' | 'error' | 'info' | 'default' {
+function getTaskTypeTagType(
+    taskType: string,
+): 'success' | 'warning' | 'error' | 'info' | 'default' {
     switch ((taskType || '').toLowerCase()) {
         case 'add':
             return 'success';
@@ -335,7 +383,11 @@ async function runTaskGroup(group: TapeFsTaskGroup) {
     }
 
     try {
-        const res = await taskApi.executeGroup(group.tapeBarcode, props.tapeDriveId);
+        const res = await taskApi.executeGroup(
+            group.tapeBarcode,
+            props.tapeDriveId,
+            executionStore.scsiMetricsEnabledPreference,
+        );
         executionStore.upsertExecution(res.data);
         message.success(t('task.executionStarted'));
         activeTab.value = 'tasks';
@@ -343,6 +395,25 @@ async function runTaskGroup(group: TapeFsTaskGroup) {
         console.error('runTaskGroup error', err);
         const msg = err?.response?.data?.message;
         message.error(msg || t('task.executionStartFailed'));
+    }
+}
+
+async function handleUpdateScsiMetricsEnabled(value: boolean) {
+    executionStore.setScsiMetricsEnabledPreference(value);
+
+    if (!activeExecution.value) {
+        return;
+    }
+
+    isMetricsToggleLoading.value = true;
+    try {
+        const res = await taskApi.updateScsiMetrics(activeExecution.value.executionId, value);
+        executionStore.upsertExecution(res.data);
+    } catch (err) {
+        console.error('handleUpdateScsiMetricsEnabled error', err);
+        message.error(t('task.scsiMetricsUpdateFailed'));
+    } finally {
+        isMetricsToggleLoading.value = false;
     }
 }
 
@@ -492,6 +563,14 @@ onMounted(() => {
 
                     <n-tab-pane name="tasks" :tab="t('tapeMachine.tabs.tasks')">
                         <n-space vertical :size="12">
+                            <n-space justify="space-between" align="center">
+                                <span>{{ t('task.scsiMetrics') }}</span>
+                                <n-switch
+                                    :value="scsiMetricsEnabled"
+                                    :loading="isMetricsToggleLoading"
+                                    @update:value="handleUpdateScsiMetricsEnabled"
+                                />
+                            </n-space>
                             <n-alert v-if="!hasLoadedTape" type="info">
                                 {{ t('tapeMachine.noTapeLoaded') }}
                             </n-alert>
@@ -500,73 +579,6 @@ onMounted(() => {
                                 type="warning"
                             >
                                 {{ t('tapeMachine.autoFormatHint') }}
-                            </n-alert>
-                            <n-alert v-if="activeExecution" type="info">
-                                {{
-                                    t('tapeMachine.executionStatus', {
-                                        status: activeExecution.status,
-                                    })
-                                }}
-                                <span v-if="activeExecution.progress?.statusMessage">
-                                    · {{ activeExecution.progress.statusMessage }}
-                                </span>
-                                <div
-                                    v-if="activeExecutionPerformance"
-                                    class="execution-performance-grid"
-                                >
-                                    <span>
-                                        {{ t('task.executionElapsed') }}:
-                                        {{ activeExecutionElapsed }}
-                                    </span>
-                                    <span>
-                                        {{ t('task.executionEta') }}:
-                                        {{ activeExecutionEta }}
-                                    </span>
-                                    <span>
-                                        {{ t('task.performanceCurrentRate') }}:
-                                        {{
-                                            formatPerformanceRate(
-                                                activeExecutionPerformance.currentDataRateMBPerSecond,
-                                            )
-                                        }}
-                                    </span>
-                                    <span>
-                                        {{ t('task.performanceBufferRate') }}:
-                                        {{
-                                            formatPerformanceRate(
-                                                activeExecutionPerformance.dataRateIntoBufferMBPerSecond,
-                                            )
-                                        }}
-                                    </span>
-                                    <span>
-                                        {{ t('task.performanceNativeRate') }}:
-                                        {{
-                                            formatPerformanceRate(
-                                                activeExecutionPerformance.nativeDataRateMBPerSecond,
-                                            )
-                                        }}
-                                    </span>
-                                    <span>
-                                        {{ t('task.performanceMaxRate') }}:
-                                        {{
-                                            formatPerformanceRate(
-                                                activeExecutionPerformance.maximumDataRateMBPerSecond,
-                                            )
-                                        }}
-                                    </span>
-                                    <span>
-                                        {{ t('task.performanceCompressionRatio') }}:
-                                        {{
-                                            formatCompressionRatio(
-                                                activeExecutionPerformance.compressionRatio,
-                                            )
-                                        }}
-                                    </span>
-                                    <span>
-                                        {{ t('task.performanceRepositions') }}:
-                                        {{ activeExecutionPerformance.repositionsPer100MB }}
-                                    </span>
-                                </div>
                             </n-alert>
 
                             <n-empty
@@ -613,6 +625,123 @@ onMounted(() => {
                                     </n-space>
                                 </n-card>
                             </n-space>
+
+                            <n-card
+                                v-if="activeExecution"
+                                size="small"
+                                :title="t('tapeMachine.executionMetricsTitle')"
+                            >
+                                <div class="execution-status-line">
+                                    <strong>
+                                        {{
+                                            t('tapeMachine.executionStatus', {
+                                                status: activeExecution.status,
+                                            })
+                                        }}
+                                    </strong>
+                                    <span v-if="activeExecution.progress?.statusMessage">
+                                        {{ activeExecution.progress.statusMessage }}
+                                    </span>
+                                    <span>
+                                        {{ formatCurrentItemStatus() }}
+                                    </span>
+                                </div>
+                                <div class="execution-summary-grid">
+                                    <div class="summary-cell">
+                                        <span class="summary-label">{{
+                                            t('task.executionProgress')
+                                        }}</span>
+                                        <strong>{{
+                                            formatPercent(activeExecution.progress?.percentComplete)
+                                        }}</strong>
+                                    </div>
+                                    <div class="summary-cell">
+                                        <span class="summary-label">{{
+                                            t('task.executionElapsed')
+                                        }}</span>
+                                        <strong>{{ activeExecutionElapsed }}</strong>
+                                    </div>
+                                    <div class="summary-cell">
+                                        <span class="summary-label">{{
+                                            t('task.executionEta')
+                                        }}</span>
+                                        <strong>{{ activeExecutionEta }}</strong>
+                                    </div>
+                                    <div class="summary-cell">
+                                        <span class="summary-label">{{
+                                            t('task.performanceCurrentRate')
+                                        }}</span>
+                                        <strong>{{
+                                            formatPerformanceRate(
+                                                activeExecution.progress?.instantSpeedMBPerSecond ??
+                                                    -1,
+                                            )
+                                        }}</strong>
+                                    </div>
+                                    <div class="summary-cell">
+                                        <span class="summary-label">{{
+                                            t('task.performanceAverageRate')
+                                        }}</span>
+                                        <strong>{{
+                                            formatPerformanceRate(
+                                                activeExecution.progress?.averageSpeedMBPerSecond ??
+                                                    -1,
+                                            )
+                                        }}</strong>
+                                    </div>
+                                    <div class="summary-cell">
+                                        <span class="summary-label">{{
+                                            t('task.highestErrorRate')
+                                        }}</span>
+                                        <strong>{{ formatHighestErrorRate() }}</strong>
+                                    </div>
+                                    <div class="summary-cell">
+                                        <span class="summary-label">{{
+                                            t('task.performanceCompressionRatio')
+                                        }}</span>
+                                        <strong>{{
+                                            formatCompressionRatio(
+                                                activeExecutionPerformance?.compressionRatio ?? -1,
+                                            )
+                                        }}</strong>
+                                    </div>
+                                </div>
+                                <div v-if="!scsiMetricsEnabled" class="execution-metrics-disabled">
+                                    {{ t('task.scsiMetricsDisabledHint') }}
+                                </div>
+                            </n-card>
+
+                            <div v-if="activeExecution" class="execution-visual-stack">
+                                <n-card size="small" :title="t('tapeMachine.errorHeatmapTitle')">
+                                    <ExecutionChannelHeatBar
+                                        v-if="
+                                            activeExecutionChannelErrorRateHistory.length &&
+                                            activeExecutionChannelErrorRates?.length &&
+                                            scsiMetricsEnabled
+                                        "
+                                        :history="activeExecutionChannelErrorRateHistory"
+                                        :latest-rates="activeExecutionChannelErrorRates"
+                                    />
+                                    <n-empty
+                                        v-else
+                                        :description="
+                                            scsiMetricsEnabled
+                                                ? t('tapeMachine.noErrorRateData')
+                                                : t('task.scsiMetricsDisabledHint')
+                                        "
+                                    />
+                                </n-card>
+                                <n-card size="small" :title="t('tapeMachine.speedChartTitle')">
+                                    <ExecutionSpeedChart
+                                        v-if="activeExecutionSpeedHistory.length"
+                                        :samples="activeExecutionSpeedHistory"
+                                    />
+                                    <n-empty
+                                        v-else
+                                        :description="t('tapeMachine.noSpeedHistory')"
+                                    />
+                                </n-card>
+                            </div>
                         </n-space>
                     </n-tab-pane>
 
@@ -662,6 +791,45 @@ onMounted(() => {
     gap: 4px 12px;
     margin-top: 8px;
     font-size: 12px;
+}
+
+.execution-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.execution-metrics-disabled {
+    margin-top: 8px;
+    font-size: 12px;
+}
+
+.execution-status-line {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.summary-cell {
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 8px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.summary-label {
+    font-size: 11px;
+    opacity: 0.7;
+}
+
+.execution-visual-stack {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
 }
 </style>
 

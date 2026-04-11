@@ -28,7 +28,7 @@ public static class APITasks
         {
             try
             {
-                return Results.Ok(executionService.StartExecution(tapeBarcode, request.TapeDriveId));
+                return Results.Ok(executionService.StartExecution(tapeBarcode, request.TapeDriveId, request.ScsiMetricsEnabled));
             }
             catch (ArgumentException ex)
             {
@@ -41,6 +41,22 @@ public static class APITasks
             catch (InvalidOperationException ex)
             {
                 return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        app.MapPut("/api/tasks/executions/{executionId}/metrics", (string executionId, UpdateTaskExecutionMetricsRequest request, ITaskExecutionService executionService) =>
+        {
+            try
+            {
+                return Results.Ok(executionService.UpdateScsiMetrics(executionId, request.Enabled));
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return Results.NotFound(new { error = ex.Message });
             }
         });
 

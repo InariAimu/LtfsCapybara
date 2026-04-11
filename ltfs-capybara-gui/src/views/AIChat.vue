@@ -129,8 +129,8 @@ function getAssistantBlobClass(blobType?: DeltaType) {
 function isCollapsibleBlob(message: ChatMessage) {
     return (
         message.blobType === 'reasoning' ||
-            message.blobType === 'tool' ||
-            message.blobType === 'selecting'
+        message.blobType === 'tool' ||
+        message.blobType === 'selecting'
     );
 }
 
@@ -253,7 +253,11 @@ function readUpdatesFromEvent(eventText: string): StreamUpdate[] {
             });
         }
 
-        if (!isToolSelectionStage && Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0) {
+        if (
+            !isToolSelectionStage &&
+            Array.isArray(delta.tool_calls) &&
+            delta.tool_calls.length > 0
+        ) {
             updates.push({
                 raw: chunk,
                 deltaText: renderToolCallDelta(delta.tool_calls),
@@ -509,7 +513,11 @@ function handleClear() {
                         size="small"
                         class="model-select"
                     />
-                    <n-button size="small" quaternary :disabled="!canResend" @click="handleResend"
+                    <n-button
+                        size="small"
+                        quaternary
+                        :disabled="!canResend"
+                        @click="handleResend"
                         >{{ t('aiChat.actions.resend') }}</n-button
                     >
                     <n-button size="small" quaternary @click="handleClear">{{
@@ -558,7 +566,11 @@ function handleClear() {
                                 </button>
                             </div>
                             <div
-                                v-if="item.role === 'assistant' && item.isStreaming && !item.isCollapsed"
+                                v-if="
+                                    item.role === 'assistant' &&
+                                    item.isStreaming &&
+                                    !item.isCollapsed
+                                "
                                 class="bubble bubble-text"
                                 :class="getAssistantBlobClass(item.blobType)"
                             >
@@ -570,7 +582,9 @@ function handleClear() {
                                 :class="getAssistantBlobClass(item.blobType)"
                                 v-html="item.html || item.content"
                             />
-                            <div v-else-if="item.role === 'user'" class="bubble"><p>{{ item.content }}</p></div>
+                            <div v-else-if="item.role === 'user'" class="bubble">
+                                <p>{{ item.content }}</p>
+                            </div>
                             <div v-else></div>
                         </div>
                         <div v-if="showPendingAssistantBubble" class="message-row assistant">
@@ -818,8 +832,9 @@ function handleClear() {
 .message-row.assistant .bubble.blob-tool {
     background: color-mix(in srgb, #06b6d4 15%, var(--chat-card-color));
     border-color: color-mix(in srgb, #06b6d4 40%, var(--chat-border-color));
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
-        'Courier New', monospace;
+    font-family:
+        ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+        monospace;
     font-size: 12px;
 }
 

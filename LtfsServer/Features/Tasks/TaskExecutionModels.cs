@@ -10,6 +10,27 @@ public sealed class TaskExecutionTapePerformanceDto
     public double CompressionRatio { get; set; }
 }
 
+public sealed class TaskExecutionChannelErrorRateDto
+{
+    public int ChannelNumber { get; set; }
+    public double? ErrorRateLog10 { get; set; }
+    public bool IsNegativeInfinity { get; set; }
+    public double HeatLevel { get; set; }
+    public string DisplayValue { get; set; } = string.Empty;
+}
+
+public sealed class TaskExecutionSpeedSampleDto
+{
+    public long TimestampUtcTicks { get; set; }
+    public double SpeedMBPerSecond { get; set; }
+}
+
+public sealed class TaskExecutionChannelErrorHistorySampleDto
+{
+    public long TimestampUtcTicks { get; set; }
+    public TaskExecutionChannelErrorRateDto[] ChannelErrorRates { get; set; } = [];
+}
+
 public static class TaskExecutionStatus
 {
     public const string Pending = "pending";
@@ -27,16 +48,26 @@ public sealed class TaskExecutionProgressDto
     public int CompletedItems { get; set; }
     public ulong TotalBytes { get; set; }
     public ulong ProcessedBytes { get; set; }
+    public ulong RemainingBytes { get; set; }
     public string? CurrentItemPath { get; set; }
+    public string? CurrentItemName { get; set; }
     public long CurrentItemBytes { get; set; }
     public long CurrentItemTotalBytes { get; set; }
+    public double CurrentItemPercentComplete { get; set; }
     public double InstantBytesPerSecond { get; set; }
     public double AverageBytesPerSecond { get; set; }
+    public double InstantSpeedMBPerSecond { get; set; }
+    public double AverageSpeedMBPerSecond { get; set; }
     public double EstimatedRemainingSeconds { get; set; }
+    public double PercentComplete { get; set; }
     public string StatusMessage { get; set; } = string.Empty;
     public bool IsCompleted { get; set; }
     public long TimestampUtcTicks { get; set; }
     public TaskExecutionTapePerformanceDto? TapePerformance { get; set; }
+    public TaskExecutionChannelErrorRateDto[]? ChannelErrorRates { get; set; }
+    public TaskExecutionChannelErrorRateDto? HighestChannelErrorRate { get; set; }
+    public TaskExecutionSpeedSampleDto[] SpeedHistory { get; set; } = [];
+    public TaskExecutionChannelErrorHistorySampleDto[] ChannelErrorRateHistory { get; set; } = [];
 }
 
 public sealed class TaskExecutionIncidentDto
@@ -75,6 +106,7 @@ public sealed class TaskExecutionSnapshot
     public long StartedAtTicks { get; set; }
     public long UpdatedAtTicks { get; set; }
     public long? CompletedAtTicks { get; set; }
+    public bool ScsiMetricsEnabled { get; set; } = true;
     public TaskExecutionProgressDto? Progress { get; set; }
     public TaskExecutionIncidentDto? PendingIncident { get; set; }
 }
@@ -90,9 +122,15 @@ public sealed class TaskExecutionEventEnvelope
 public sealed class ExecuteTapeFsTaskGroupRequest
 {
     public string TapeDriveId { get; set; } = string.Empty;
+    public bool ScsiMetricsEnabled { get; set; } = true;
 }
 
 public sealed class ResolveTaskExecutionIncidentRequest
 {
     public string Resolution { get; set; } = string.Empty;
+}
+
+public sealed class UpdateTaskExecutionMetricsRequest
+{
+    public bool Enabled { get; set; }
 }

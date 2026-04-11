@@ -5,11 +5,27 @@ import type {
     TaskExecutionSnapshot,
 } from '@/api/modules/tasks';
 
+const SCSI_METRICS_PREFERENCE_KEY = 'ltfs-capybara.scsiMetricsEnabled';
+
+function readScsiMetricsPreference() {
+    if (typeof window === 'undefined') {
+        return true;
+    }
+
+    const raw = window.localStorage.getItem(SCSI_METRICS_PREFERENCE_KEY);
+    if (raw === null) {
+        return true;
+    }
+
+    return raw !== 'false';
+}
+
 export const useExecutionStore = defineStore('execution', {
     state: () => ({
         executions: [] as TaskExecutionSnapshot[],
         incidents: [] as TaskExecutionIncident[],
         logs: [] as TaskExecutionLogEntry[],
+        scsiMetricsEnabledPreference: readScsiMetricsPreference(),
     }),
 
     getters: {
@@ -25,7 +41,9 @@ export const useExecutionStore = defineStore('execution', {
         },
 
         upsertExecution(execution: TaskExecutionSnapshot) {
-            const index = this.executions.findIndex(item => item.executionId === execution.executionId);
+            const index = this.executions.findIndex(
+                item => item.executionId === execution.executionId,
+            );
             if (index >= 0) {
                 this.executions[index] = execution;
                 return;
@@ -54,6 +72,13 @@ export const useExecutionStore = defineStore('execution', {
             this.logs.unshift(log);
             if (this.logs.length > 200) {
                 this.logs.length = 200;
+            }
+        },
+
+        setScsiMetricsEnabledPreference(enabled: boolean) {
+            this.scsiMetricsEnabledPreference = enabled;
+            if (typeof window !== 'undefined') {
+                window.localStorage.setItem(SCSI_METRICS_PREFERENCE_KEY, String(enabled));
             }
         },
     },

@@ -84,6 +84,36 @@ public partial class LTOTapeDrive : IDisposable
         }
     }
 
+    public override bool TryReadChannelErrorRates(out double[]? channelErrorRates)
+    {
+        channelErrorRates = null;
+
+        var lockTaken = false;
+        try
+        {
+            Monitor.TryEnter(_ioSync, 1, ref lockTaken);
+            if (!lockTaken)
+                return false;
+
+            _ = ReadErrorRate();
+            channelErrorRates = LastChannelErrRate
+                .Take(16)
+                .Select(static rate => (double)rate)
+                .ToArray();
+            return true;
+        }
+        catch
+        {
+            channelErrorRates = null;
+            return false;
+        }
+        finally
+        {
+            if (lockTaken)
+                Monitor.Exit(_ioSync);
+        }
+    }
+
     public byte[] ReadWERLPage()
     {
         byte[] header = ScsiRead(
@@ -123,6 +153,9 @@ public partial class LTOTapeDrive : IDisposable
         double result = double.NegativeInfinity;
 
         byte[] werlPage = ReadWERLPage();
+        if (werlPage.Length <= 4)
+            return result;
+
         string[] werlData =
             Encoding.ASCII.GetString(werlPage, 4, werlPage.Length - 4)
                 .Split(['\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries);

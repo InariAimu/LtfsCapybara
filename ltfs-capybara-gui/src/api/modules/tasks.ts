@@ -92,16 +92,26 @@ export interface TaskExecutionProgress {
     completedItems: number;
     totalBytes: number;
     processedBytes: number;
+    remainingBytes: number;
     currentItemPath: string | null;
+    currentItemName: string | null;
     currentItemBytes: number;
     currentItemTotalBytes: number;
+    currentItemPercentComplete: number;
     instantBytesPerSecond: number;
     averageBytesPerSecond: number;
+    instantSpeedMBPerSecond: number;
+    averageSpeedMBPerSecond: number;
     estimatedRemainingSeconds: number;
+    percentComplete: number;
     statusMessage: string;
     isCompleted: boolean;
     timestampUtcTicks: number;
     tapePerformance: TaskExecutionTapePerformance | null;
+    channelErrorRates: TaskExecutionChannelErrorRate[] | null;
+    highestChannelErrorRate: TaskExecutionChannelErrorRate | null;
+    speedHistory: TaskExecutionSpeedSample[];
+    channelErrorRateHistory: TaskExecutionChannelErrorHistorySample[];
 }
 
 export interface TaskExecutionTapePerformance {
@@ -111,6 +121,24 @@ export interface TaskExecutionTapePerformance {
     currentDataRateMBPerSecond: number;
     nativeDataRateMBPerSecond: number;
     compressionRatio: number;
+}
+
+export interface TaskExecutionChannelErrorRate {
+    channelNumber: number;
+    errorRateLog10: number | null;
+    isNegativeInfinity: boolean;
+    heatLevel: number;
+    displayValue: string;
+}
+
+export interface TaskExecutionSpeedSample {
+    timestampUtcTicks: number;
+    speedMBPerSecond: number;
+}
+
+export interface TaskExecutionChannelErrorHistorySample {
+    timestampUtcTicks: number;
+    channelErrorRates: TaskExecutionChannelErrorRate[];
 }
 
 export interface TaskExecutionIncident {
@@ -146,6 +174,7 @@ export interface TaskExecutionSnapshot {
     startedAtTicks: number;
     updatedAtTicks: number;
     completedAtTicks: number | null;
+    scsiMetricsEnabled: boolean;
     progress: TaskExecutionProgress | null;
     pendingIncident: TaskExecutionIncident | null;
 }
@@ -252,11 +281,18 @@ export const taskApi = {
         );
     },
 
-    executeGroup(tapeBarcode: string, tapeDriveId: string) {
+    executeGroup(tapeBarcode: string, tapeDriveId: string, scsiMetricsEnabled = true) {
         return apiClient.post<TaskExecutionSnapshot>(
             `/tasks/groups/${encodeURIComponent(tapeBarcode)}/execute`,
-            { tapeDriveId },
+            { tapeDriveId, scsiMetricsEnabled },
             { timeout: 0 },
+        );
+    },
+
+    updateScsiMetrics(executionId: string, enabled: boolean) {
+        return apiClient.put<TaskExecutionSnapshot>(
+            `/tasks/executions/${encodeURIComponent(executionId)}/metrics`,
+            { enabled },
         );
     },
 

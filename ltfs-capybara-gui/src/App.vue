@@ -51,8 +51,7 @@ const themeOverrides: GlobalThemeOverrides = {
             <n-modal-provider>
                 <TaskExecutionBridge />
                 <Main />
-            </n-modal-provider>
-        </n-message-provider
+            </n-modal-provider> </n-message-provider
     ></n-config-provider>
 </template>
 

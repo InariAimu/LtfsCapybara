@@ -16,9 +16,22 @@ namespace LtfsServer.Features.Tasks;
 
 public sealed class TaskExecutionService : ITaskExecutionService
 {
+    private const double BytesPerMegabyte = 1024d * 1024d;
+    private static readonly long SpeedHistoryWindowTicks = TimeSpan.FromMinutes(10).Ticks;
+
     private static double SanitizeFinite(double value, double fallback = -1d)
     {
         return double.IsFinite(value) ? value : fallback;
+    }
+
+    private static double Clamp(double value, double min, double max)
+    {
+        if (value < min)
+            return min;
+        if (value > max)
+            return max;
+
+        return value;
     }
 
     private sealed class ExecutionPreparation
@@ -40,6 +53,8 @@ public sealed class TaskExecutionService : ITaskExecutionService
     {
         public required TaskExecutionSnapshot Snapshot { get; init; }
         public readonly object Sync = new();
+        public readonly List<TaskExecutionSpeedSampleDto> SpeedHistory = [];
+        public readonly List<TaskExecutionChannelErrorHistorySampleDto> ChannelErrorRateHistory = [];
         public PendingIncidentState? PendingIncident { get; set; }
     }
 
@@ -77,7 +92,7 @@ public sealed class TaskExecutionService : ITaskExecutionService
             .ToArray();
     }
 
-    public TaskExecutionSnapshot StartExecution(string tapeBarcode, string tapeDriveId)
+    public TaskExecutionSnapshot StartExecution(string tapeBarcode, string tapeDriveId, bool scsiMetricsEnabled)
     {
         tapeBarcode = NormalizeRequired(tapeBarcode, nameof(tapeBarcode));
         tapeDriveId = NormalizeRequired(tapeDriveId, nameof(tapeDriveId));
@@ -103,6 +118,7 @@ public sealed class TaskExecutionService : ITaskExecutionService
             Status = TaskExecutionStatus.Pending,
             StartedAtTicks = DateTime.UtcNow.Ticks,
             UpdatedAtTicks = DateTime.UtcNow.Ticks,
+            ScsiMetricsEnabled = scsiMetricsEnabled,
         };
 
         var state = new ExecutionState { Snapshot = snapshot };
@@ -116,6 +132,33 @@ public sealed class TaskExecutionService : ITaskExecutionService
     public TaskExecutionSnapshot GetExecution(string executionId)
     {
         var state = GetState(executionId);
+        return CloneSnapshot(state.Snapshot);
+    }
+
+    public TaskExecutionSnapshot UpdateScsiMetrics(string executionId, bool enabled)
+    {
+        var state = GetState(executionId);
+
+        lock (state.Sync)
+        {
+            state.Snapshot.ScsiMetricsEnabled = enabled;
+            state.Snapshot.UpdatedAtTicks = DateTime.UtcNow.Ticks;
+
+            if (!enabled && state.Snapshot.Progress is not null)
+            {
+                state.Snapshot.Progress.TapePerformance = null;
+                state.Snapshot.Progress.ChannelErrorRates = null;
+                state.Snapshot.Progress.HighestChannelErrorRate = null;
+                state.Snapshot.Progress.TimestampUtcTicks = DateTime.UtcNow.Ticks;
+            }
+        }
+
+        Publish(new TaskExecutionEventEnvelope
+        {
+            Type = "execution-updated",
+            Execution = CloneSnapshot(state.Snapshot),
+        });
+
         return CloneSnapshot(state.Snapshot);
     }
 
@@ -213,36 +256,72 @@ public sealed class TaskExecutionService : ITaskExecutionService
 
             ltfs.SetTapeDrive(drive);
             ltfs.LocalIndexRootPath = Path.Combine(_appData.Path, "local");
+            ltfs.ShouldSampleScsiMetrics = () => IsScsiMetricsEnabled(state);
             ltfs.ProgressUpdated += (_, snapshot) =>
             {
                 lock (state.Sync)
                 {
-                    state.Snapshot.Progress = new TaskExecutionProgressDto
+                    var progress = new TaskExecutionProgressDto
                     {
                         QueueType = snapshot.QueueType,
                         TotalItems = snapshot.TotalItems,
                         CompletedItems = snapshot.CompletedItems,
                         TotalBytes = snapshot.TotalBytes,
                         ProcessedBytes = snapshot.ProcessedBytes,
+                        RemainingBytes = snapshot.TotalBytes > snapshot.ProcessedBytes
+                            ? snapshot.TotalBytes - snapshot.ProcessedBytes
+                            : 0ul,
                         CurrentItemPath = snapshot.CurrentItemPath,
+                        CurrentItemName = GetCurrentItemName(snapshot.CurrentItemPath),
                         CurrentItemBytes = snapshot.CurrentItemBytes,
                         CurrentItemTotalBytes = snapshot.CurrentItemTotalBytes,
+                        CurrentItemPercentComplete = snapshot.CurrentItemTotalBytes > 0
+                            ? Clamp(snapshot.CurrentItemBytes * 100d / snapshot.CurrentItemTotalBytes, 0d, 100d)
+                            : 0d,
                         InstantBytesPerSecond = SanitizeFinite(snapshot.InstantBytesPerSecond, 0d),
                         AverageBytesPerSecond = SanitizeFinite(snapshot.AverageBytesPerSecond, 0d),
+                        InstantSpeedMBPerSecond = SanitizeFinite(snapshot.InstantBytesPerSecond / BytesPerMegabyte, 0d),
+                        AverageSpeedMBPerSecond = SanitizeFinite(snapshot.AverageBytesPerSecond / BytesPerMegabyte, 0d),
                         EstimatedRemainingSeconds = SanitizeFinite(snapshot.EstimatedRemainingSeconds),
+                        PercentComplete = snapshot.TotalBytes > 0
+                            ? Clamp(snapshot.ProcessedBytes * 100d / snapshot.TotalBytes, 0d, 100d)
+                            : 0d,
                         StatusMessage = snapshot.StatusMessage,
                         IsCompleted = snapshot.IsCompleted,
                         TimestampUtcTicks = snapshot.TimestampUtc.Ticks,
                         TapePerformance = snapshot.TapePerformance is null ? null : new TaskExecutionTapePerformanceDto
                         {
                             RepositionsPer100MB = snapshot.TapePerformance.RepositionsPer100MB,
-                                DataRateIntoBufferMBPerSecond = SanitizeFinite(snapshot.TapePerformance.DataRateIntoBufferMBPerSecond),
-                                MaximumDataRateMBPerSecond = SanitizeFinite(snapshot.TapePerformance.MaximumDataRateMBPerSecond),
-                                CurrentDataRateMBPerSecond = SanitizeFinite(snapshot.TapePerformance.CurrentDataRateMBPerSecond),
-                                NativeDataRateMBPerSecond = SanitizeFinite(snapshot.TapePerformance.NativeDataRateMBPerSecond),
-                                CompressionRatio = SanitizeFinite(snapshot.TapePerformance.CompressionRatio),
+                            DataRateIntoBufferMBPerSecond = SanitizeFinite(snapshot.TapePerformance.DataRateIntoBufferMBPerSecond),
+                            MaximumDataRateMBPerSecond = SanitizeFinite(snapshot.TapePerformance.MaximumDataRateMBPerSecond),
+                            CurrentDataRateMBPerSecond = SanitizeFinite(snapshot.TapePerformance.CurrentDataRateMBPerSecond),
+                            NativeDataRateMBPerSecond = SanitizeFinite(snapshot.TapePerformance.NativeDataRateMBPerSecond),
+                            CompressionRatio = SanitizeFinite(snapshot.TapePerformance.CompressionRatio),
                         },
                     };
+
+                    UpdateSpeedHistory(state, progress.TimestampUtcTicks, progress.InstantSpeedMBPerSecond);
+                    progress.SpeedHistory = state.SpeedHistory
+                        .Select(sample => new TaskExecutionSpeedSampleDto
+                        {
+                            TimestampUtcTicks = sample.TimestampUtcTicks,
+                            SpeedMBPerSecond = sample.SpeedMBPerSecond,
+                        })
+                        .ToArray();
+                    progress.ChannelErrorRates = BuildChannelErrorRates(snapshot.ChannelErrorRates);
+                    progress.HighestChannelErrorRate = SelectHighestChannelErrorRate(progress.ChannelErrorRates);
+                    UpdateChannelErrorRateHistory(state, progress.TimestampUtcTicks, progress.ChannelErrorRates);
+                    progress.ChannelErrorRateHistory = state.ChannelErrorRateHistory
+                        .Select(sample => new TaskExecutionChannelErrorHistorySampleDto
+                        {
+                            TimestampUtcTicks = sample.TimestampUtcTicks,
+                            ChannelErrorRates = sample.ChannelErrorRates
+                                .Select(rate => CloneChannelErrorRate(rate))
+                                .ToArray(),
+                        })
+                        .ToArray();
+
+                    state.Snapshot.Progress = progress;
                     state.Snapshot.UpdatedAtTicks = DateTime.UtcNow.Ticks;
                 }
 
@@ -510,6 +589,129 @@ public sealed class TaskExecutionService : ITaskExecutionService
             subscriber.Writer.TryWrite(envelope);
     }
 
+    private static TaskExecutionChannelErrorRateDto[]? BuildChannelErrorRates(double[]? rates)
+    {
+        if (rates is null || rates.Length == 0)
+            return null;
+
+        return rates
+            .Take(16)
+            .Select((rate, index) => BuildChannelErrorRate(index + 1, rate))
+            .ToArray();
+    }
+
+    private static TaskExecutionChannelErrorRateDto BuildChannelErrorRate(int channelNumber, double rate)
+    {
+        var isNegativeInfinity = double.IsNegativeInfinity(rate);
+        var finiteRate = double.IsFinite(rate) ? rate : (double?)null;
+        var displayValue = isNegativeInfinity
+            ? "-Inf"
+            : finiteRate?.ToString("F2") ?? "-";
+        var heatLevel = isNegativeInfinity
+            ? 0d
+            : finiteRate.HasValue
+                ? Clamp((finiteRate.Value + 8d) / 8d, 0d, 1d)
+                : 0d;
+
+        return new TaskExecutionChannelErrorRateDto
+        {
+            ChannelNumber = channelNumber,
+            ErrorRateLog10 = finiteRate,
+            IsNegativeInfinity = isNegativeInfinity,
+            HeatLevel = heatLevel,
+            DisplayValue = displayValue,
+        };
+    }
+
+    private static TaskExecutionChannelErrorRateDto? SelectHighestChannelErrorRate(TaskExecutionChannelErrorRateDto[]? rates)
+    {
+        if (rates is null || rates.Length == 0)
+            return null;
+
+        TaskExecutionChannelErrorRateDto? highest = null;
+        foreach (var rate in rates)
+        {
+            if (highest is null)
+            {
+                highest = rate;
+                continue;
+            }
+
+            var currentValue = rate.ErrorRateLog10 ?? double.NegativeInfinity;
+            var highestValue = highest.ErrorRateLog10 ?? double.NegativeInfinity;
+            if (currentValue > highestValue)
+                highest = rate;
+        }
+
+        return highest is null
+            ? null
+            : new TaskExecutionChannelErrorRateDto
+            {
+                ChannelNumber = highest.ChannelNumber,
+                ErrorRateLog10 = highest.ErrorRateLog10,
+                IsNegativeInfinity = highest.IsNegativeInfinity,
+                HeatLevel = highest.HeatLevel,
+                DisplayValue = highest.DisplayValue,
+            };
+    }
+
+    private static void UpdateChannelErrorRateHistory(
+        ExecutionState state,
+        long timestampUtcTicks,
+        TaskExecutionChannelErrorRateDto[]? rates)
+    {
+        if (rates is null || rates.Length == 0)
+            return;
+
+        state.ChannelErrorRateHistory.Add(new TaskExecutionChannelErrorHistorySampleDto
+        {
+            TimestampUtcTicks = timestampUtcTicks,
+            ChannelErrorRates = rates.Select(CloneChannelErrorRate).ToArray(),
+        });
+
+        var minTicks = timestampUtcTicks - SpeedHistoryWindowTicks;
+        state.ChannelErrorRateHistory.RemoveAll(sample => sample.TimestampUtcTicks < minTicks);
+    }
+
+    private static TaskExecutionChannelErrorRateDto CloneChannelErrorRate(TaskExecutionChannelErrorRateDto rate)
+    {
+        return new TaskExecutionChannelErrorRateDto
+        {
+            ChannelNumber = rate.ChannelNumber,
+            ErrorRateLog10 = rate.ErrorRateLog10,
+            IsNegativeInfinity = rate.IsNegativeInfinity,
+            HeatLevel = rate.HeatLevel,
+            DisplayValue = rate.DisplayValue,
+        };
+    }
+
+    private static string? GetCurrentItemName(string? currentItemPath)
+    {
+        if (string.IsNullOrWhiteSpace(currentItemPath))
+            return null;
+
+        var fileName = Path.GetFileName(currentItemPath);
+        return string.IsNullOrWhiteSpace(fileName) ? currentItemPath : fileName;
+    }
+
+    private static void UpdateSpeedHistory(ExecutionState state, long timestampUtcTicks, double speedMBPerSecond)
+    {
+        state.SpeedHistory.Add(new TaskExecutionSpeedSampleDto
+        {
+            TimestampUtcTicks = timestampUtcTicks,
+            SpeedMBPerSecond = SanitizeFinite(speedMBPerSecond, 0d),
+        });
+
+        var minTicks = timestampUtcTicks - SpeedHistoryWindowTicks;
+        state.SpeedHistory.RemoveAll(sample => sample.TimestampUtcTicks < minTicks);
+    }
+
+    private static bool IsScsiMetricsEnabled(ExecutionState state)
+    {
+        lock (state.Sync)
+            return state.Snapshot.ScsiMetricsEnabled;
+    }
+
     private ExecutionState GetState(string executionId)
     {
         executionId = NormalizeRequired(executionId, nameof(executionId));
@@ -540,6 +742,7 @@ public sealed class TaskExecutionService : ITaskExecutionService
             StartedAtTicks = snapshot.StartedAtTicks,
             UpdatedAtTicks = snapshot.UpdatedAtTicks,
             CompletedAtTicks = snapshot.CompletedAtTicks,
+            ScsiMetricsEnabled = snapshot.ScsiMetricsEnabled,
             Progress = snapshot.Progress is null ? null : new TaskExecutionProgressDto
             {
                 QueueType = snapshot.Progress.QueueType,
@@ -547,12 +750,18 @@ public sealed class TaskExecutionService : ITaskExecutionService
                 CompletedItems = snapshot.Progress.CompletedItems,
                 TotalBytes = snapshot.Progress.TotalBytes,
                 ProcessedBytes = snapshot.Progress.ProcessedBytes,
+                RemainingBytes = snapshot.Progress.RemainingBytes,
                 CurrentItemPath = snapshot.Progress.CurrentItemPath,
+                CurrentItemName = snapshot.Progress.CurrentItemName,
                 CurrentItemBytes = snapshot.Progress.CurrentItemBytes,
                 CurrentItemTotalBytes = snapshot.Progress.CurrentItemTotalBytes,
+                CurrentItemPercentComplete = snapshot.Progress.CurrentItemPercentComplete,
                 InstantBytesPerSecond = snapshot.Progress.InstantBytesPerSecond,
                 AverageBytesPerSecond = snapshot.Progress.AverageBytesPerSecond,
+                InstantSpeedMBPerSecond = snapshot.Progress.InstantSpeedMBPerSecond,
+                AverageSpeedMBPerSecond = snapshot.Progress.AverageSpeedMBPerSecond,
                 EstimatedRemainingSeconds = snapshot.Progress.EstimatedRemainingSeconds,
+                PercentComplete = snapshot.Progress.PercentComplete,
                 StatusMessage = snapshot.Progress.StatusMessage,
                 IsCompleted = snapshot.Progress.IsCompleted,
                 TimestampUtcTicks = snapshot.Progress.TimestampUtcTicks,
@@ -565,6 +774,40 @@ public sealed class TaskExecutionService : ITaskExecutionService
                     NativeDataRateMBPerSecond = snapshot.Progress.TapePerformance.NativeDataRateMBPerSecond,
                     CompressionRatio = snapshot.Progress.TapePerformance.CompressionRatio,
                 },
+                ChannelErrorRates = snapshot.Progress.ChannelErrorRates?
+                    .Select(rate => new TaskExecutionChannelErrorRateDto
+                    {
+                        ChannelNumber = rate.ChannelNumber,
+                        ErrorRateLog10 = rate.ErrorRateLog10,
+                        IsNegativeInfinity = rate.IsNegativeInfinity,
+                        HeatLevel = rate.HeatLevel,
+                        DisplayValue = rate.DisplayValue,
+                    })
+                    .ToArray(),
+                HighestChannelErrorRate = snapshot.Progress.HighestChannelErrorRate is null ? null : new TaskExecutionChannelErrorRateDto
+                {
+                    ChannelNumber = snapshot.Progress.HighestChannelErrorRate.ChannelNumber,
+                    ErrorRateLog10 = snapshot.Progress.HighestChannelErrorRate.ErrorRateLog10,
+                    IsNegativeInfinity = snapshot.Progress.HighestChannelErrorRate.IsNegativeInfinity,
+                    HeatLevel = snapshot.Progress.HighestChannelErrorRate.HeatLevel,
+                    DisplayValue = snapshot.Progress.HighestChannelErrorRate.DisplayValue,
+                },
+                SpeedHistory = snapshot.Progress.SpeedHistory
+                    .Select(sample => new TaskExecutionSpeedSampleDto
+                    {
+                        TimestampUtcTicks = sample.TimestampUtcTicks,
+                        SpeedMBPerSecond = sample.SpeedMBPerSecond,
+                    })
+                    .ToArray(),
+                ChannelErrorRateHistory = snapshot.Progress.ChannelErrorRateHistory
+                    .Select(sample => new TaskExecutionChannelErrorHistorySampleDto
+                    {
+                        TimestampUtcTicks = sample.TimestampUtcTicks,
+                        ChannelErrorRates = sample.ChannelErrorRates
+                            .Select(CloneChannelErrorRate)
+                            .ToArray(),
+                    })
+                    .ToArray(),
             },
             PendingIncident = snapshot.PendingIncident is null ? null : CloneIncident(snapshot.PendingIncident),
         };

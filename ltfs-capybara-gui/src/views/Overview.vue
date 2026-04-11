@@ -56,14 +56,12 @@ const generatedAt = computed(() => {
         return '';
     }
 
-    return new Date((overview.value.generatedAtTicks - 621355968000000000) / 10000).toLocaleString();
+    return new Date(
+        (overview.value.generatedAtTicks - 621355968000000000) / 10000,
+    ).toLocaleString();
 });
 
-function mapCounts(
-    items: OverviewCountItem[],
-    order: string[],
-    getLabel: (key: string) => string,
-) {
+function mapCounts(items: OverviewCountItem[], order: string[], getLabel: (key: string) => string) {
     return order.map(key => ({
         key,
         count: items.find(item => item.key === key)?.count ?? 0,
@@ -159,16 +157,24 @@ onMounted(() => {
                     <n-card size="small" embedded>
                         <n-thing>
                             <template #header>{{ t('overview.cards.tapes.title') }}</template>
-                            <template #description>{{ t('overview.cards.tapes.description') }}</template>
+                            <template #description>{{
+                                t('overview.cards.tapes.description')
+                            }}</template>
                             <n-space vertical :size="12">
                                 <div class="overview-value">{{ overview.tapes.totalCount }}</div>
                                 <div class="overview-metrics">
                                     <span>{{ t('overview.metrics.totalCapacity') }}</span>
-                                    <strong>{{ formatFileSize(overview.tapes.totalCapacityBytes) }}</strong>
+                                    <strong>{{
+                                        formatFileSize(overview.tapes.totalCapacityBytes)
+                                    }}</strong>
                                     <span>{{ t('overview.metrics.freeCapacity') }}</span>
-                                    <strong>{{ formatFileSize(overview.tapes.freeCapacityBytes) }}</strong>
+                                    <strong>{{
+                                        formatFileSize(overview.tapes.freeCapacityBytes)
+                                    }}</strong>
                                     <span>{{ t('overview.metrics.usedCapacity') }}</span>
-                                    <strong>{{ formatFileSize(overview.tapes.usedCapacityBytes) }}</strong>
+                                    <strong>{{
+                                        formatFileSize(overview.tapes.usedCapacityBytes)
+                                    }}</strong>
                                 </div>
                             </n-space>
                         </n-thing>
@@ -177,9 +183,13 @@ onMounted(() => {
                     <n-card size="small" embedded>
                         <n-thing>
                             <template #header>{{ t('overview.cards.tasks.title') }}</template>
-                            <template #description>{{ t('overview.cards.tasks.description') }}</template>
+                            <template #description>{{
+                                t('overview.cards.tasks.description')
+                            }}</template>
                             <n-space vertical :size="12">
-                                <div class="overview-value">{{ overview.tasks.queuedTaskCount }}</div>
+                                <div class="overview-value">
+                                    {{ overview.tasks.queuedTaskCount }}
+                                </div>
                                 <div class="overview-metrics">
                                     <span>{{ t('overview.metrics.taskGroups') }}</span>
                                     <strong>{{ overview.tasks.groupCount }}</strong>

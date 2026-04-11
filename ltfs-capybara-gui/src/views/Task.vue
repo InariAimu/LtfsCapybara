@@ -11,6 +11,7 @@ import {
     NButton,
     NEmpty,
     NAlert,
+    NSwitch,
     useMessage,
 } from 'naive-ui';
 import type { TreeOption, DataTableColumns } from 'naive-ui';
@@ -18,6 +19,8 @@ import { useI18n } from 'vue-i18n';
 import { taskApi } from '@/api/modules/tasks';
 import { useFileStore } from '@/stores/fileStore';
 import { useExecutionStore } from '@/stores/executionStore';
+import ExecutionChannelHeatBar from '@/components/ExecutionChannelHeatBar.vue';
+import ExecutionSpeedChart from '@/components/ExecutionSpeedChart.vue';
 import {
     getParentPath,
     getPathName,
@@ -32,19 +35,46 @@ const store = useFileStore();
 const executionStore = useExecutionStore();
 
 const isLoading = ref(false);
+const isMetricsToggleLoading = ref(false);
 const selectedKeys = ref<string[]>([]);
 const selectedTape = ref('');
 const selectedPath = ref('/');
 
-const activeExecution = computed(() =>
-    executionStore.executions.find(execution => execution.tapeBarcode === selectedTape.value) ?? null,
+const activeExecution = computed(
+    () =>
+        executionStore.executions.find(execution => execution.tapeBarcode === selectedTape.value) ??
+        null,
 );
-const activeExecutionPerformance = computed(() => activeExecution.value?.progress?.tapePerformance ?? null);
-const activeExecutionElapsed = computed(() => formatDurationFromTicks(activeExecution.value?.startedAtTicks));
-const activeExecutionEta = computed(() => formatRemainingSeconds(activeExecution.value?.progress?.estimatedRemainingSeconds));
+const activeExecutionPerformance = computed(
+    () => activeExecution.value?.progress?.tapePerformance ?? null,
+);
+const activeExecutionChannelErrorRates = computed(
+    () => activeExecution.value?.progress?.channelErrorRates ?? null,
+);
+const activeExecutionHighestErrorRate = computed(
+    () => activeExecution.value?.progress?.highestChannelErrorRate ?? null,
+);
+const activeExecutionSpeedHistory = computed(
+    () => activeExecution.value?.progress?.speedHistory ?? [],
+);
+const activeExecutionChannelErrorRateHistory = computed(
+    () => activeExecution.value?.progress?.channelErrorRateHistory ?? [],
+);
+const activeExecutionElapsed = computed(() =>
+    formatDurationFromTicks(activeExecution.value?.startedAtTicks),
+);
+const activeExecutionEta = computed(() =>
+    formatRemainingSeconds(activeExecution.value?.progress?.estimatedRemainingSeconds),
+);
+const scsiMetricsEnabled = computed(
+    () => activeExecution.value?.scsiMetricsEnabled ?? executionStore.scsiMetricsEnabledPreference,
+);
 
 const canExecute = computed(
-    () => Boolean(selectedTape.value) && Boolean(store.currentTapeDriveId) && !executionStore.activeExecution,
+    () =>
+        Boolean(selectedTape.value) &&
+        Boolean(store.currentTapeDriveId) &&
+        !executionStore.activeExecution,
 );
 
 // ─── Tree ────────────────────────────────────────────────────────────────────
@@ -252,6 +282,24 @@ function formatCompressionRatio(ratio: number): string {
     return `${ratio.toFixed(2)}x`;
 }
 
+function formatPercent(value: number | null | undefined): string {
+    if (!Number.isFinite(value ?? NaN)) return '-';
+    return `${(value ?? 0).toFixed(1)}%`;
+}
+
+function formatHighestErrorRate(): string {
+    return activeExecutionHighestErrorRate.value?.displayValue ?? '-';
+}
+
+function formatCurrentItemStatus(): string {
+    const progress = activeExecution.value?.progress;
+    if (!progress?.currentItemName) {
+        return '-';
+    }
+
+    return `${progress.currentItemName} (${formatPercent(progress.currentItemPercentComplete)})`;
+}
+
 function formatDurationFromTicks(startedAtTicks: number | null | undefined): string {
     if (!startedAtTicks) return '-';
     const startedAtMs = startedAtTicks / 10000 - 62135596800000;
@@ -409,12 +457,35 @@ async function handleExecuteTasks() {
     }
 
     try {
-        const res = await taskApi.executeGroup(selectedTape.value, store.currentTapeDriveId);
+        const res = await taskApi.executeGroup(
+            selectedTape.value,
+            store.currentTapeDriveId,
+            executionStore.scsiMetricsEnabledPreference,
+        );
         executionStore.upsertExecution(res.data);
         message.success(t('task.executionStarted'));
     } catch (err) {
         console.error('handleExecuteTasks error', err);
         message.error(t('task.executionStartFailed'));
+    }
+}
+
+async function handleUpdateScsiMetricsEnabled(value: boolean) {
+    executionStore.setScsiMetricsEnabledPreference(value);
+
+    if (!activeExecution.value) {
+        return;
+    }
+
+    isMetricsToggleLoading.value = true;
+    try {
+        const res = await taskApi.updateScsiMetrics(activeExecution.value.executionId, value);
+        executionStore.upsertExecution(res.data);
+    } catch (err) {
+        console.error('handleUpdateScsiMetricsEnabled error', err);
+        message.error(t('task.scsiMetricsUpdateFailed'));
+    } finally {
+        isMetricsToggleLoading.value = false;
     }
 }
 
@@ -428,10 +499,20 @@ onMounted(loadTaskGroups);
                 <n-flex align="center" justify="space-between" style="flex-shrink: 0">
                     <n-text strong>{{ t('menu.task') }}</n-text>
                     <n-flex>
-                        <n-button size="small" tertiary :loading="isLoading" @click="loadTaskGroups">
+                        <n-button
+                            size="small"
+                            tertiary
+                            :loading="isLoading"
+                            @click="loadTaskGroups"
+                        >
                             {{ t('task.refresh') }}
                         </n-button>
-                        <n-button size="small" type="primary" :disabled="!canExecute" @click="handleExecuteTasks">
+                        <n-button
+                            size="small"
+                            type="primary"
+                            :disabled="!canExecute"
+                            @click="handleExecuteTasks"
+                        >
                             {{ t('task.execute') }}
                         </n-button>
                     </n-flex>
@@ -455,12 +536,28 @@ onMounted(loadTaskGroups);
                 style="margin-top: 40px"
             />
             <template v-else>
-                <n-alert v-if="activeExecution" type="info" style="margin-bottom: 12px;">
+                <n-flex justify="space-between" align="center" style="margin-bottom: 12px">
+                    <n-text depth="3">{{ t('task.scsiMetrics') }}</n-text>
+                    <n-switch
+                        :value="scsiMetricsEnabled"
+                        :loading="isMetricsToggleLoading"
+                        @update:value="handleUpdateScsiMetricsEnabled"
+                    />
+                </n-flex>
+                <n-alert v-if="activeExecution" type="info" style="margin-bottom: 12px">
                     <div>{{ activeExecution.status }}</div>
                     <div v-if="activeExecution.progress?.statusMessage">
                         {{ activeExecution.progress.statusMessage }}
                     </div>
-                    <div v-if="activeExecutionPerformance" class="execution-performance-grid">
+                    <div class="execution-performance-grid">
+                        <span>
+                            {{ t('task.executionProgress') }}:
+                            {{ formatPercent(activeExecution.progress?.percentComplete) }}
+                        </span>
+                        <span>
+                            {{ t('task.currentItem') }}:
+                            {{ formatCurrentItemStatus() }}
+                        </span>
                         <span>
                             {{ t('task.executionElapsed') }}:
                             {{ activeExecutionElapsed }}
@@ -471,29 +568,86 @@ onMounted(loadTaskGroups);
                         </span>
                         <span>
                             {{ t('task.performanceCurrentRate') }}:
-                            {{ formatPerformanceRate(activeExecutionPerformance.currentDataRateMBPerSecond) }}
+                            {{
+                                formatPerformanceRate(
+                                    activeExecution.progress?.instantSpeedMBPerSecond ?? -1,
+                                )
+                            }}
+                        </span>
+                        <span>
+                            {{ t('task.highestErrorRate') }}:
+                            {{ formatHighestErrorRate() }}
+                        </span>
+                    </div>
+                    <div v-if="!scsiMetricsEnabled" class="execution-metrics-disabled">
+                        {{ t('task.scsiMetricsDisabledHint') }}
+                    </div>
+                    <div
+                        v-if="activeExecutionPerformance && scsiMetricsEnabled"
+                        class="execution-performance-grid"
+                    >
+                        <span>
+                            {{ t('task.executionElapsed') }}:
+                            {{ activeExecutionElapsed }}
+                        </span>
+                        <span>
+                            {{ t('task.executionEta') }}:
+                            {{ activeExecutionEta }}
+                        </span>
+                        <span>
+                            {{ t('task.performanceCurrentRate') }}:
+                            {{
+                                formatPerformanceRate(
+                                    activeExecutionPerformance.currentDataRateMBPerSecond,
+                                )
+                            }}
                         </span>
                         <span>
                             {{ t('task.performanceBufferRate') }}:
-                            {{ formatPerformanceRate(activeExecutionPerformance.dataRateIntoBufferMBPerSecond) }}
+                            {{
+                                formatPerformanceRate(
+                                    activeExecutionPerformance.dataRateIntoBufferMBPerSecond,
+                                )
+                            }}
                         </span>
                         <span>
                             {{ t('task.performanceNativeRate') }}:
-                            {{ formatPerformanceRate(activeExecutionPerformance.nativeDataRateMBPerSecond) }}
+                            {{
+                                formatPerformanceRate(
+                                    activeExecutionPerformance.nativeDataRateMBPerSecond,
+                                )
+                            }}
                         </span>
                         <span>
                             {{ t('task.performanceMaxRate') }}:
-                            {{ formatPerformanceRate(activeExecutionPerformance.maximumDataRateMBPerSecond) }}
+                            {{
+                                formatPerformanceRate(
+                                    activeExecutionPerformance.maximumDataRateMBPerSecond,
+                                )
+                            }}
                         </span>
                         <span>
                             {{ t('task.performanceCompressionRatio') }}:
-                            {{ formatCompressionRatio(activeExecutionPerformance.compressionRatio) }}
-                        </span>
-                        <span>
-                            {{ t('task.performanceRepositions') }}:
-                            {{ activeExecutionPerformance.repositionsPer100MB }}
+                            {{
+                                formatCompressionRatio(activeExecutionPerformance.compressionRatio)
+                            }}
                         </span>
                     </div>
+                    <ExecutionChannelHeatBar
+                        v-if="
+                            activeExecutionChannelErrorRateHistory.length &&
+                            activeExecutionChannelErrorRates?.length &&
+                            scsiMetricsEnabled
+                        "
+                        :history="activeExecutionChannelErrorRateHistory"
+                        :latest-rates="activeExecutionChannelErrorRates"
+                        class="execution-chart-spacing"
+                    />
+                    <ExecutionSpeedChart
+                        v-if="activeExecutionSpeedHistory.length"
+                        :samples="activeExecutionSpeedHistory"
+                        class="execution-chart-spacing"
+                    />
                     <div v-if="activeExecution.pendingIncident?.message">
                         {{ activeExecution.pendingIncident.message }}
                     </div>
@@ -515,5 +669,14 @@ onMounted(loadTaskGroups);
     gap: 4px 12px;
     margin-top: 8px;
     font-size: 12px;
+}
+
+.execution-metrics-disabled {
+    margin-top: 8px;
+    font-size: 12px;
+}
+
+.execution-chart-spacing {
+    margin-top: 10px;
 }
 </style>
