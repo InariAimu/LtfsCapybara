@@ -46,8 +46,8 @@ const indexOnDataPartitionOptions = [
 ];
 
 const indexOnIndexPartitionOptions = [
-    { label: 'SNIA Ltfs', value: 1 },
-    { label: 'lcg', value: 2 },
+    { label: 'SNIA Ltfs (Append)', value: 1 },
+    { label: 'lcg (Overwrite)', value: 2 },
 ];
 
 async function loadServerSettings() {
