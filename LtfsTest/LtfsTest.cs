@@ -1,20 +1,25 @@
 ﻿using System;
 using System.IO.Hashing;
 using System.Reflection;
-using System.Security.Cryptography;
 using System.Reflection.Emit;
-using System.Xml.Schema;
+using System.Security.Cryptography;
 using System.Xml;
+using System.Xml.Schema;
 using System.Xml.Serialization;
-using Xunit.Abstractions;
-using Microsoft.VisualStudio.TestPlatform.Utilities;
-using Ltfs.Label;
+
 using Ltfs;
 using Ltfs.Index;
-using Microsoft.Extensions.Logging.Abstractions;
-using LtfsServer.Features.LocalTapes;
+using Ltfs.Label;
 using Ltfs.Tasks;
+
+using LtfsServer.Features.LocalTapes;
+
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.VisualStudio.TestPlatform.Utilities;
+
 using TapeDrive;
+
+using Xunit.Abstractions;
 
 namespace LtfsTest;
 
@@ -234,6 +239,43 @@ public class LtfsTest
     public Task LocalTapeRegistry_FindsLatestCmEntry()
     {
         return Task.CompletedTask;
+    }
+
+    [Fact]
+    public void LocalTapeRegistry_RemoveTape_ClearsCachedFilesAndSummary()
+    {
+        var registry = new LocalTapeRegistry(new NullLogger<LocalTapeRegistry>());
+        var tapeName = "C00001L6";
+        var rootDirectory = Path.Combine(Path.GetTempPath(), $"ltfs-registry-{Guid.NewGuid():N}");
+        var tapeDirectory = Path.Combine(rootDirectory, tapeName);
+        Directory.CreateDirectory(tapeDirectory);
+
+        try
+        {
+            var cmSourcePath = Path.Combine(AppContext.BaseDirectory, "LTFSIndex_Autosave_C00392L6_GEN3_Pb_B105310_20250830_171308.6964061.cm");
+            var cmTargetPath = Path.Combine(tapeDirectory, $"{tapeName}_G3_20250830_171308.6964061.cm");
+            File.Copy(cmSourcePath, cmTargetPath, overwrite: true);
+
+            var xmlPath = Path.Combine(tapeDirectory, $"{tapeName}_P0_G3_L105310_20250830_171308.6964061.xml");
+            File.WriteAllText(xmlPath, "<index />");
+
+            Assert.True(registry.TryUpsertFile(tapeName, cmTargetPath));
+            Assert.True(registry.TryUpsertFile(tapeName, xmlPath));
+            Assert.NotEmpty(registry.GetFiles(tapeName));
+            Assert.Contains(registry.GetTapeSummaries(), summary => summary.TapeName == tapeName);
+
+            Assert.True(registry.TryRemoveTape(tapeName));
+            Assert.Empty(registry.GetFiles(tapeName));
+            Assert.DoesNotContain(registry.GetTapeSummaries(), summary => summary.TapeName == tapeName);
+            Assert.DoesNotContain(tapeName, registry.GetTapeNames());
+        }
+        finally
+        {
+            if (Directory.Exists(rootDirectory))
+            {
+                Directory.Delete(rootDirectory, recursive: true);
+            }
+        }
     }
 
     [Fact]

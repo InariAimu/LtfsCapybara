@@ -1,20 +1,22 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
-using System.Globalization;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Logging;
+
 using LtoTape;
+
+using Microsoft.Extensions.Logging;
 
 namespace LtfsServer.Features.LocalTapes;
 
 public sealed class LocalTapeRegistry : ILocalTapeRegistry
 {
-    private readonly ConcurrentDictionary<string, ConcurrentBag<TapeFileInfo>> _tapes = new();
-    private readonly ConcurrentDictionary<string, LocalTapeSummary> _tapeSummaries = new();
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, TapeFileInfo>> _tapes = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, LocalTapeSummary> _tapeSummaries = new(StringComparer.Ordinal);
     private readonly ILogger<LocalTapeRegistry> _logger;
     private const string TimestampFormat = "yyyyMMdd_HHmmss.FFFFFFF";
 
@@ -22,7 +24,6 @@ public sealed class LocalTapeRegistry : ILocalTapeRegistry
         "^(.+?)_P(\\d+)_G(\\d+)_L(\\d+)_T(\\d+)\\.xml$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    // Alternate pattern: {Barcode}_P{Partition}_G{Generation}_L{Location}_{yyyyMMdd}_{HHmmss}.{fraction}.xml
     private static readonly Regex AltFilenameRegex = new Regex(
         "^(.+?)_P(\\d+)_G(\\d+)_L(\\d+)_(\\d{8})_(\\d{6}\\.\\d{1,7})\\.xml$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -50,7 +51,6 @@ public sealed class LocalTapeRegistry : ILocalTapeRegistry
 
         try
         {
-            // Ensure directory exists; do not create if missing (but create to be permissive)
             Directory.CreateDirectory(localPath);
             _tapes.Clear();
             _tapeSummaries.Clear();
@@ -59,8 +59,7 @@ public sealed class LocalTapeRegistry : ILocalTapeRegistry
             foreach (var dir in dirs)
             {
                 var tapeName = Path.GetFileName(dir) ?? string.Empty;
-                var bag = new ConcurrentBag<TapeFileInfo>();
-                _tapes[tapeName] = bag;
+                _tapes[tapeName] = new ConcurrentDictionary<string, TapeFileInfo>(StringComparer.OrdinalIgnoreCase);
 
                 IEnumerable<string> files;
                 try
@@ -77,9 +76,9 @@ public sealed class LocalTapeRegistry : ILocalTapeRegistry
                     continue;
                 }
 
-                foreach (var f in files)
+                foreach (var filePath in files)
                 {
-                    TryUpsertFile(tapeName, f);
+                    TryUpsertFile(tapeName, filePath);
                 }
             }
         }
@@ -97,17 +96,17 @@ public sealed class LocalTapeRegistry : ILocalTapeRegistry
         if (string.IsNullOrWhiteSpace(tapeName) || string.IsNullOrWhiteSpace(filePath))
             return false;
 
-        var bag = _tapes.GetOrAdd(tapeName, _ => new ConcurrentBag<TapeFileInfo>());
+        var files = GetOrCreateFiles(tapeName);
 
         if (TryParseXmlFileInfo(tapeName, filePath, out TapeFileIndex? xmlInfo))
         {
-            bag.Add(new TapeFileInfo { Index = xmlInfo });
+            files[filePath] = new TapeFileInfo { Index = xmlInfo };
             return true;
         }
 
         if (TryParseCmFileInfo(tapeName, filePath, out TapeFileIndex? cmInfo))
         {
-            bag.Add(new TapeFileInfo { Index = cmInfo });
+            files[filePath] = new TapeFileInfo { Index = cmInfo };
 
             try
             {
@@ -132,6 +131,47 @@ public sealed class LocalTapeRegistry : ILocalTapeRegistry
         return false;
     }
 
+    public bool TryRemoveFile(string tapeName, string filePath)
+    {
+        if (string.IsNullOrWhiteSpace(tapeName) || string.IsNullOrWhiteSpace(filePath))
+        {
+            return false;
+        }
+
+        if (!_tapes.TryGetValue(tapeName, out var files))
+        {
+            return false;
+        }
+
+        var removed = files.TryRemove(filePath, out _);
+        if (!removed)
+        {
+            return false;
+        }
+
+        if (files.IsEmpty)
+        {
+            _tapes.TryRemove(tapeName, out _);
+            _tapeSummaries.TryRemove(tapeName, out _);
+            return true;
+        }
+
+        RefreshSummaryFromCache(tapeName, files);
+        return true;
+    }
+
+    public bool TryRemoveTape(string tapeName)
+    {
+        if (string.IsNullOrWhiteSpace(tapeName))
+        {
+            return false;
+        }
+
+        var removedFiles = _tapes.TryRemove(tapeName, out _);
+        var removedSummary = _tapeSummaries.TryRemove(tapeName, out _);
+        return removedFiles || removedSummary;
+    }
+
     public IEnumerable<string> GetTapeNames()
     {
         return _tapes.Keys.OrderBy(k => k);
@@ -149,10 +189,17 @@ public sealed class LocalTapeRegistry : ILocalTapeRegistry
         if (string.IsNullOrEmpty(tapeName))
             return Array.Empty<TapeFileInfo>();
 
-        if (_tapes.TryGetValue(tapeName, out var bag))
-            return bag.ToArray();
+        if (_tapes.TryGetValue(tapeName, out var files))
+            return files.Values.ToArray();
 
         return Array.Empty<TapeFileInfo>();
+    }
+
+    private ConcurrentDictionary<string, TapeFileInfo> GetOrCreateFiles(string tapeName)
+    {
+        return _tapes.GetOrAdd(
+            tapeName,
+            _ => new ConcurrentDictionary<string, TapeFileInfo>(StringComparer.OrdinalIgnoreCase));
     }
 
     private bool TryParseXmlFileInfo(string tapeName, string filePath, out TapeFileIndex info)
@@ -318,6 +365,50 @@ public sealed class LocalTapeRegistry : ILocalTapeRegistry
             incoming.TapeName,
             incoming,
             (_, existing) => incoming.Ticks >= existing.Ticks ? incoming : existing);
+    }
+
+    private void RefreshSummaryFromCache(
+        string tapeName,
+        ConcurrentDictionary<string, TapeFileInfo>? files = null)
+    {
+        files ??= _tapes.TryGetValue(tapeName, out var existingFiles)
+            ? existingFiles
+            : null;
+
+        if (files is null || files.IsEmpty)
+        {
+            _tapeSummaries.TryRemove(tapeName, out _);
+            return;
+        }
+
+        var latestCm = files
+            .Where(static entry => entry.Value.Index.FileName.EndsWith(".cm", StringComparison.OrdinalIgnoreCase)
+                || entry.Value.Index.FileName.EndsWith(".cmbin", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(entry => entry.Value.Index.Ticks)
+            .FirstOrDefault();
+
+        if (latestCm.Equals(default(KeyValuePair<string, TapeFileInfo>)))
+        {
+            _tapeSummaries.TryRemove(tapeName, out _);
+            return;
+        }
+
+        try
+        {
+            var cartridgeMemory = new CartridgeMemory();
+            if (latestCm.Key.EndsWith(".cmbin", StringComparison.OrdinalIgnoreCase))
+                cartridgeMemory.FromBinaryFile(latestCm.Key);
+            else
+                cartridgeMemory.FromLcgCmFile(latestCm.Key);
+
+            var summary = BuildSummary(tapeName, latestCm.Value.Index, cartridgeMemory);
+            UpsertSummary(summary);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to refresh cartridge memory summary for {tapeName} from {file}", tapeName, latestCm.Key);
+            _tapeSummaries.TryRemove(tapeName, out _);
+        }
     }
 }
 

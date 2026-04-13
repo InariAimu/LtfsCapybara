@@ -384,6 +384,8 @@ public class TapeDriveService : ITapeDriveService
             {
                 drive.Load();
 
+                var originalBarcode = SanitizeBarcode(context.LoadedBarcode ?? string.Empty);
+
                 var fallbackBarcode = !string.IsNullOrWhiteSpace(context.LoadedBarcode)
                     ? context.LoadedBarcode
                     : tapeDriveId;
@@ -404,6 +406,7 @@ public class TapeDriveService : ITapeDriveService
                 context.LtfsContext = ltfs;
                 context.MediaContextLoaded = true;
 
+                CleanupRenamedLocalTapeData(originalBarcode, effectiveFormatParam.Barcode);
                 RefreshLocalIndexRegistry(effectiveFormatParam.Barcode);
 
                 TryRefreshCartridgeMemory(context, drive);
@@ -416,6 +419,36 @@ public class TapeDriveService : ITapeDriveService
                 throw;
             }
         }
+    }
+
+    private void CleanupRenamedLocalTapeData(string originalBarcode, string formattedBarcode)
+    {
+        if (string.IsNullOrWhiteSpace(originalBarcode) || string.IsNullOrWhiteSpace(formattedBarcode))
+        {
+            return;
+        }
+
+        var safeOriginalBarcode = SanitizeBarcode(originalBarcode);
+        var safeFormattedBarcode = SanitizeBarcode(formattedBarcode);
+        if (string.Equals(safeOriginalBarcode, safeFormattedBarcode, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var originalDirectory = Path.Combine(_appData.Path, "local", safeOriginalBarcode);
+        if (Directory.Exists(originalDirectory))
+        {
+            try
+            {
+                Directory.Delete(originalDirectory, recursive: true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to delete local tape cache directory {Directory}", originalDirectory);
+            }
+        }
+
+        _ = _localTapeRegistry.TryRemoveTape(safeOriginalBarcode);
     }
 
     private void EnsureMediaContextLoaded(MachineContext context, TapeDriveBase drive, bool forceRefresh = false)

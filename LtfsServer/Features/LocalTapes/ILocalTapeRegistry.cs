@@ -29,4 +29,14 @@ public interface ILocalTapeRegistry
     /// Parse and upsert a single file into the registry cache.
     /// </summary>
     bool TryUpsertFile(string tapeName, string filePath);
+    
+    /// <summary>
+    /// Remove a single cached file record from the registry.
+    /// </summary>
+    bool TryRemoveFile(string tapeName, string filePath);
+    
+    /// <summary>
+    /// Remove all cached records for a tape.
+    /// </summary>
+    bool TryRemoveTape(string tapeName);
 }
