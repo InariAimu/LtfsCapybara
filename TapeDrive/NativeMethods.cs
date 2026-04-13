@@ -7,38 +7,13 @@ namespace TapeDrive;
 
 internal static class NativeMethods
 {
+    public static bool IsWindowsTapePlatform => OperatingSystem.IsWindows();
 
-    public static bool IsWindowsTapePlatform
-    {
-        get
-        {
-#if TAPEDRIVE_WINDOWS
-            return true;
-#elif TAPEDRIVE_LINUX
-            return false;
-#else
-            return OperatingSystem.IsWindows();
-#endif
-        }
-    }
-
-    public static bool IsLinuxTapePlatform
-    {
-        get
-        {
-#if TAPEDRIVE_LINUX
-            return true;
-#elif TAPEDRIVE_WINDOWS
-            return false;
-#else
-            return OperatingSystem.IsLinux();
-#endif
-        }
-    }
+    public static bool IsLinuxTapePlatform => OperatingSystem.IsLinux();
 
     public const uint LinuxSgIo = 0x2285;
 
-    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    [DllImport("kernel32.dll", EntryPoint = "CreateFile", SetLastError = true, CharSet = CharSet.Auto)]
     private static extern SafeFileHandle CreateFileWindows(
         string lpFileName,
         uint dwDesiredAccess,
@@ -49,7 +24,7 @@ internal static class NativeMethods
         IntPtr hTemplateFile);
 
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [DllImport("kernel32.dll", EntryPoint = "DeviceIoControl", SetLastError = true)]
     private static extern bool DeviceIoControlWindows(
         SafeFileHandle hDevice,
         uint dwIoControlCode,
@@ -70,6 +45,8 @@ internal static class NativeMethods
     {
         if (IsWindowsTapePlatform)
         {
+            Console.WriteLine($"Opening tape drive at {devicePath} using Windows API...");
+
             return CreateFileWindows(devicePath,
                 0xC0000000,
                 3,

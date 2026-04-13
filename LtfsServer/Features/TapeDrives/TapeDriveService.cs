@@ -262,6 +262,8 @@ public class TapeDriveService : ITapeDriveService
                 var details = string.Join(" ", new[] { vendor, product }.Where(s => !string.IsNullOrWhiteSpace(s)));
                 if (!string.IsNullOrWhiteSpace(details))
                     displayName = details;
+
+                Console.WriteLine($"Successfully probed tape drive at {devicePath}: {details}");
             }
 
             drives.Add(new DiscoveredDrive(driveId, devicePath, displayName, false, drive));
