@@ -106,7 +106,6 @@ onMounted(() => {
 
         <n-card :title="t('settings.serverSettings')" size="small">
             <n-form label-placement="left" label-width="180">
-
                 <n-form-item :label="t('settings.indexOnIndexPartition')">
                     <n-select
                         v-model:value="serverSettings.indexOnIndexPartitionId"
@@ -114,7 +113,7 @@ onMounted(() => {
                         :loading="isServerSettingsLoading"
                     />
                 </n-form-item>
-                
+
                 <n-form-item :label="t('settings.indexOnDataPartition')">
                     <n-select
                         v-model:value="serverSettings.indexOnDataPartitionId"
