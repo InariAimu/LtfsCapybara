@@ -9,7 +9,7 @@
 
 </div>
 
-LtfsCapybara is a Windows-focused LTFS toolkit for managing LTO tape media. The repository includes the core LTFS libraries, a tape-drive hardware access layer, cartridge-memory parsing, an ASP.NET Core API server, and a Vue + Tauri desktop GUI.
+LtfsCapybara is an LTFS toolkit for managing LTO tape media on Windows and Linux. The repository includes the core LTFS libraries, a tape-drive hardware access layer, cartridge-memory parsing, an ASP.NET Core API server, and a Vue + Tauri desktop GUI.
 
 ## Overview
 
@@ -40,6 +40,14 @@ TapeDrive (Windows tape I/O + SCSI)
 LtoTape (cartridge metadata parsing)
 ```
 
+## Platform Support
+
+- `Ltfs`, `LtoTape`, and `LtfsServer` target `.NET 8` and build on Windows and Linux.
+- `TapeDrive` supports direct tape-device access on Windows and Linux.
+- Windows tape discovery uses `\\.\TapeN` devices.
+- Linux tape discovery uses standard `/dev/nst*` and `/dev/st*` device nodes.
+- The desktop GUI is built with Tauri and Vue 3; GUI packaging still depends on the target platform's Tauri prerequisites.
+
 ## Repository Layout
 
 - [Ltfs/README.md](Ltfs/README.md): core LTFS library for format, read, write, verify, labels, and index operations.
@@ -60,7 +68,7 @@ LtoTape (cartridge metadata parsing)
 - Node.js
 - pnpm for GUI development
 - Rust toolchain and Tauri prerequisites for desktop GUI builds
-- Windows for direct tape-drive access
+- Windows or Linux for direct tape-drive access
 
 ## Getting Started
 
@@ -120,7 +128,7 @@ See [LtfsServer/README.md](LtfsServer/README.md) and `protocol/apidoc.md` for mo
 
 ## Development Notes
 
-- Tape hardware access is implemented in `TapeDrive` and is Windows-specific in practice.
+- Tape hardware access is implemented in `TapeDrive` and supports Windows plus Linux SCSI pass-through backends.
 - `TapeDriveBase` allows the higher-level LTFS code and tests to run against fake drives.
 - The GUI uses Vue 3, Naive UI, Pinia, vue-i18n, and Tauri 2.
 - The repository includes both direct library usage examples and server-backed UI flows.

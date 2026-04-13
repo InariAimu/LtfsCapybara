@@ -69,3 +69,4 @@ dotnet build LtfsServer/LtfsServer.csproj
 
 - This is not a generic sample API; it is the repository's integration point between the UI and the tape/LTFS libraries.
 - The feature folders under `Features/` map closely to API surface areas and service boundaries.
+- Tape drive discovery supports Windows `\\.\TapeN` devices and Linux `/dev/nst*` plus `/dev/st*` device nodes.

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 
 using Ltfs;
 
@@ -176,40 +177,113 @@ public class TapeDriveService : ITapeDriveService
             ];
         }
 
-        var drives = new List<DiscoveredDrive>();
+        if (OperatingSystem.IsWindows())
+            return DiscoverWindowsDrives();
 
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            return drives;
+        if (OperatingSystem.IsLinux())
+            return DiscoverLinuxDrives();
+
+        return [];
+    }
+
+    private List<DiscoveredDrive> DiscoverWindowsDrives()
+    {
+        var drives = new List<DiscoveredDrive>();
 
         for (var i = 0; i < MaxTapeDeviceCount; i++)
         {
             var devicePath = $@"\\.\Tape{i}";
-            LTOTapeDrive? drive = null;
 
-            try
-            {
-                drive = new LTOTapeDrive(devicePath, open: true);
-
-                var displayName = devicePath;
-                if (drive.GetInquiry())
-                {
-                    var vendor = drive.Vendor.Trim();
-                    var product = drive.Product.Trim();
-                    var details = string.Join(" ", new[] { vendor, product }.Where(s => !string.IsNullOrWhiteSpace(s)));
-                    if (!string.IsNullOrWhiteSpace(details))
-                        displayName = details;
-                }
-
-                drives.Add(new DiscoveredDrive($"tape{i}", devicePath, displayName, false, drive));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "Tape device probe failed for {DevicePath}", devicePath);
-                drive?.Dispose();
-            }
+            TryProbeDrive(devicePath, $"tape{i}", drives);
         }
 
         return drives;
+    }
+
+    private List<DiscoveredDrive> DiscoverLinuxDrives()
+    {
+        var drives = new List<DiscoveredDrive>();
+        var devicePaths = EnumerateLinuxTapeDevicePaths().ToArray();
+
+        foreach (var devicePath in devicePaths)
+        {
+            var driveId = BuildLinuxDriveId(devicePath);
+            TryProbeDrive(devicePath, driveId, drives);
+        }
+
+        return drives;
+    }
+
+    private IEnumerable<string> EnumerateLinuxTapeDevicePaths()
+    {
+        const string devRoot = "/dev";
+
+        if (!Directory.Exists(devRoot))
+            yield break;
+
+        var seenPaths = new HashSet<string>(StringComparer.Ordinal);
+        string[] patterns = ["nst*", "st*"];
+
+        foreach (var pattern in patterns)
+        {
+            IEnumerable<string> candidates;
+
+            try
+            {
+                candidates = Directory.EnumerateFiles(devRoot, pattern, SearchOption.TopDirectoryOnly);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Tape device enumeration failed for pattern {Pattern}", pattern);
+                continue;
+            }
+
+            foreach (var path in candidates.OrderBy(static path => path, StringComparer.Ordinal))
+            {
+                if (seenPaths.Add(path))
+                    yield return path;
+            }
+        }
+    }
+
+    private void TryProbeDrive(string devicePath, string driveId, ICollection<DiscoveredDrive> drives)
+    {
+        LTOTapeDrive? drive = null;
+
+        try
+        {
+            drive = new LTOTapeDrive(devicePath, open: true);
+
+            var displayName = devicePath;
+            if (drive.GetInquiry())
+            {
+                var vendor = drive.Vendor.Trim();
+                var product = drive.Product.Trim();
+                var details = string.Join(" ", new[] { vendor, product }.Where(s => !string.IsNullOrWhiteSpace(s)));
+                if (!string.IsNullOrWhiteSpace(details))
+                    displayName = details;
+            }
+
+            drives.Add(new DiscoveredDrive(driveId, devicePath, displayName, false, drive));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Tape device probe failed for {DevicePath}", devicePath);
+            drive?.Dispose();
+        }
+    }
+
+    private static string BuildLinuxDriveId(string devicePath)
+    {
+        var fileName = Path.GetFileName(devicePath);
+        if (string.IsNullOrWhiteSpace(fileName))
+            return "tape-linux";
+
+        var numericSuffix = Regex.Match(fileName, "(\\d+)$");
+        if (numericSuffix.Success)
+            return $"tape{numericSuffix.Groups[1].Value}";
+
+        return $"tape-{fileName.ToLowerInvariant()}";
     }
 
     public TapeDriveSnapshot GetSnapshot(string tapeDriveId)

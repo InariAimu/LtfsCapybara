@@ -20,6 +20,9 @@ public partial class LTOTapeDrive
 
     private const uint IOCTL_SCSI_PASS_THROUGH = 0x4D004;
     private const uint IOCTL_SCSI_PASS_THROUGH_DIRECT = 0x4D014;
+    private const int SG_DXFER_NONE = -1;
+    private const int SG_DXFER_TO_DEV = -2;
+    private const int SG_DXFER_FROM_DEV = -3;
 
     public override ushort LastStatus { get; protected set; } = SCSI_STATUS_GOOD;
 
@@ -82,6 +85,33 @@ public partial class LTOTapeDrive
         public byte[] Sense;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SG_IO_HDR
+    {
+        public int InterfaceId;
+        public int DxferDirection;
+        public byte CmdLen;
+        public byte MxSbLen;
+        public ushort IovecCount;
+        public uint DxferLen;
+        public IntPtr Dxferp;
+        public IntPtr Cmdp;
+        public IntPtr Sbp;
+        public uint Timeout;
+        public uint Flags;
+        public int PackId;
+        public IntPtr UserPtr;
+        public byte Status;
+        public byte MaskedStatus;
+        public byte MsgStatus;
+        public byte SbLenWr;
+        public ushort HostStatus;
+        public ushort DriverStatus;
+        public int Resid;
+        public uint Duration;
+        public uint Info;
+    }
+
     private SCSI_PASS_THROUGH_WITH_BUFFERS _sptwb = new()
     {
         spt = new SCSI_PASS_THROUGH
@@ -111,83 +141,199 @@ public partial class LTOTapeDrive
             if (_handle is null || _handle.IsInvalid)
                 return false;
 
-            _sptwb.spt.CdbLength = (byte)cdb.Length;
-            _sptwb.spt.DataIn = dataIn;
-            _sptwb.spt.DataTransferLength = bufferLength;
-            _sptwb.spt.DataBuffer = dataBuffer;
-            _sptwb.spt.TimeOutValue = timeoutSeconds;
-            _sptwb.spt.SenseInfoOffset = senseInfoOffset;
+            if (NativeMethods.IsWindowsTapePlatform)
+                return IOCtlDirectWindows(cdb, dataBuffer, bufferLength, dataIn, timeoutSeconds);
 
-            Array.Copy(cdb, _sptwb.spt.Cdb, cdb.Length);
+            if (NativeMethods.IsLinuxTapePlatform)
+                return IOCtlDirectLinux(cdb, dataBuffer, bufferLength, dataIn, timeoutSeconds);
 
-            if (bufferPtr == IntPtr.Zero)
-                bufferPtr = Marshal.AllocHGlobal((int)sptSize);
-
-            try
-            {
-                Marshal.StructureToPtr(_sptwb, bufferPtr, false);
-                int bytesReturned = 0;
-
-                bool result = NativeMethods.DeviceIoControl(_handle, IOCTL_SCSI_PASS_THROUGH_DIRECT,
-                    bufferPtr, sptSize, bufferPtr, sptSize, ref bytesReturned, IntPtr.Zero);
-
-                if (!result)
-                {
-                    int error = Marshal.GetLastWin32Error();
-                    ApplyIncidentPolicy(new TapeDriveIncident
-                    {
-                        Source = TapeDriveIncidentSource.Win32Error,
-                        Severity = TapeDriveIncidentSeverity.Critical,
-                        Action = TapeDriveIncidentAction.StopAllOperations,
-                        Message = new Win32Exception(error).Message,
-                        Detail = $"DeviceIoControl failed with Win32Error={error}.",
-                        Win32ErrorCode = error,
-                        Cdb = [.. cdb],
-                    });
-                }
-                else
-                {
-                    var output = Marshal.PtrToStructure<SCSI_PASS_THROUGH_WITH_BUFFERS>(bufferPtr);
-                    Sense = output.Sense;
-                    LastStatus = output.spt.ScsiStatus;
-
-                    switch (output.spt.ScsiStatus)
-                    {
-                        case SCSI_STATUS_GOOD:
-                            break;
-
-                        case SCSI_STATUS_CHECK_CONDITION:
-                            ParseFixedFormatSense();
-                            if (ParsedSense != null)
-                            {
-                                HandleSense(cdb);
-                            }
-                            break;
-
-                        default:
-                            ApplyIncidentPolicy(new TapeDriveIncident
-                            {
-                                Source = TapeDriveIncidentSource.ScsiStatus,
-                                Severity = TapeDriveIncidentSeverity.Critical,
-                                Action = TapeDriveIncidentAction.StopAllOperations,
-                                Message = $"Unexpected SCSI status 0x{output.spt.ScsiStatus:X2}.",
-                                Detail = "The tape drive returned a non-success status that is not handled as recoverable.",
-                                ScsiStatus = output.spt.ScsiStatus,
-                                Cdb = [.. cdb],
-                            });
-                            break;
-                    }
-                }
-
-                return result;
-            }
-            catch
-            {
-                Marshal.FreeHGlobal(bufferPtr);
-                bufferPtr = IntPtr.Zero;
-                throw;
-            }
+            throw new PlatformNotSupportedException("TapeDrive only supports Windows and Linux tape I/O backends.");
         }
+    }
+
+    private bool IOCtlDirectWindows(byte[] cdb, IntPtr dataBuffer, uint bufferLength, byte dataIn, uint timeoutSeconds)
+    {
+        _sptwb.spt.CdbLength = (byte)cdb.Length;
+        _sptwb.spt.DataIn = dataIn;
+        _sptwb.spt.DataTransferLength = bufferLength;
+        _sptwb.spt.DataBuffer = dataBuffer;
+        _sptwb.spt.TimeOutValue = timeoutSeconds;
+        _sptwb.spt.SenseInfoOffset = senseInfoOffset;
+
+        Array.Clear(_sptwb.spt.Cdb, 0, _sptwb.spt.Cdb.Length);
+        Array.Copy(cdb, _sptwb.spt.Cdb, cdb.Length);
+
+        if (bufferPtr == IntPtr.Zero)
+            bufferPtr = Marshal.AllocHGlobal((int)sptSize);
+
+        try
+        {
+            Marshal.StructureToPtr(_sptwb, bufferPtr, false);
+            int bytesReturned = 0;
+
+            bool result = NativeMethods.DeviceIoControl(_handle!, IOCTL_SCSI_PASS_THROUGH_DIRECT,
+                bufferPtr, sptSize, bufferPtr, sptSize, ref bytesReturned, IntPtr.Zero);
+
+            if (!result)
+            {
+                int error = Marshal.GetLastPInvokeError();
+                ApplyIncidentPolicy(new TapeDriveIncident
+                {
+                    Source = TapeDriveIncidentSource.Win32Error,
+                    Severity = TapeDriveIncidentSeverity.Critical,
+                    Action = TapeDriveIncidentAction.StopAllOperations,
+                    Message = new Win32Exception(error).Message,
+                    Detail = $"DeviceIoControl failed with Win32Error={error}.",
+                    Win32ErrorCode = error,
+                    Cdb = [.. cdb],
+                });
+            }
+            else
+            {
+                var output = Marshal.PtrToStructure<SCSI_PASS_THROUGH_WITH_BUFFERS>(bufferPtr);
+                HandleScsiResult(cdb, output.Sense, output.spt.ScsiStatus);
+            }
+
+            return result;
+        }
+        catch
+        {
+            Marshal.FreeHGlobal(bufferPtr);
+            bufferPtr = IntPtr.Zero;
+            throw;
+        }
+    }
+
+    private bool IOCtlDirectLinux(byte[] cdb, IntPtr dataBuffer, uint bufferLength, byte dataIn, uint timeoutSeconds)
+    {
+        IntPtr cdbPtr = IntPtr.Zero;
+        IntPtr sensePtr = IntPtr.Zero;
+        IntPtr hdrPtr = IntPtr.Zero;
+
+        try
+        {
+            cdbPtr = Marshal.AllocHGlobal(cdb.Length);
+            Marshal.Copy(cdb, 0, cdbPtr, cdb.Length);
+
+            byte[] senseBuffer = new byte[SENSE_LEN];
+            sensePtr = Marshal.AllocHGlobal(SENSE_LEN);
+            Marshal.Copy(senseBuffer, 0, sensePtr, SENSE_LEN);
+
+            SG_IO_HDR hdr = new()
+            {
+                InterfaceId = 'S',
+                DxferDirection = GetLinuxDxferDirection(dataIn),
+                CmdLen = (byte)cdb.Length,
+                MxSbLen = SENSE_LEN,
+                DxferLen = bufferLength,
+                Dxferp = dataBuffer,
+                Cmdp = cdbPtr,
+                Sbp = sensePtr,
+                Timeout = GetTimeoutMilliseconds(timeoutSeconds),
+            };
+
+            hdrPtr = Marshal.AllocHGlobal(Marshal.SizeOf<SG_IO_HDR>());
+            Marshal.StructureToPtr(hdr, hdrPtr, false);
+
+            int ioctlResult = NativeMethods.Ioctl(_handle!, NativeMethods.LinuxSgIo, hdrPtr);
+            SG_IO_HDR output = Marshal.PtrToStructure<SG_IO_HDR>(hdrPtr);
+            Marshal.Copy(sensePtr, senseBuffer, 0, SENSE_LEN);
+
+            if (ioctlResult != 0)
+            {
+                int error = Marshal.GetLastPInvokeError();
+                ApplyIncidentPolicy(new TapeDriveIncident
+                {
+                    Source = TapeDriveIncidentSource.Win32Error,
+                    Severity = TapeDriveIncidentSeverity.Critical,
+                    Action = TapeDriveIncidentAction.StopAllOperations,
+                    Message = new Win32Exception(error).Message,
+                    Detail = $"ioctl(SG_IO) failed with errno={error}.",
+                    Win32ErrorCode = error,
+                    Cdb = [.. cdb],
+                });
+            }
+
+            Sense = senseBuffer;
+            LastStatus = output.Status;
+
+            if (output.HostStatus != 0 || output.DriverStatus != 0)
+            {
+                ApplyIncidentPolicy(new TapeDriveIncident
+                {
+                    Source = TapeDriveIncidentSource.ScsiStatus,
+                    Severity = TapeDriveIncidentSeverity.Critical,
+                    Action = TapeDriveIncidentAction.StopAllOperations,
+                    Message = $"Linux SG_IO transport failure host=0x{output.HostStatus:X4}, driver=0x{output.DriverStatus:X4}.",
+                    Detail = $"status=0x{output.Status:X2}, masked_status=0x{output.MaskedStatus:X2}, msg_status=0x{output.MsgStatus:X2}, info=0x{output.Info:X8}.",
+                    ScsiStatus = output.Status,
+                    Cdb = [.. cdb],
+                });
+            }
+
+            HandleScsiResult(cdb, senseBuffer, output.Status);
+            return true;
+        }
+        finally
+        {
+            if (hdrPtr != IntPtr.Zero)
+                Marshal.FreeHGlobal(hdrPtr);
+            if (sensePtr != IntPtr.Zero)
+                Marshal.FreeHGlobal(sensePtr);
+            if (cdbPtr != IntPtr.Zero)
+                Marshal.FreeHGlobal(cdbPtr);
+        }
+    }
+
+    private void HandleScsiResult(byte[] cdb, byte[] sense, byte scsiStatus)
+    {
+        Sense = sense;
+        LastStatus = scsiStatus;
+
+        switch (scsiStatus)
+        {
+            case SCSI_STATUS_GOOD:
+                break;
+
+            case SCSI_STATUS_CHECK_CONDITION:
+                ParseFixedFormatSense();
+                if (ParsedSense != null)
+                {
+                    HandleSense(cdb);
+                }
+                break;
+
+            default:
+                ApplyIncidentPolicy(new TapeDriveIncident
+                {
+                    Source = TapeDriveIncidentSource.ScsiStatus,
+                    Severity = TapeDriveIncidentSeverity.Critical,
+                    Action = TapeDriveIncidentAction.StopAllOperations,
+                    Message = $"Unexpected SCSI status 0x{scsiStatus:X2}.",
+                    Detail = "The tape drive returned a non-success status that is not handled as recoverable.",
+                    ScsiStatus = scsiStatus,
+                    Cdb = [.. cdb],
+                });
+                break;
+        }
+    }
+
+    private static int GetLinuxDxferDirection(byte dataIn)
+    {
+        return dataIn switch
+        {
+            SCSI_IOCTL_DATA_IN => SG_DXFER_FROM_DEV,
+            SCSI_IOCTL_DATA_OUT => SG_DXFER_TO_DEV,
+            _ => SG_DXFER_NONE,
+        };
+    }
+
+    private static uint GetTimeoutMilliseconds(uint timeoutSeconds)
+    {
+        ulong timeoutMilliseconds = (ulong)timeoutSeconds * 1000UL;
+        return timeoutMilliseconds > uint.MaxValue
+            ? uint.MaxValue
+            : (uint)timeoutMilliseconds;
     }
 
     public override IntPtr ScsiReadRaw(byte[] cdb, int readLength, uint timeoutSeconds = 600)

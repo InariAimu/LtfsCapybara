@@ -42,14 +42,11 @@ public partial class LTOTapeDrive : TapeDriveBase, IDisposable
 
     private void Open(string devicePath)
     {
-        _handle = NativeMethods.CreateFile(devicePath,
-            0xC0000000, // GENERIC_READ | GENERIC_WRITE
-            3,          // FILE_SHARE_READ | FILE_SHARE_WRITE
-            IntPtr.Zero, 3, 0, IntPtr.Zero);
+        _handle = NativeMethods.OpenTapeDevice(devicePath);
 
         if (_handle.IsInvalid)
         {
-            throw new IOException($"Failed to open tape drive {_devicePath}, Win32Error={Marshal.GetLastWin32Error()}");
+            throw new IOException($"Failed to open tape drive {_devicePath}, NativeError={Marshal.GetLastPInvokeError()}");
         }
     }
 
