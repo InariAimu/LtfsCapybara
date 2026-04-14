@@ -1,6 +1,6 @@
 import { apiClient } from '../client';
 
-export type TapeFsTaskType = 'write' | 'replace' | 'delete' | 'read' | 'format' | 'folder';
+export type TapeFsTaskType = 'write' | 'replace' | 'delete' | 'read' | 'verify' | 'format' | 'folder';
 export type FolderTaskType = 'add' | 'delete';
 
 export type TapeFsTaskOperation = 'add' | 'rename' | 'update' | 'delete';
@@ -19,6 +19,12 @@ export interface AddServerFolderTaskPayload {
 export interface TapeFsReadTaskPayload {
     sourcePath: string;
     targetPath: string;
+    isDirectoryMarker?: boolean;
+}
+
+export interface TapeFsVerifyTaskPayload {
+    sourcePath: string;
+    isDirectoryMarker?: boolean;
 }
 
 export interface TapeFsFormatParam {
@@ -69,10 +75,11 @@ export interface TapeFsPathTaskPayload {
 
 export interface TapeFsTaskItem {
     id: string;
-    type: TapeFsTaskOperation | 'read' | 'format';
+    type: TapeFsTaskOperation | 'read' | 'verify' | 'format';
     tapeBarcode: string;
     pathTask?: TapeFsPathTaskPayload | null;
     readTask?: TapeFsReadTaskPayload | null;
+    verifyTask?: TapeFsVerifyTaskPayload | null;
     formatTask?: {
         formatParam: TapeFsFormatParam;
     } | null;
@@ -187,10 +194,11 @@ export interface TaskExecutionEventEnvelope {
 }
 
 export interface TapeFsTaskCreateRequest {
-    type: TapeFsTaskOperation | 'read' | 'format';
+    type: TapeFsTaskOperation | 'read' | 'verify' | 'format';
     tapeBarcode?: string;
     pathTask?: TapeFsPathTaskPayload;
     readTask?: TapeFsReadTaskPayload;
+    verifyTask?: TapeFsVerifyTaskPayload;
     formatTask?: {
         formatParam: TapeFsFormatParam;
     };
@@ -203,6 +211,7 @@ export interface TapeFsTaskCreateRequest {
 export type LtfsTaskType = TapeFsTaskType;
 export type LtfsWriteTaskPayload = TapeFsWriteTaskPayload;
 export type LtfsReadTaskPayload = TapeFsReadTaskPayload;
+export type LtfsVerifyTaskPayload = TapeFsVerifyTaskPayload;
 export type LtfsFormatParam = TapeFsFormatParam;
 export type LtfsFolderTaskPayload = TapeFsFolderTaskPayload;
 export type LtfsPathTaskPayload = TapeFsPathTaskPayload;
@@ -232,6 +241,26 @@ export const taskApi = {
         return apiClient.post<TapeFsTaskGroup>(
             `/tasks/groups/${encodeURIComponent(tapeBarcode)}/tasks`,
             request,
+        );
+    },
+
+    addReadTask(tapeBarcode: string, readTask: TapeFsReadTaskPayload) {
+        return apiClient.post<TapeFsTaskGroup>(
+            `/tasks/groups/${encodeURIComponent(tapeBarcode)}/tasks`,
+            {
+                type: 'read',
+                readTask,
+            },
+        );
+    },
+
+    addVerifyTask(tapeBarcode: string, verifyTask: TapeFsVerifyTaskPayload) {
+        return apiClient.post<TapeFsTaskGroup>(
+            `/tasks/groups/${encodeURIComponent(tapeBarcode)}/tasks`,
+            {
+                type: 'verify',
+                verifyTask,
+            },
         );
     },
 

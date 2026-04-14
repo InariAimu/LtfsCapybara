@@ -64,19 +64,58 @@ public partial class Ltfs
 
                 try
                 {
-                    var sourceFile = ResolveReadSourceFile(task);
-                    Interlocked.Exchange(ref currentReadBytes, 0);
-                    Interlocked.Exchange(ref currentReadTotalBytes, (long)sourceFile.Length);
-                    var readResult = await ReadFileToLocalAsync(
-                        task.TargetPath,
-                        sourceFile,
-                        existingFileMode,
-                        bytesRead => Interlocked.Add(ref currentReadBytes, bytesRead));
-                    totalRead += sourceFile.Length;
-
-                    if (readResult == ReadFileResult.Skipped)
+                    ResetReadTaskResult(task);
+                    while (true)
                     {
-                        Logger.Info($"Skipped existing file: {task.TargetPath}");
+                        try
+                        {
+                            var sourceFile = ResolveReadSourceFile(task);
+                            Interlocked.Exchange(ref currentReadBytes, 0);
+                            Interlocked.Exchange(ref currentReadTotalBytes, (long)sourceFile.Length);
+                            var readResult = await ReadFileToLocalAsync(
+                                task.TargetPath,
+                                sourceFile,
+                                existingFileMode,
+                                bytesRead => Interlocked.Add(ref currentReadBytes, bytesRead));
+                            totalRead += sourceFile.Length;
+
+                            if (readResult == ReadFileResult.Skipped)
+                            {
+                                Logger.Info($"Skipped existing file: {task.TargetPath}");
+                            }
+
+                            break;
+                        }
+                        catch (ReadIntegrityValidationException ex)
+                        {
+                            task.IntegrityCheckFailed = true;
+                            task.FailureMessage = ex.Message;
+                            task.PreservedTargetPath = ex.PreservedTargetPath;
+                            Logger.Error($"Integrity validation failed for {task.SourcePath}: {ex.Message}");
+                            MarkTaskFailed(task);
+                            hasErrors = true;
+                            break;
+                        }
+                        catch (LocalReadTargetIOException ex)
+                        {
+                            var incident = new TapeDriveIncident
+                            {
+                                Source = TapeDriveIncidentSource.LocalFileSystem,
+                                Severity = TapeDriveIncidentSeverity.Warning,
+                                Action = TapeDriveIncidentAction.PauseCurrentTasks,
+                                Message = $"Target filesystem I/O error while reading '{task.SourcePath}'.",
+                                Detail = $"Target path: {ex.TargetPath}. {ex.Message}",
+                            };
+
+                            if (ResolveTapeDriveIncident(incident) == TapeDriveIncidentResolution.Continue)
+                            {
+                                Logger.Warn($"Retrying read of {task.SourcePath} after target filesystem issue on {ex.TargetPath}.");
+                                continue;
+                            }
+
+                            MarkTaskCancelled(task);
+                            throw new TapeDriveCommandException(incident);
+                        }
                     }
 
                     MarkTaskCompleted(task);
@@ -90,6 +129,7 @@ public partial class Ltfs
                 }
                 catch (Exception ex)
                 {
+                    task.FailureMessage = ex.Message;
                     Logger.Error($"Error reading file {task.SourcePath} to {task.TargetPath}: {ex.Message}");
                     MarkTaskFailed(task);
                     hasErrors = true;
@@ -281,6 +321,7 @@ public partial class Ltfs
     {
         var label = LtfsLabelA ?? throw new InvalidOperationException("LTFS label is not loaded.");
         var resolvedTargetPath = Path.GetFullPath(targetPath);
+        InvalidDataException? integrityValidationException = null;
 
         if (File.Exists(resolvedTargetPath))
         {
@@ -289,12 +330,19 @@ public partial class Ltfs
         }
 
         if (Directory.Exists(resolvedTargetPath))
-            throw new IOException($"Target path is a directory: {resolvedTargetPath}");
+            throw new LocalReadTargetIOException(resolvedTargetPath, $"Target path is a directory: {resolvedTargetPath}");
 
         var targetDirectory = Path.GetDirectoryName(resolvedTargetPath);
         if (!string.IsNullOrWhiteSpace(targetDirectory))
         {
-            Directory.CreateDirectory(targetDirectory);
+            try
+            {
+                Directory.CreateDirectory(targetDirectory);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                throw new LocalReadTargetIOException(resolvedTargetPath, ex.Message, ex);
+            }
         }
 
         var tempPath = BuildTemporaryReadPath(resolvedTargetPath);
@@ -302,21 +350,86 @@ public partial class Ltfs
 
         try
         {
-            await using (var fs = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, bufferSize: label.Blocksize, useAsync: true))
+            await using (var fs = CreateReadTargetStream(tempPath, label.Blocksize, resolvedTargetPath))
             using (var validator = ReadHashValidator.Create(file))
             {
                 await ReadTapeFileAsync(file, async (fileOffset, chunk) =>
                 {
-                    fs.Seek(fileOffset, SeekOrigin.Begin);
-                    await fs.WriteAsync(chunk);
+                    try
+                    {
+                        fs.Seek(fileOffset, SeekOrigin.Begin);
+                        await fs.WriteAsync(chunk);
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        throw new LocalReadTargetIOException(resolvedTargetPath, ex.Message, ex);
+                    }
+
                     validator?.Append(chunk.Span);
                     onBytesRead?.Invoke(chunk.Length);
                 });
 
-                validator?.Validate();
-                await fs.FlushAsync();
+                try
+                {
+                    await fs.FlushAsync();
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    throw new LocalReadTargetIOException(resolvedTargetPath, ex.Message, ex);
+                }
+
+                try
+                {
+                    validator?.Validate();
+                }
+                catch (InvalidDataException ex)
+                {
+                    integrityValidationException = ex;
+                }
             }
 
+            MoveReadFileIntoPlace(tempPath, resolvedTargetPath, existingFileMode);
+
+            if (integrityValidationException is not null)
+            {
+                throw new ReadIntegrityValidationException(resolvedTargetPath, integrityValidationException.Message, integrityValidationException);
+            }
+
+            ApplyReadFileAttributes(resolvedTargetPath, file);
+            return ReadFileResult.Success;
+        }
+        catch (ReadIntegrityValidationException)
+        {
+            throw;
+        }
+        catch (Exception) when (TryCleanupPartialRead(tempPath))
+        {
+            throw;
+        }
+    }
+
+    private static string PreserveInvalidReadFile(string tempPath, string resolvedTargetPath, ReadTaskExistingFileMode existingFileMode)
+    {
+        MoveReadFileIntoPlace(tempPath, resolvedTargetPath, existingFileMode);
+        return resolvedTargetPath;
+    }
+
+    private static FileStream CreateReadTargetStream(string tempPath, int blockSize, string targetPath)
+    {
+        try
+        {
+            return new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, bufferSize: blockSize, useAsync: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new LocalReadTargetIOException(targetPath, ex.Message, ex);
+        }
+    }
+
+    private static void MoveReadFileIntoPlace(string tempPath, string resolvedTargetPath, ReadTaskExistingFileMode existingFileMode)
+    {
+        try
+        {
             if (existingFileMode == ReadTaskExistingFileMode.Overwrite && File.Exists(resolvedTargetPath))
             {
                 File.Move(tempPath, resolvedTargetPath, overwrite: true);
@@ -325,13 +438,10 @@ public partial class Ltfs
             {
                 File.Move(tempPath, resolvedTargetPath);
             }
-
-            ApplyReadFileAttributes(resolvedTargetPath, file);
-            return ReadFileResult.Success;
         }
-        catch (Exception) when (TryCleanupPartialRead(tempPath))
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            throw;
+            throw new LocalReadTargetIOException(resolvedTargetPath, ex.Message, ex);
         }
     }
 
@@ -380,15 +490,41 @@ public partial class Ltfs
         }
     }
 
+    private static void ResetReadTaskResult(ReadTask task)
+    {
+        task.IntegrityCheckFailed = false;
+        task.FailureMessage = null;
+        task.PreservedTargetPath = null;
+    }
+
     private void ApplyReadFileAttributes(string fileName, LtfsFile file)
     {
-        var fi = new FileInfo(fileName)
+        try
         {
-            CreationTimeUtc = file.CreationTime,
-            LastWriteTimeUtc = file.ModifyTime,
-            LastAccessTimeUtc = file.AccessTime,
-            IsReadOnly = file.ReadOnly
-        };
+            var fi = new FileInfo(fileName)
+            {
+                CreationTimeUtc = file.CreationTime,
+                LastWriteTimeUtc = file.ModifyTime,
+                LastAccessTimeUtc = file.AccessTime,
+                IsReadOnly = file.ReadOnly
+            };
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new LocalReadTargetIOException(fileName, ex.Message, ex);
+        }
+    }
+
+    private sealed class LocalReadTargetIOException(string targetPath, string message, Exception? innerException = null)
+        : IOException(message, innerException)
+    {
+        public string TargetPath { get; } = targetPath;
+    }
+
+    private sealed class ReadIntegrityValidationException(string preservedTargetPath, string message, Exception? innerException = null)
+        : IOException(message, innerException)
+    {
+        public string PreservedTargetPath { get; } = preservedTargetPath;
     }
 
     private byte[] ReadTapeBlock(uint blockLength)

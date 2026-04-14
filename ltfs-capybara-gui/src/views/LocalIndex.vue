@@ -316,6 +316,10 @@ async function handleDeleteCurrentPathTask() {
                     <action-bar
                         :show-tape-info-toggle="isRootNodeSelected"
                         :show-tape-info="showTapeInfo"
+                        :show-add-button="true"
+                        :show-delete-button="true"
+                        :show-read-button="true"
+                        :show-verify-button="true"
                         :add-disabled="!isCurrentTapeEditable"
                         :delete-disabled="!canDeleteCurrentPathTask"
                         @update:show-tape-info="showTapeInfo = $event"

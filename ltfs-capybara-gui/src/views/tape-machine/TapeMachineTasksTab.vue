@@ -311,31 +311,39 @@ function summarizeTaskTypes(group: TapeFsTaskGroup) {
         </n-card>
 
         <div v-if="activeExecution" class="execution-visual-stack">
-            <n-card size="small" :title="t('tapeMachine.errorHeatmapTitle')">
-                <ExecutionChannelHeatBar
-                    v-if="
-                        activeExecutionChannelErrorRateHistory.length &&
-                        activeExecutionChannelErrorRates?.length &&
-                        scsiMetricsEnabled
-                    "
-                    :history="activeExecutionChannelErrorRateHistory"
-                    :latest-rates="activeExecutionChannelErrorRates"
-                />
-                <n-empty
-                    v-else
-                    :description="
-                        scsiMetricsEnabled
-                            ? t('tapeMachine.noErrorRateData')
-                            : t('task.scsiMetricsDisabledHint')
-                    "
-                />
-            </n-card>
-            <n-card size="small" :title="t('tapeMachine.speedChartTitle')">
-                <ExecutionSpeedChart
-                    v-if="activeExecutionSpeedHistory.length"
-                    :samples="activeExecutionSpeedHistory"
-                />
-                <n-empty v-else :description="t('tapeMachine.noSpeedHistory')" />
+            <n-card size="small" title="Statistic">
+                <div class="statistics-section">
+                    <div class="statistics-section-title">
+                        {{ t('tapeMachine.errorHeatmapTitle') }}
+                    </div>
+                    <ExecutionChannelHeatBar
+                        v-if="
+                            activeExecutionChannelErrorRateHistory.length &&
+                            activeExecutionChannelErrorRates?.length &&
+                            scsiMetricsEnabled
+                        "
+                        :history="activeExecutionChannelErrorRateHistory"
+                        :latest-rates="activeExecutionChannelErrorRates"
+                    />
+                    <n-empty
+                        v-else
+                        :description="
+                            scsiMetricsEnabled
+                                ? t('tapeMachine.noErrorRateData')
+                                : t('task.scsiMetricsDisabledHint')
+                        "
+                    />
+                </div>
+                <div class="statistics-section">
+                    <div class="statistics-section-title">
+                        {{ t('tapeMachine.speedChartTitle') }}
+                    </div>
+                    <ExecutionSpeedChart
+                        v-if="activeExecutionSpeedHistory.length"
+                        :samples="activeExecutionSpeedHistory"
+                    />
+                    <n-empty v-else :description="t('tapeMachine.noSpeedHistory')" />
+                </div>
             </n-card>
         </div>
     </n-space>
@@ -379,5 +387,20 @@ function summarizeTaskTypes(group: TapeFsTaskGroup) {
     display: grid;
     grid-template-columns: 1fr;
     gap: 12px;
+}
+
+.statistics-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.statistics-section + .statistics-section {
+    margin-top: 16px;
+}
+
+.statistics-section-title {
+    font-size: 12px;
+    font-weight: 600;
 }
 </style>

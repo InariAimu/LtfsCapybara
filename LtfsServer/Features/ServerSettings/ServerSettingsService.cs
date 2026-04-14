@@ -36,6 +36,7 @@ public sealed class ServerSettingsService : IServerSettingsService
         var dataPartitionId = NormalizeOptionId(request.IndexOnDataPartitionId);
         var indexPartitionId = NormalizeOptionId(request.IndexOnIndexPartitionId);
         var dataPath = request.DataPath?.Trim() ?? string.Empty;
+        var showAspNetCoreLogs = request.ShowAspNetCoreLogs;
 
         lock (_syncRoot)
         {
@@ -50,6 +51,7 @@ public sealed class ServerSettingsService : IServerSettingsService
 
             serverSettingsNode["IndexOnDataPartitionId"] = dataPartitionId;
             serverSettingsNode["IndexOnIndexPartitionId"] = indexPartitionId;
+            serverSettingsNode["ShowAspNetCoreLogs"] = showAspNetCoreLogs;
 
             var dataNode = root["Data"] as JsonObject;
             if (dataNode is null)
@@ -61,6 +63,22 @@ public sealed class ServerSettingsService : IServerSettingsService
             // Reuse existing Data:Path for runtime behavior and expose it in settings UI.
             dataNode["Path"] = dataPath;
 
+            var loggingNode = root["Logging"] as JsonObject;
+            if (loggingNode is null)
+            {
+                loggingNode = new JsonObject();
+                root["Logging"] = loggingNode;
+            }
+
+            var logLevelNode = loggingNode["LogLevel"] as JsonObject;
+            if (logLevelNode is null)
+            {
+                logLevelNode = new JsonObject();
+                loggingNode["LogLevel"] = logLevelNode;
+            }
+
+            logLevelNode["Microsoft.AspNetCore"] = showAspNetCoreLogs ? "Information" : "None";
+
             WriteSettingsRoot(root);
 
             return new ServerSettingsDto
@@ -68,6 +86,7 @@ public sealed class ServerSettingsService : IServerSettingsService
                 IndexOnDataPartitionId = dataPartitionId,
                 IndexOnIndexPartitionId = indexPartitionId,
                 DataPath = dataPath,
+                ShowAspNetCoreLogs = showAspNetCoreLogs,
             };
         }
     }
@@ -114,6 +133,7 @@ public sealed class ServerSettingsService : IServerSettingsService
             IndexOnDataPartitionId = NormalizeOptionId(serverSettingsNode?["IndexOnDataPartitionId"]?.GetValue<int?>()),
             IndexOnIndexPartitionId = NormalizeOptionId(serverSettingsNode?["IndexOnIndexPartitionId"]?.GetValue<int?>()),
             DataPath = dataNode?["Path"]?.GetValue<string>() ?? string.Empty,
+            ShowAspNetCoreLogs = serverSettingsNode?["ShowAspNetCoreLogs"]?.GetValue<bool?>() ?? false,
         };
     }
 
@@ -134,6 +154,7 @@ public sealed class ServerSettingsDto
     public int IndexOnDataPartitionId { get; set; }
     public int IndexOnIndexPartitionId { get; set; }
     public string DataPath { get; set; } = string.Empty;
+    public bool ShowAspNetCoreLogs { get; set; }
 }
 
 public sealed class ServerSettingsUpdateRequest
@@ -141,4 +162,5 @@ public sealed class ServerSettingsUpdateRequest
     public int IndexOnDataPartitionId { get; set; }
     public int IndexOnIndexPartitionId { get; set; }
     public string? DataPath { get; set; }
+    public bool ShowAspNetCoreLogs { get; set; }
 }

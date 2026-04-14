@@ -105,6 +105,10 @@ const columns = computed<DataTableColumns<Row>>(() => [
 const store = useFileStore();
 const tableRef = ref<DataTableInst | null>(null);
 
+function handleCheckedRowKeysUpdate(keys: Array<string | number>) {
+    store.setSelectedFileKeys(keys);
+}
+
 watch(
     () => store.currentPath,
     () => tableRef.value?.scrollTo({ top: 0 }),
@@ -112,7 +116,15 @@ watch(
 </script>
 
 <template>
-    <n-data-table ref="tableRef" size="medium" :columns="columns" :data="store.files" />
+    <n-data-table
+        ref="tableRef"
+        size="medium"
+        :columns="columns"
+        :data="store.files"
+        :row-key="(row: Row) => row.key"
+        :checked-row-keys="store.selectedFileKeys"
+        @update:checked-row-keys="handleCheckedRowKeysUpdate"
+    />
 </template>
 
 <style>

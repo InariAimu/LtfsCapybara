@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 
 using Ltfs;
+using Ltfs.Tasks;
 
 using LtfsServer.BootStrap;
 using LtfsServer.Features.LocalTapes;
@@ -374,6 +375,8 @@ public sealed class TaskExecutionService : ITaskExecutionService
             var readSuccess = writeSuccess && (ltfs.GetPendingReadTasks().Count == 0 || await ltfs.PerformReadTasks());
             var verifySuccess = readSuccess && (ltfs.GetPendingVerifyTasks().Count == 0 || await ltfs.PerformVerifyTasks());
 
+            PublishReadTaskOutcomeLogs(state, ltfs);
+
             if (!writeSuccess || !readSuccess || !verifySuccess)
             {
                 PublishLog(state, "error", state.Snapshot.Error ?? "Task execution did not complete successfully.");
@@ -478,6 +481,34 @@ public sealed class TaskExecutionService : ITaskExecutionService
             CreatedAtTicks = DateTime.UtcNow.Ticks,
         };
 
+        if (incident.Action == TapeDriveIncidentAction.PauseCurrentTasks)
+        {
+            dto.RequiresConfirmation = true;
+            var pending = new PendingIncidentState
+            {
+                Incident = dto,
+                Completion = new TaskCompletionSource<TapeDriveIncidentResolution>(TaskCreationOptions.RunContinuationsAsynchronously),
+            };
+
+            lock (state.Sync)
+            {
+                state.PendingIncident = pending;
+                state.Snapshot.PendingIncident = CloneIncident(dto);
+                state.Snapshot.Status = TaskExecutionStatus.WaitingForConfirmation;
+                state.Snapshot.UpdatedAtTicks = DateTime.UtcNow.Ticks;
+            }
+
+            PublishLog(state, incident.Severity == TapeDriveIncidentSeverity.Critical ? "error" : "warning", dto.Message);
+            Publish(new TaskExecutionEventEnvelope
+            {
+                Type = "incident-raised",
+                Incident = CloneIncident(dto),
+                Execution = CloneSnapshot(state.Snapshot),
+            });
+
+            return pending.Completion.Task.GetAwaiter().GetResult();
+        }
+
         if (incident.Severity != TapeDriveIncidentSeverity.Critical)
         {
             PublishLog(
@@ -536,11 +567,52 @@ public sealed class TaskExecutionService : ITaskExecutionService
 
         if (task.ReadTask is not null)
         {
+            if (task.ReadTask.IsDirectoryMarker)
+                return;
+
             ltfs.AddReadTask(task.ReadTask.SourcePath, task.ReadTask.TargetPath);
             return;
         }
 
+        if (task.VerifyTask is not null)
+        {
+            if (task.VerifyTask.IsDirectoryMarker)
+                return;
+
+            ltfs.AddVerifyTask(task.VerifyTask.SourcePath);
+            return;
+        }
+
         throw new InvalidOperationException($"Unsupported task '{task.Id}'.");
+    }
+
+    private void PublishReadTaskOutcomeLogs(ExecutionState state, Ltfs.Ltfs ltfs)
+    {
+        foreach (var task in ltfs.GetPendingReadTasks().OfType<ReadTask>())
+        {
+            if (task.IsDirectoryMarker)
+                continue;
+
+            if (task.IntegrityCheckFailed)
+            {
+                var preservedPath = string.IsNullOrWhiteSpace(task.PreservedTargetPath)
+                    ? task.TargetPath
+                    : task.PreservedTargetPath;
+                PublishLog(
+                    state,
+                    "warning",
+                    $"Integrity check failed for '{task.SourcePath}'. The downloaded file was preserved at '{preservedPath}'. Please verify it manually.");
+                continue;
+            }
+
+            if (task.Status == Ltfs.Tasks.TaskExecutionStatus.Failed && !string.IsNullOrWhiteSpace(task.FailureMessage))
+            {
+                PublishLog(
+                    state,
+                    "error",
+                    $"Read failed for '{task.SourcePath}' -> '{task.TargetPath}': {task.FailureMessage}");
+            }
+        }
     }
 
     private void UpdateStatus(ExecutionState state, string status)

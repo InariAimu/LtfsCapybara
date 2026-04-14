@@ -208,7 +208,7 @@ watch(
 <style scoped>
 .speed-chart-shell {
     width: 100%;
-    min-height: 220px;
+    min-height: 140px;
     display: grid;
     grid-template-columns: minmax(0, 1fr) var(--execution-chart-legend-width);
     gap: 0;
@@ -216,13 +216,13 @@ watch(
 
 .speed-chart-plot {
     min-width: 0;
-    height: 220px;
+    height: 140px;
     position: relative;
 }
 
 .speed-chart {
     width: 100%;
-    height: 220px;
+    height: 140px;
     display: block;
 }
 
@@ -241,19 +241,19 @@ watch(
     left: 0;
     transform: translateY(-50%);
     color: rgba(100, 116, 139, 0.92);
-    font-size: 11px;
+    font-size: 10px;
     line-height: 1;
     text-align: right;
 }
 
 .time-label {
     position: absolute;
-    bottom: 8px;
+    bottom: 0;
     width: 56px;
     transform: translateX(-50%);
     display: flex;
     color: rgba(100, 116, 139, 0.92);
-    font-size: 11px;
+    font-size: 10px;
     line-height: 1;
 }
 </style>

@@ -298,7 +298,13 @@ public sealed class TaskGroupService : ITaskGroupService
 
         if (type == TapeFsTaskType.Read)
         {
-            task.ReadTask = request.ReadTask ?? new ReadTask();
+            task.ReadTask = NormalizeReadTask(request.ReadTask ?? new ReadTask());
+            return task;
+        }
+
+        if (type == TapeFsTaskType.Verify)
+        {
+            task.VerifyTask = NormalizeVerifyTask(request.VerifyTask ?? new VerifyTask());
             return task;
         }
 
@@ -562,6 +568,36 @@ public sealed class TaskGroupService : ITaskGroupService
         return normalizedParent == "/" ? "/" + trimmedChild : normalizedParent + "/" + trimmedChild;
     }
 
+    private static ReadTask NormalizeReadTask(ReadTask readTask)
+    {
+        var sourcePath = NormalizeFolderPath(readTask.SourcePath);
+        if (sourcePath == "/")
+            throw new ArgumentException("Read source path cannot be root.");
+
+        readTask.SourcePath = sourcePath;
+        readTask.TargetPath = NormalizeLocalPathLoose(readTask.TargetPath);
+        readTask.IsDirectoryMarker = readTask.IsDirectoryMarker;
+        readTask.SourceFile = null;
+        return readTask;
+    }
+
+    private static VerifyTask NormalizeVerifyTask(VerifyTask verifyTask)
+    {
+        var sourcePath = NormalizeFolderPath(verifyTask.SourcePath);
+        if (sourcePath == "/")
+            throw new ArgumentException("Verify source path cannot be root.");
+
+        verifyTask.SourcePath = sourcePath;
+        verifyTask.IsDirectoryMarker = verifyTask.IsDirectoryMarker;
+        verifyTask.SourceFile = null;
+        verifyTask.ExpectedCrc64 = null;
+        verifyTask.ActualCrc64 = null;
+        verifyTask.VerificationMessage = null;
+        verifyTask.VerificationPassed = null;
+        verifyTask.VerificationSkipped = false;
+        return verifyTask;
+    }
+
     private static TapeFsPathTask? MigrateLegacyPathTask(TapeFsTask task)
     {
         if (task.FolderTask is not null)
@@ -617,7 +653,14 @@ public sealed class TaskGroupService : ITaskGroupService
             }
 
             if (task.Type == TapeFsTaskType.Read)
-                task.ReadTask ??= new ReadTask();
+            {
+                task.ReadTask = NormalizeReadTask(task.ReadTask ?? new ReadTask());
+            }
+
+            if (task.Type == TapeFsTaskType.Verify)
+            {
+                task.VerifyTask = NormalizeVerifyTask(task.VerifyTask ?? new VerifyTask());
+            }
 
             if (task.Type == TapeFsTaskType.Format)
             {
@@ -714,6 +757,9 @@ public sealed class TaskGroupService : ITaskGroupService
             return 0;
 
         if (task.PathTask?.IsDirectory == true)
+            return 1;
+
+        if (task.ReadTask?.IsDirectoryMarker == true || task.VerifyTask?.IsDirectoryMarker == true)
             return 1;
 
         if (task.PathTask is not null)

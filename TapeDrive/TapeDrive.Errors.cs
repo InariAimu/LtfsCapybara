@@ -6,6 +6,7 @@ namespace TapeDrive;
 
 public enum TapeDriveIncidentSource
 {
+    LocalFileSystem,
     Win32Error,
     ScsiStatus,
     Sense,

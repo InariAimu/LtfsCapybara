@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
-import { NButton, NCard, NForm, NFormItem, NInput, NSelect, useMessage } from 'naive-ui';
+import { NButton, NCard, NForm, NFormItem, NInput, NSelect, NSwitch, useMessage } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import { serverSettingsApi, type ServerSettingsUpdateRequest } from '@/api/modules/serversettings';
 import { setAppLocale, type AppLocale } from '@/i18n';
@@ -17,6 +17,7 @@ const serverSettings = reactive<ServerSettingsUpdateRequest>({
     indexOnDataPartitionId: 1,
     indexOnIndexPartitionId: 1,
     dataPath: '',
+    showAspNetCoreLogs: false,
 });
 
 const localeOptions = computed(() => [
@@ -63,6 +64,7 @@ async function loadServerSettings() {
     serverSettings.indexOnDataPartitionId = loaded.indexOnDataPartitionId;
     serverSettings.indexOnIndexPartitionId = loaded.indexOnIndexPartitionId;
     serverSettings.dataPath = loaded.dataPath ?? '';
+    serverSettings.showAspNetCoreLogs = loaded.showAspNetCoreLogs ?? false;
 }
 
 async function saveServerSettings() {
@@ -71,6 +73,7 @@ async function saveServerSettings() {
         indexOnDataPartitionId: serverSettings.indexOnDataPartitionId,
         indexOnIndexPartitionId: serverSettings.indexOnIndexPartitionId,
         dataPath: serverSettings.dataPath,
+        showAspNetCoreLogs: serverSettings.showAspNetCoreLogs,
     });
     isServerSettingsSaving.value = false;
 
@@ -82,6 +85,7 @@ async function saveServerSettings() {
     serverSettings.indexOnDataPartitionId = saved.indexOnDataPartitionId;
     serverSettings.indexOnIndexPartitionId = saved.indexOnIndexPartitionId;
     serverSettings.dataPath = saved.dataPath ?? '';
+    serverSettings.showAspNetCoreLogs = saved.showAspNetCoreLogs ?? false;
 
     message.success(t('settings.serverSettingsSaveSuccess'));
 }
@@ -127,6 +131,10 @@ onMounted(() => {
                         v-model:value="serverSettings.dataPath"
                         :placeholder="t('settings.dataPathPlaceholder')"
                     />
+                </n-form-item>
+
+                <n-form-item :label="t('settings.showAspNetCoreLogs')">
+                    <n-switch v-model:value="serverSettings.showAspNetCoreLogs" />
                 </n-form-item>
 
                 <n-form-item>

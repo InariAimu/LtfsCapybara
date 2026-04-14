@@ -9,6 +9,7 @@ public sealed class TapeFsTaskCreateRequest
     public string TapeBarcode { get; set; } = string.Empty;
     public TapeFsPathTask? PathTask { get; set; }
     public ReadTask? ReadTask { get; set; }
+    public VerifyTask? VerifyTask { get; set; }
     public FormatTask? FormatTask { get; set; }
 }
 

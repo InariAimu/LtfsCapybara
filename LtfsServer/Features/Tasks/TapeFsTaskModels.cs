@@ -28,6 +28,7 @@ public sealed class TapeFsTask
     public string TapeBarcode { get; set; } = string.Empty;
     public TapeFsPathTask? PathTask { get; set; }
     public ReadTask? ReadTask { get; set; }
+    public VerifyTask? VerifyTask { get; set; }
     public FormatTask? FormatTask { get; set; }
     public long CreatedAtTicks { get; set; } = DateTime.UtcNow.Ticks;
 

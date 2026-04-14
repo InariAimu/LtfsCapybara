@@ -1,6 +1,8 @@
 using System;
 using System.IO;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Console;
 
 namespace LtfsServer.BootStrap;
 
@@ -8,6 +10,16 @@ public static class StartupConfig
 {
     public static void Configure(WebApplicationBuilder builder)
     {
+        builder.Logging.ClearProviders();
+        builder.Logging.AddConfiguration(builder.Configuration.GetSection("Logging"));
+        builder.Logging.AddSimpleConsole(options =>
+        {
+            options.SingleLine = true;
+            options.TimestampFormat = "HH:mm:ss ";
+            options.ColorBehavior = LoggerColorBehavior.Enabled;
+            options.IncludeScopes = false;
+        });
+
         // Read API host/port from configuration (appsettings, env vars, or CLI args)
         var apiHost = builder.Configuration["Api:Host"] ?? "localhost";
         var apiPort = builder.Configuration["Api:Port"] ?? Environment.GetEnvironmentVariable("PORT") ?? "5003";

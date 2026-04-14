@@ -8,6 +8,7 @@ export const useFileStore = defineStore('file', {
         currentTapeName: '',
         currentTapeDriveId: '',
         currentPath: '/',
+        selectedFileKeys: [] as Array<string | number>,
         localIndexTreeData: [] as any[],
         localIndexExpandedKeys: [] as Array<string | number>,
         localIndexSelectedKeys: [] as Array<string | number>,
@@ -21,6 +22,11 @@ export const useFileStore = defineStore('file', {
     actions: {
         setFiles(files: any[]) {
             this.files = files;
+            this.selectedFileKeys = [];
+        },
+
+        setSelectedFileKeys(keys: Array<string | number>) {
+            this.selectedFileKeys = keys;
         },
 
         setLoading(v: boolean) {

@@ -4,12 +4,14 @@ export interface ServerSettingsDto {
     indexOnDataPartitionId: number;
     indexOnIndexPartitionId: number;
     dataPath: string;
+    showAspNetCoreLogs: boolean;
 }
 
 export interface ServerSettingsUpdateRequest {
     indexOnDataPartitionId: number;
     indexOnIndexPartitionId: number;
     dataPath: string;
+    showAspNetCoreLogs: boolean;
 }
 
 export const serverSettingsApi = {

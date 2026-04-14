@@ -110,6 +110,22 @@ function buildTree(groups: typeof store.taskGroups): TaskTreeNode[] {
                     dir = getParentPath(dir);
                 }
             }
+
+            const sourcePath = normalizePath(task.readTask?.sourcePath || task.verifyTask?.sourcePath || '');
+            if (sourcePath && sourcePath !== '/') {
+                const isDirectoryMarker =
+                    task.readTask?.isDirectoryMarker === true || task.verifyTask?.isDirectoryMarker === true;
+                if (isDirectoryMarker) {
+                    dirPaths.add(sourcePath);
+                    folderActionMap.set(sourcePath, task.type);
+                }
+
+                let dir = getParentPath(sourcePath);
+                while (dir !== '/') {
+                    dirPaths.add(dir);
+                    dir = getParentPath(dir);
+                }
+            }
         }
 
         const nodeMap = new Map<string, TaskTreeNode>();
@@ -159,8 +175,8 @@ const treeData = computed(() => buildTree(store.taskGroups));
 const renderLabel = ({ option }: { option: TreeOption }) => {
     const node = option as TaskTreeNode;
     if (!node.taskAction) return node.label as string;
-    const type = node.taskAction === 'delete' ? 'error' : 'success';
-    const text = node.taskAction === 'delete' ? t('task.actionRemove') : t('task.actionAdd');
+    const type = actionTagType(node.taskAction, 'folder');
+    const text = actionLabel(node.taskAction, 'folder');
     return h(
         NFlex,
         { align: 'center', size: 4, wrap: false },
@@ -242,6 +258,12 @@ const tableRows = computed<TaskTableRow[]>(() => {
     for (const task of group.tasks) {
         const pathTask = task.pathTask;
         if (!pathTask) {
+            const sourcePath = normalizePath(task.readTask?.sourcePath || task.verifyTask?.sourcePath || '');
+            if (sourcePath && isDirectChild(selectedPath.value, sourcePath)) {
+                const isDirectoryMarker =
+                    task.readTask?.isDirectoryMarker === true || task.verifyTask?.isDirectoryMarker === true;
+                rows.push(createTaskRow(task, isDirectoryMarker ? 'folder' : 'file', sourcePath, task.type));
+            }
             continue;
         }
 
@@ -341,6 +363,10 @@ function actionTagType(
     switch (action.toLowerCase()) {
         case 'add':
             return 'success';
+        case 'read':
+            return 'info';
+        case 'verify':
+            return 'warning';
         case 'rename':
             return 'info';
         case 'replace':
@@ -356,6 +382,10 @@ function actionTagType(
 function actionLabel(action: string, itemType: string): string {
     if (itemType === 'format') return t('task.typeFormat');
     switch (action.toLowerCase()) {
+        case 'read':
+            return t('task.typeRead');
+        case 'verify':
+            return t('task.typeVerify');
         case 'add':
             return t('task.actionAdd');
         case 'delete':

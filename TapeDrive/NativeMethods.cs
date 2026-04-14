@@ -45,8 +45,6 @@ internal static class NativeMethods
     {
         if (IsWindowsTapePlatform)
         {
-            Console.WriteLine($"Opening tape drive at {devicePath} using Windows API...");
-
             return CreateFileWindows(devicePath,
                 0xC0000000,
                 3,

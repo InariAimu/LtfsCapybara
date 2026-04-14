@@ -52,6 +52,9 @@ builder.Services.AddSingleton<IAiChatProxyService, AiChatProxyService>();
 
 var app = builder.Build();
 
+var ltfsLoggerFactory = app.Services.GetRequiredService<ILoggerFactory>();
+Ltfs.Log.SetLogger(new LtfsServerLoggerBridge(ltfsLoggerFactory.CreateLogger("Ltfs")));
+
 // Apply CORS policy so the Vite dev server can access the API
 app.UseCors("AllowVite");
 
