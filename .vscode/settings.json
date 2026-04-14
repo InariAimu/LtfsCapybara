@@ -1,6 +1,10 @@
 {
     "chat.tools.terminal.autoApprove": {
         "dotnet build": true,
-        "dotnet test": true
+        "dotnet test": true,
+        "/^pnpm -C \\.\\\\ltfs-capybara-gui build$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
     }
 }

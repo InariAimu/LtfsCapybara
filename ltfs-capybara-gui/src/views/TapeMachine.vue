@@ -1,18 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import {
-    NAlert,
-    NButton,
-    NCard,
-    NEmpty,
-    NSwitch,
-    NSpace,
-    NTabPane,
-    NTag,
-    NTabs,
-    NThing,
-    useMessage,
-} from 'naive-ui';
+import { NAlert, NCard, NSpace, NTabPane, NTag, NTabs, useMessage } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import FormatParamDialog from '@/components/FormatParamDialog.vue';
 import { tapeMachineApi, type TapeMachineSnapshot } from '@/api/modules/tapemachine';
@@ -22,11 +10,11 @@ import {
     type TapeFsFormatParam,
     type TapeFsTaskGroup,
 } from '@/api/modules/tasks';
-import ExecutionChannelHeatBar from '@/components/ExecutionChannelHeatBar.vue';
-import ExecutionSpeedChart from '@/components/ExecutionSpeedChart.vue';
 import { useExecutionStore } from '@/stores/executionStore';
 import { useFileStore } from '@/stores/fileStore';
-import TapeInfo from '@/views/TapeInfo.vue';
+import TapeMachineLogsTab from '@/views/tape-machine/TapeMachineLogsTab.vue';
+import TapeMachineOperationsTab from '@/views/tape-machine/TapeMachineOperationsTab.vue';
+import TapeMachineTasksTab from '@/views/tape-machine/TapeMachineTasksTab.vue';
 
 interface Props {
     tapeDriveId?: string | null;
@@ -78,12 +66,6 @@ const activeExecutionChannelErrorRateHistory = computed(
     () => activeExecution.value?.progress?.channelErrorRateHistory ?? [],
 );
 const operationBusy = computed(() => loading.value || pendingOperation.value !== null);
-const activeExecutionElapsed = computed(() =>
-    formatDurationFromTicks(activeExecution.value?.startedAtTicks),
-);
-const activeExecutionEta = computed(() =>
-    formatRemainingSeconds(activeExecution.value?.progress?.estimatedRemainingSeconds),
-);
 const scsiMetricsEnabled = computed(
     () => activeExecution.value?.scsiMetricsEnabled ?? executionStore.scsiMetricsEnabledPreference,
 );
@@ -143,165 +125,6 @@ const filesystemLabel = computed(() => {
         ? t('tapeMachine.filesystem.ready')
         : t('tapeMachine.filesystem.missing');
 });
-
-function formatTicks(ticks: number | null | undefined): string {
-    if (!ticks) {
-        return '-';
-    }
-
-    const date = new Date(ticks / 10000 - 62135596800000);
-    return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString();
-}
-
-function formatLogLevel(level: string): 'info' | 'warning' | 'error' | 'default' {
-    switch ((level || '').toLowerCase()) {
-        case 'error':
-            return 'error';
-        case 'warning':
-            return 'warning';
-        case 'info':
-            return 'info';
-        default:
-            return 'default';
-    }
-}
-
-function formatPerformanceRate(rate: number): string {
-    if (!Number.isFinite(rate) || rate < 0) {
-        return '-';
-    }
-
-    return `${rate.toFixed(rate >= 100 ? 0 : 1)} MB/s`;
-}
-
-function formatCompressionRatio(ratio: number): string {
-    if (!Number.isFinite(ratio) || ratio <= 0) {
-        return '-';
-    }
-
-    return `${ratio.toFixed(2)}x`;
-}
-
-function formatPercent(value: number | null | undefined): string {
-    if (!Number.isFinite(value ?? NaN)) {
-        return '-';
-    }
-
-    return `${(value ?? 0).toFixed(1)}%`;
-}
-
-function formatHighestErrorRate(): string {
-    return activeExecutionHighestErrorRate.value?.displayValue ?? '-';
-}
-
-function formatCurrentItemStatus(): string {
-    const progress = activeExecution.value?.progress;
-    if (!progress?.currentItemName) {
-        return '-';
-    }
-
-    return `${progress.currentItemName} (${formatPercent(progress.currentItemPercentComplete)})`;
-}
-
-function formatDurationFromTicks(startedAtTicks: number | null | undefined): string {
-    if (!startedAtTicks) {
-        return '-';
-    }
-
-    const startedAtMs = startedAtTicks / 10000 - 62135596800000;
-    const elapsedMs = Date.now() - startedAtMs;
-    if (!Number.isFinite(elapsedMs) || elapsedMs < 0) {
-        return '-';
-    }
-
-    const totalSeconds = Math.floor(elapsedMs / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-
-    if (hours > 0) {
-        return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-    }
-
-    return `${minutes}:${String(seconds).padStart(2, '0')}`;
-}
-
-function formatRemainingSeconds(seconds: number | null | undefined): string {
-    if (!Number.isFinite(seconds) || (seconds ?? 0) < 0) {
-        return '-';
-    }
-
-    const totalSeconds = Math.round(seconds ?? 0);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const remainingSeconds = totalSeconds % 60;
-
-    if (hours > 0) {
-        return `${hours}:${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
-    }
-
-    return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
-}
-
-function getTaskTypeLabel(taskType: string): string {
-    switch ((taskType || '').toLowerCase()) {
-        case 'add':
-            return t('task.actionAdd');
-        case 'rename':
-            return t('task.typeRename');
-        case 'update':
-            return t('task.typeReplace');
-        case 'delete':
-            return t('task.typeDelete');
-        case 'read':
-            return t('task.typeRead');
-        case 'format':
-            return t('task.typeFormat');
-        default:
-            return taskType;
-    }
-}
-
-function getTaskTypeTagType(
-    taskType: string,
-): 'success' | 'warning' | 'error' | 'info' | 'default' {
-    switch ((taskType || '').toLowerCase()) {
-        case 'add':
-            return 'success';
-        case 'rename':
-            return 'info';
-        case 'update':
-        case 'format':
-            return 'warning';
-        case 'delete':
-            return 'error';
-        default:
-            return 'default';
-    }
-}
-
-function summarizeTaskTypes(group: TapeFsTaskGroup) {
-    const counts = new Map<string, number>();
-    const order = ['format', 'add', 'update', 'rename', 'delete', 'read'];
-
-    for (const task of group.tasks) {
-        const key = String(task.type || '').toLowerCase();
-        counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-
-    return order
-        .filter(key => counts.has(key))
-        .map(key => ({
-            key,
-            count: counts.get(key) ?? 0,
-            label: getTaskTypeLabel(key),
-            type: getTaskTypeTagType(key),
-        }));
-}
-
-function isOperationLoading(action: TapeMachineOperation) {
-    return pendingOperation.value === action;
-}
 
 async function loadState() {
     if (!hasSelectedDrive.value || !props.tapeDriveId) {
@@ -477,282 +300,37 @@ onMounted(() => {
 
                 <n-tabs v-if="hasSelectedDrive" v-model:value="activeTab" type="line" animated>
                     <n-tab-pane name="operations" :tab="t('tapeMachine.tabs.operations')">
-                        <n-space vertical :size="12">
-                            <n-space>
-                                <n-button
-                                    :loading="isOperationLoading('thread')"
-                                    :disabled="operationBusy"
-                                    @click="runAction('thread')"
-                                >
-                                    {{ t('tapeMachine.actions.threadTape') }}
-                                </n-button>
-                                <n-button
-                                    :loading="isOperationLoading('load')"
-                                    :disabled="operationBusy"
-                                    @click="runAction('load')"
-                                >
-                                    {{ t('tapeMachine.actions.loadTape') }}
-                                </n-button>
-                                <n-button
-                                    :loading="isOperationLoading('unthread')"
-                                    :disabled="operationBusy"
-                                    @click="runAction('unthread')"
-                                >
-                                    {{ t('tapeMachine.actions.unthreadTape') }}
-                                </n-button>
-                                <n-button
-                                    :loading="isOperationLoading('eject')"
-                                    :disabled="operationBusy"
-                                    @click="runAction('eject')"
-                                >
-                                    {{ t('tapeMachine.actions.ejectTape') }}
-                                </n-button>
-                                <n-button
-                                    type="primary"
-                                    :loading="isOperationLoading('read-info')"
-                                    :disabled="operationBusy"
-                                    @click="runAction('read-info')"
-                                >
-                                    {{ t('tapeMachine.actions.readInfo') }}
-                                </n-button>
-                                <n-button
-                                    type="warning"
-                                    :loading="isOperationLoading('format')"
-                                    :disabled="operationBusy || !canFormatTape"
-                                    @click="openFormatDialog"
-                                >
-                                    {{ t('tapeMachine.actions.formatTape') }}
-                                </n-button>
-                            </n-space>
-
-                            <n-alert v-if="snapshot?.loadedBarcode" type="info">
-                                {{
-                                    t('tapeMachine.currentTape', {
-                                        barcode: snapshot.loadedBarcode,
-                                    })
-                                }}
-                                <span v-if="snapshot.ltfsVolumeName">
-                                    ·
-                                    {{
-                                        t('tapeMachine.currentVolume', {
-                                            name: snapshot.ltfsVolumeName,
-                                        })
-                                    }}
-                                </span>
-                            </n-alert>
-
-                            <tape-info
-                                v-if="snapshot?.cartridgeMemory"
-                                :tape-info-data="snapshot.cartridgeMemory"
-                                :loading="operationBusy"
-                            />
-                        </n-space>
+                        <tape-machine-operations-tab
+                            :operation-busy="operationBusy"
+                            :pending-operation="pendingOperation"
+                            :can-format-tape="canFormatTape"
+                            :snapshot="snapshot"
+                            @run-action="runAction"
+                            @open-format-dialog="openFormatDialog"
+                        />
                     </n-tab-pane>
 
                     <n-tab-pane name="tasks" :tab="t('tapeMachine.tabs.tasks')">
-                        <n-space vertical :size="12">
-                            <n-space justify="space-between" align="center">
-                                <span>{{ t('task.scsiMetrics') }}</span>
-                                <n-switch
-                                    :value="scsiMetricsEnabled"
-                                    :loading="isMetricsToggleLoading"
-                                    @update:value="handleUpdateScsiMetricsEnabled"
-                                />
-                            </n-space>
-                            <n-alert v-if="!hasLoadedTape" type="info">
-                                {{ t('tapeMachine.noTapeLoaded') }}
-                            </n-alert>
-                            <n-alert
-                                v-else-if="snapshot?.hasLtfsFilesystem === false"
-                                type="warning"
-                            >
-                                {{ t('tapeMachine.autoFormatHint') }}
-                            </n-alert>
-
-                            <n-empty
-                                v-if="hasLoadedTape && matchingTaskGroups.length === 0"
-                                :description="t('tapeMachine.noMatchingTaskGroups')"
-                            />
-
-                            <n-space v-else vertical :size="12">
-                                <n-card
-                                    v-for="group in matchingTaskGroups"
-                                    :key="group.tapeBarcode"
-                                    size="small"
-                                    embedded
-                                >
-                                    <n-space justify="space-between" align="center">
-                                        <n-space vertical :size="4">
-                                            <strong>{{ group.name || group.tapeBarcode }}</strong>
-                                            <span>
-                                                {{
-                                                    t('tapeMachine.taskCount', {
-                                                        count: group.tasks.length,
-                                                    })
-                                                }}
-                                            </span>
-                                            <n-space :size="6">
-                                                <n-tag
-                                                    v-for="summary in summarizeTaskTypes(group)"
-                                                    :key="`${group.tapeBarcode}:${summary.key}`"
-                                                    size="small"
-                                                    :type="summary.type"
-                                                >
-                                                    {{ summary.label }} × {{ summary.count }}
-                                                </n-tag>
-                                            </n-space>
-                                        </n-space>
-                                        <n-button
-                                            type="primary"
-                                            size="small"
-                                            :disabled="!canRunTasks"
-                                            @click="runTaskGroup(group)"
-                                        >
-                                            {{ t('tapeMachine.runTaskGroup') }}
-                                        </n-button>
-                                    </n-space>
-                                </n-card>
-                            </n-space>
-
-                            <n-card
-                                v-if="activeExecution"
-                                size="small"
-                                :title="t('tapeMachine.executionMetricsTitle')"
-                            >
-                                <div class="execution-status-line">
-                                    <strong>
-                                        {{
-                                            t('tapeMachine.executionStatus', {
-                                                status: activeExecution.status,
-                                            })
-                                        }}
-                                    </strong>
-                                    <span v-if="activeExecution.progress?.statusMessage">
-                                        {{ activeExecution.progress.statusMessage }}
-                                    </span>
-                                    <span>
-                                        {{ formatCurrentItemStatus() }}
-                                    </span>
-                                </div>
-                                <div class="execution-summary-grid">
-                                    <div class="summary-cell">
-                                        <span class="summary-label">{{
-                                            t('task.executionProgress')
-                                        }}</span>
-                                        <strong>{{
-                                            formatPercent(activeExecution.progress?.percentComplete)
-                                        }}</strong>
-                                    </div>
-                                    <div class="summary-cell">
-                                        <span class="summary-label">{{
-                                            t('task.executionElapsed')
-                                        }}</span>
-                                        <strong>{{ activeExecutionElapsed }}</strong>
-                                    </div>
-                                    <div class="summary-cell">
-                                        <span class="summary-label">{{
-                                            t('task.executionEta')
-                                        }}</span>
-                                        <strong>{{ activeExecutionEta }}</strong>
-                                    </div>
-                                    <div class="summary-cell">
-                                        <span class="summary-label">{{
-                                            t('task.performanceCurrentRate')
-                                        }}</span>
-                                        <strong>{{
-                                            formatPerformanceRate(
-                                                activeExecution.progress?.instantSpeedMBPerSecond ??
-                                                    -1,
-                                            )
-                                        }}</strong>
-                                    </div>
-                                    <div class="summary-cell">
-                                        <span class="summary-label">{{
-                                            t('task.performanceAverageRate')
-                                        }}</span>
-                                        <strong>{{
-                                            formatPerformanceRate(
-                                                activeExecution.progress?.averageSpeedMBPerSecond ??
-                                                    -1,
-                                            )
-                                        }}</strong>
-                                    </div>
-                                    <div class="summary-cell">
-                                        <span class="summary-label">{{
-                                            t('task.highestErrorRate')
-                                        }}</span>
-                                        <strong>{{ formatHighestErrorRate() }}</strong>
-                                    </div>
-                                    <div class="summary-cell">
-                                        <span class="summary-label">{{
-                                            t('task.performanceCompressionRatio')
-                                        }}</span>
-                                        <strong>{{
-                                            formatCompressionRatio(
-                                                activeExecutionPerformance?.compressionRatio ?? -1,
-                                            )
-                                        }}</strong>
-                                    </div>
-                                </div>
-                                <div v-if="!scsiMetricsEnabled" class="execution-metrics-disabled">
-                                    {{ t('task.scsiMetricsDisabledHint') }}
-                                </div>
-                            </n-card>
-
-                            <div v-if="activeExecution" class="execution-visual-stack">
-                                <n-card size="small" :title="t('tapeMachine.errorHeatmapTitle')">
-                                    <ExecutionChannelHeatBar
-                                        v-if="
-                                            activeExecutionChannelErrorRateHistory.length &&
-                                            activeExecutionChannelErrorRates?.length &&
-                                            scsiMetricsEnabled
-                                        "
-                                        :history="activeExecutionChannelErrorRateHistory"
-                                        :latest-rates="activeExecutionChannelErrorRates"
-                                    />
-                                    <n-empty
-                                        v-else
-                                        :description="
-                                            scsiMetricsEnabled
-                                                ? t('tapeMachine.noErrorRateData')
-                                                : t('task.scsiMetricsDisabledHint')
-                                        "
-                                    />
-                                </n-card>
-                                <n-card size="small" :title="t('tapeMachine.speedChartTitle')">
-                                    <ExecutionSpeedChart
-                                        v-if="activeExecutionSpeedHistory.length"
-                                        :samples="activeExecutionSpeedHistory"
-                                    />
-                                    <n-empty
-                                        v-else
-                                        :description="t('tapeMachine.noSpeedHistory')"
-                                    />
-                                </n-card>
-                            </div>
-                        </n-space>
+                        <tape-machine-tasks-tab
+                            :scsi-metrics-enabled="scsiMetricsEnabled"
+                            :is-metrics-toggle-loading="isMetricsToggleLoading"
+                            :has-loaded-tape="hasLoadedTape"
+                            :snapshot="snapshot"
+                            :matching-task-groups="matchingTaskGroups"
+                            :can-run-tasks="canRunTasks"
+                            :active-execution="activeExecution"
+                            :active-execution-performance="activeExecutionPerformance"
+                            :active-execution-channel-error-rates="activeExecutionChannelErrorRates"
+                            :active-execution-highest-error-rate="activeExecutionHighestErrorRate"
+                            :active-execution-speed-history="activeExecutionSpeedHistory"
+                            :active-execution-channel-error-rate-history="activeExecutionChannelErrorRateHistory"
+                            @run-task-group="runTaskGroup"
+                            @update-scsi-metrics-enabled="handleUpdateScsiMetricsEnabled"
+                        />
                     </n-tab-pane>
 
                     <n-tab-pane name="logs" :tab="t('tapeMachine.tabs.logs')">
-                        <n-space vertical :size="8">
-                            <n-empty
-                                v-if="driveLogs.length === 0"
-                                :description="t('tapeMachine.logEmpty')"
-                            />
-                            <n-card v-for="log in driveLogs" :key="log.logId" size="small" embedded>
-                                <n-thing>
-                                    <template #header>
-                                        <n-space align="center" :size="8">
-                                            <n-tag size="small" :type="formatLogLevel(log.level)">
-                                                {{ log.level }}
-                                            </n-tag>
-                                            <span>{{ formatTicks(log.createdAtTicks) }}</span>
-                                        </n-space>
-                                    </template>
-                                    {{ log.message }}
-                                </n-thing>
-                            </n-card>
-                        </n-space>
+                        <tape-machine-logs-tab :drive-logs="driveLogs" />
                     </n-tab-pane>
                 </n-tabs>
             </n-space>
@@ -760,7 +338,7 @@ onMounted(() => {
 
         <format-param-dialog
             v-model:show="showFormatDialog"
-            :loading="isOperationLoading('format')"
+            :loading="pendingOperation === 'format'"
             :title="t('tapeMachine.formatDialogTitle')"
             :submit-text="t('tapeMachine.actions.formatTape')"
             :description="t('tapeMachine.formatWarning')"
@@ -771,55 +349,6 @@ onMounted(() => {
         />
     </div>
 </template>
-
-<style scoped>
-.execution-performance-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 4px 12px;
-    margin-top: 8px;
-    font-size: 12px;
-}
-
-.execution-summary-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 10px;
-    margin-top: 8px;
-}
-
-.execution-metrics-disabled {
-    margin-top: 8px;
-    font-size: 12px;
-}
-
-.execution-status-line {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-    flex-wrap: wrap;
-}
-
-.summary-cell {
-    border: 1px solid rgba(148, 163, 184, 0.18);
-    border-radius: 8px;
-    padding: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.summary-label {
-    font-size: 11px;
-    opacity: 0.7;
-}
-
-.execution-visual-stack {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 12px;
-}
-</style>
 
 <style scoped>
 .tape-machine-page {
