@@ -10,6 +10,7 @@ public static class TapeDriveActionParser
             "load" => TapeDriveAction.LoadTape,
             "unthread" => TapeDriveAction.UnthreadTape,
             "eject" => TapeDriveAction.EjectTape,
+            "rewind" => TapeDriveAction.RewindTape,
             "read-info" => TapeDriveAction.ReadInfo,
             _ => (TapeDriveAction)(-1),
         };

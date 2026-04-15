@@ -44,6 +44,7 @@ public class TapeDriveService : ITapeDriveService
         TapeDriveAction.LoadTape,
         TapeDriveAction.UnthreadTape,
         TapeDriveAction.EjectTape,
+        TapeDriveAction.RewindTape,
         TapeDriveAction.ReadInfo,
     ];
 
@@ -335,6 +336,10 @@ public class TapeDriveService : ITapeDriveService
                     case TapeDriveAction.EjectTape:
                         drive.Unload();
                         InvalidateMediaContext(context, clearCartridgeMemory: true);
+                        break;
+                    case TapeDriveAction.RewindTape:
+                        drive.Rewind();
+                        context.MediaContextLoaded = true;
                         break;
                     case TapeDriveAction.ReadInfo:
                         var raw = drive.ReadDiagCM();

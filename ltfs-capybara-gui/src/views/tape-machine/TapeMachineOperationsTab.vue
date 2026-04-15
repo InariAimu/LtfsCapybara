@@ -4,7 +4,7 @@ import { NAlert, NButton, NSpace } from 'naive-ui';
 import type { TapeMachineSnapshot } from '@/api/modules/tapemachine';
 import TapeInfo from '@/views/TapeInfo.vue';
 
-type TapeMachineOperation = 'thread' | 'load' | 'unthread' | 'eject' | 'read-info' | 'format';
+type TapeMachineOperation = 'thread' | 'load' | 'unthread' | 'eject' | 'rewind' | 'read-info' | 'format';
 type TapeMachineAction = Exclude<TapeMachineOperation, 'format'>;
 
 interface Props {
@@ -58,6 +58,13 @@ function isOperationLoading(action: TapeMachineOperation) {
                 @click="emit('runAction', 'eject')"
             >
                 {{ t('tapeMachine.actions.ejectTape') }}
+            </n-button>
+            <n-button
+                :loading="isOperationLoading('rewind')"
+                :disabled="operationBusy"
+                @click="emit('runAction', 'rewind')"
+            >
+                {{ t('tapeMachine.actions.rewindTape') }}
             </n-button>
             <n-button
                 type="primary"

@@ -3,7 +3,7 @@ import type { TapeInfo } from '@/api/types/tapeInfo';
 import type { TapeFsFormatParam } from '@/api/modules/tasks';
 
 const DEFAULT_LONG_RUNNING_ACTION_TIMEOUT_MS = 180000;
-const LONG_RUNNING_ACTIONS = new Set(['thread', 'unthread', 'eject']);
+const LONG_RUNNING_ACTIONS = new Set(['thread', 'unthread', 'eject', 'rewind']);
 
 function resolveLongRunningActionTimeoutMs(): number {
     const rawValue = import.meta.env.VITE_TAPEMACHINE_ACTION_TIMEOUT_MS;
@@ -20,6 +20,7 @@ export type TapeMachineAction =
     | 'LoadTape'
     | 'UnthreadTape'
     | 'EjectTape'
+    | 'RewindTape'
     | 'ReadInfo';
 
 export interface TapeMachineSnapshot {
@@ -41,7 +42,7 @@ export const tapeMachineApi = {
             `/tapedrives/${encodeURIComponent(tapeDriveId)}/machine`,
         );
     },
-    execute(tapeDriveId: string, action: 'thread' | 'load' | 'unthread' | 'eject' | 'read-info') {
+    execute(tapeDriveId: string, action: 'thread' | 'load' | 'unthread' | 'eject' | 'rewind' | 'read-info') {
         const requestConfig = LONG_RUNNING_ACTIONS.has(action)
             ? { timeout: longRunningActionTimeoutMs }
             : undefined;

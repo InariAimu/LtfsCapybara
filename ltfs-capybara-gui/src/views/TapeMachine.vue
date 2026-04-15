@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import { NAlert, NCard, NSpace, NTabPane, NTag, NTabs, useMessage } from 'naive-ui';
+import { NAlert, NCard, NModal, NSpace, NSpin, NTabPane, NTag, NTabs, useMessage } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import FormatParamDialog from '@/components/FormatParamDialog.vue';
 import { tapeMachineApi, type TapeMachineSnapshot } from '@/api/modules/tapemachine';
@@ -26,7 +26,7 @@ const { t } = useI18n();
 const message = useMessage();
 const executionStore = useExecutionStore();
 const fileStore = useFileStore();
-type TapeMachineOperation = 'thread' | 'load' | 'unthread' | 'eject' | 'read-info' | 'format';
+type TapeMachineOperation = 'thread' | 'load' | 'unthread' | 'eject' | 'rewind' | 'read-info' | 'format';
 
 const loading = ref(false);
 const taskLoading = ref(false);
@@ -66,6 +66,7 @@ const activeExecutionChannelErrorRateHistory = computed(
     () => activeExecution.value?.progress?.channelErrorRateHistory ?? [],
 );
 const operationBusy = computed(() => loading.value || pendingOperation.value !== null);
+const blockingOperation = computed(() => pendingOperation.value);
 const scsiMetricsEnabled = computed(
     () => activeExecution.value?.scsiMetricsEnabled ?? executionStore.scsiMetricsEnabledPreference,
 );
@@ -94,6 +95,23 @@ const formatDialogDefaults = computed(() =>
         snapshot.value?.ltfsVolumeName ?? snapshot.value?.loadedBarcode ?? '',
     ),
 );
+const blockingOperationLabel = computed(() => {
+    if (!blockingOperation.value) {
+        return '';
+    }
+
+    const translationKeyByOperation: Record<TapeMachineOperation, string> = {
+        thread: 'tapeMachine.actions.threadTape',
+        load: 'tapeMachine.actions.loadTape',
+        unthread: 'tapeMachine.actions.unthreadTape',
+        eject: 'tapeMachine.actions.ejectTape',
+        rewind: 'tapeMachine.actions.rewindTape',
+        'read-info': 'tapeMachine.actions.readInfo',
+        format: 'tapeMachine.actions.formatTape',
+    };
+
+    return t(translationKeyByOperation[blockingOperation.value]);
+});
 
 function normalizeState(state: unknown): string {
     if (typeof state === 'string') {
@@ -347,11 +365,65 @@ onMounted(() => {
             :volume-name="snapshot?.ltfsVolumeName ?? snapshot?.loadedBarcode ?? ''"
             @submit="handleFormatTape"
         />
+
+        <n-modal
+            :show="!!blockingOperation"
+            :mask-closable="false"
+            :close-on-esc="false"
+            :closable="false"
+            :trap-focus="true"
+            :auto-focus="false"
+            preset="card"
+            class="operation-blocking-modal"
+            :title="t('tapeMachine.operationInProgressTitle')"
+        >
+            <div class="operation-blocking-modal__body">
+                <n-spin size="large" />
+                <div class="operation-blocking-modal__text">
+                    {{ t('tapeMachine.operationInProgress', { action: blockingOperationLabel }) }}
+                </div>
+            </div>
+        </n-modal>
     </div>
 </template>
 
 <style scoped>
 .tape-machine-page {
     padding: 10px;
+}
+
+:deep(.operation-blocking-modal.n-modal) {
+    width: 100vw;
+    max-width: none;
+    margin: 0;
+}
+
+:deep(.operation-blocking-modal .n-card) {
+    width: 100vw;
+    min-height: 100vh;
+    margin: 0;
+    border-radius: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+:deep(.operation-blocking-modal .n-card-header) {
+    justify-content: center;
+    padding-bottom: 0;
+}
+
+.operation-blocking-modal__body {
+    min-height: 50vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    text-align: center;
+}
+
+.operation-blocking-modal__text {
+    font-size: 16px;
 }
 </style>

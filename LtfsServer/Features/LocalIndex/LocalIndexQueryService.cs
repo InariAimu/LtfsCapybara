@@ -224,7 +224,7 @@ public sealed class LocalIndexQueryService : ILocalIndexQueryService
                     Name = f.Name.GetName(),
                     Size = f.Length,
                     Index = f.FileUID,
-                    Crc64 = f.ExtendedAttributes?["ltfs.hash.sha1sum"] ?? string.Empty,
+                    Crc64 = f.ExtendedAttributes?["ltfs.hash.crc64sum"] ?? string.Empty,
                     ModifyTime = ((DateTime)f.ModifyTime).ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
                 };
                 continue;

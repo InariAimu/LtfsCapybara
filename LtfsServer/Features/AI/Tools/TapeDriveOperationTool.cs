@@ -81,6 +81,8 @@ public sealed class TapeDriveOperationTool
             TapeDriveAction.LoadTape => "load",
             TapeDriveAction.UnthreadTape => "unthread",
             TapeDriveAction.EjectTape => "eject",
+            TapeDriveAction.RewindTape => "rewind",
+            TapeDriveAction.ReadInfo => "read-info",
             _ => throw new ArgumentException($"Unsupported tape drive action '{action}'."),
         };
     }

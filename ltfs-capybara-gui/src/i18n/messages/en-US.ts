@@ -313,9 +313,12 @@
             loadTape: 'Load Tape',
             unthreadTape: 'Unthread Tape',
             ejectTape: 'Eject Tape',
+            rewindTape: 'Rewind',
             readInfo: 'Read Info',
             formatTape: 'Format Tape',
         },
+        operationInProgressTitle: 'Tape Operation In Progress',
+        operationInProgress: 'Running "{action}". Please wait until it completes.',
         formatDialogTitle: 'Format Mounted Tape',
         formatWarning:
             'This starts formatting immediately on the mounted tape and overwrites the existing LTFS contents.',

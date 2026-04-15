@@ -19,6 +19,7 @@ public enum TapeDriveAction
     LoadTape,
     UnthreadTape,
     EjectTape,
+    RewindTape,
     ReadInfo,
 }
 
