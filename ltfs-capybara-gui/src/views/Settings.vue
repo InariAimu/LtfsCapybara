@@ -17,6 +17,7 @@ const serverSettings = reactive<ServerSettingsUpdateRequest>({
     indexOnDataPartitionId: 1,
     indexOnIndexPartitionId: 1,
     dataPath: '',
+    aiModel: 'deepseek-chat',
     showAspNetCoreLogs: false,
 });
 
@@ -64,6 +65,7 @@ async function loadServerSettings() {
     serverSettings.indexOnDataPartitionId = loaded.indexOnDataPartitionId;
     serverSettings.indexOnIndexPartitionId = loaded.indexOnIndexPartitionId;
     serverSettings.dataPath = loaded.dataPath ?? '';
+    serverSettings.aiModel = loaded.aiModel ?? 'deepseek-chat';
     serverSettings.showAspNetCoreLogs = loaded.showAspNetCoreLogs ?? false;
 }
 
@@ -73,6 +75,7 @@ async function saveServerSettings() {
         indexOnDataPartitionId: serverSettings.indexOnDataPartitionId,
         indexOnIndexPartitionId: serverSettings.indexOnIndexPartitionId,
         dataPath: serverSettings.dataPath,
+        aiModel: serverSettings.aiModel,
         showAspNetCoreLogs: serverSettings.showAspNetCoreLogs,
     });
     isServerSettingsSaving.value = false;
@@ -85,6 +88,7 @@ async function saveServerSettings() {
     serverSettings.indexOnDataPartitionId = saved.indexOnDataPartitionId;
     serverSettings.indexOnIndexPartitionId = saved.indexOnIndexPartitionId;
     serverSettings.dataPath = saved.dataPath ?? '';
+    serverSettings.aiModel = saved.aiModel ?? 'deepseek-chat';
     serverSettings.showAspNetCoreLogs = saved.showAspNetCoreLogs ?? false;
 
     message.success(t('settings.serverSettingsSaveSuccess'));
@@ -130,6 +134,13 @@ onMounted(() => {
                     <n-input
                         v-model:value="serverSettings.dataPath"
                         :placeholder="t('settings.dataPathPlaceholder')"
+                    />
+                </n-form-item>
+
+                <n-form-item :label="t('settings.aiModel')">
+                    <n-input
+                        v-model:value="serverSettings.aiModel"
+                        :placeholder="t('settings.aiModelPlaceholder')"
                     />
                 </n-form-item>
 

@@ -46,6 +46,7 @@ builder.Services.AddSingleton<IOverviewService, OverviewService>();
 builder.Services.AddHttpClient("AiServerProxy");
 builder.Services.AddAiToolModules(typeof(Program).Assembly);
 
+builder.Services.AddSingleton<IAiProviderConfigService, AiProviderConfigService>();
 builder.Services.AddSingleton<IAiToolCallService, AiToolCallService>();
 builder.Services.AddSingleton<IAiToolSelectionService, AiToolSelectionService>();
 builder.Services.AddSingleton<IAiChatProxyService, AiChatProxyService>();

@@ -88,6 +88,8 @@ export default {
         indexOnIndexPartition: '索引分区索引格式',
         dataPath: '数据路径',
         dataPathPlaceholder: '留空将使用默认位置',
+        aiModel: 'AI 模型',
+        aiModelPlaceholder: '例如 deepseek-chat',
         showAspNetCoreLogs: '显示 ASP.NET Core 日志',
         saveServerSettings: '保存',
         serverSettingsLoadFailed: '加载服务器设置失败。',

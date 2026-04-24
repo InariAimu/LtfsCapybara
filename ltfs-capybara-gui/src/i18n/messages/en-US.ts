@@ -88,6 +88,8 @@
         indexOnIndexPartition: 'Index on index partition',
         dataPath: 'Data path',
         dataPathPlaceholder: 'Leave empty to use default location',
+        aiModel: 'AI model',
+        aiModelPlaceholder: 'For example: deepseek-chat',
         showAspNetCoreLogs: 'Show ASP.NET Core logs',
         saveServerSettings: 'Save',
         serverSettingsLoadFailed: 'Failed to load server settings.',

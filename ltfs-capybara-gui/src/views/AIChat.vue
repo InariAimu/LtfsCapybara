@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
 import { marked } from 'marked';
 import { NButton, NCard, NInput, NSelect, NScrollbar, NTag, NSpin } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
 import { API_BASE } from '../api/baseurl';
+import { serverSettingsApi } from '@/api/modules/serversettings';
 
 defineOptions({
     name: 'AIChat',
@@ -72,14 +73,28 @@ interface StreamUpdate {
     done?: boolean;
 }
 
-const modelOptions = [
-    { label: 'DeepSeek Chat', value: 'deepseek-chat' },
-    { label: 'GPT-5.3-Codex', value: 'gpt-5.3-codex' },
-    { label: 'GPT-4.1', value: 'gpt-4.1' },
-    { label: 'o4-mini', value: 'o4-mini' },
+const defaultModelOptions = [
+    'deepseek-chat',
+    'gpt-5.3-codex',
+    'gpt-4.1',
+    'o4-mini',
 ];
 
 const selectedModel = ref('deepseek-chat');
+const configuredModels = ref<string[]>([]);
+const modelOptions = computed(() => {
+    const sourceModels = configuredModels.value.length > 0 ? configuredModels.value : defaultModelOptions;
+    const values = Array.from(new Set(sourceModels.filter(Boolean)));
+
+    if (!values.includes(selectedModel.value)) {
+        values.unshift(selectedModel.value);
+    }
+
+    return values.map(value => ({
+        label: value,
+        value,
+    }));
+});
 const prompt = ref('');
 const isSending = ref(false);
 const nextMessageId = ref(0);
@@ -493,6 +508,29 @@ function handleClear() {
     nextMessageId.value = 0;
     scrollChatToBottom();
 }
+
+onMounted(() => {
+    void (async () => {
+        const settings = await serverSettingsApi.get();
+        if (!settings) {
+            return;
+        }
+
+        const availableModels = Array.isArray(settings.aiModels)
+            ? settings.aiModels.map(model => model.trim()).filter(Boolean)
+            : [];
+        configuredModels.value = Array.from(new Set(availableModels));
+
+        if (settings.aiModel?.trim()) {
+            selectedModel.value = settings.aiModel.trim();
+            return;
+        }
+
+        if (configuredModels.value.length > 0) {
+            selectedModel.value = configuredModels.value[0];
+        }
+    })();
+});
 </script>
 
 <template>

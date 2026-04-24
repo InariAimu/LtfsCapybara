@@ -30,13 +30,12 @@ Defaults come from `appsettings.json`:
 - `Data:Path`
 - `ServerSettings:*`
 - `TapeDrive:UseFakeDrive`
-- `AI:model`
 
 At startup, the server resolves `Data:Path` as follows:
 
 - Uses `Data:Path` from configuration when provided.
 - Otherwise defaults to `Documents/LtfsCapybara`.
-- Loads optional runtime overrides from `{Data.Path}/config.json`.
+- Loads optional runtime overrides from `{Data.Path}/config.json`, including `AI:model`, `AI:base_url`, and `AI:api_key`.
 
 ## Run
 

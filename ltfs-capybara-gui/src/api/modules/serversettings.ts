@@ -4,6 +4,8 @@ export interface ServerSettingsDto {
     indexOnDataPartitionId: number;
     indexOnIndexPartitionId: number;
     dataPath: string;
+    aiModel: string;
+    aiModels: string[];
     showAspNetCoreLogs: boolean;
 }
 
@@ -11,6 +13,7 @@ export interface ServerSettingsUpdateRequest {
     indexOnDataPartitionId: number;
     indexOnIndexPartitionId: number;
     dataPath: string;
+    aiModel: string;
     showAspNetCoreLogs: boolean;
 }
 

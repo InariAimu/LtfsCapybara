@@ -18,6 +18,7 @@ public interface IAiToolSelectionService
 public sealed class AiToolSelectionService : IAiToolSelectionService
 {
     private const string ToolExposurePromptPrefix = "Tool exposure for this turn:";
+    private const string ToolSelectionModel = "deepseek-v4-flash";
     private const string SelectorSystemPrompt = """
 You are an AI tool planner for an LTFS tape management system.
 Your job is to choose which tools should be exposed to the assistant for the next assistant turn.
@@ -39,18 +40,18 @@ Return schema:
 """;
 
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly IConfiguration _configuration;
+    private readonly IAiProviderConfigService _aiProviderConfigService;
     private readonly IAiToolCallService _toolCallService;
     private readonly ILogger<AiToolSelectionService> _logger;
 
     public AiToolSelectionService(
         IHttpClientFactory httpClientFactory,
-        IConfiguration configuration,
+        IAiProviderConfigService aiProviderConfigService,
         IAiToolCallService toolCallService,
         ILogger<AiToolSelectionService> logger)
     {
         _httpClientFactory = httpClientFactory;
-        _configuration = configuration;
+        _aiProviderConfigService = aiProviderConfigService;
         _toolCallService = toolCallService;
         _logger = logger;
     }
@@ -110,7 +111,7 @@ Return schema:
         var messages = requestNode["messages"] as JsonArray ?? new JsonArray();
         var selectorRequest = new JsonObject
         {
-            ["model"] = model,
+            ["model"] = ToolSelectionModel,
             ["stream"] = true,
             ["messages"] = new JsonArray
             {
@@ -156,20 +157,15 @@ Return schema:
         HttpResponse? downstreamResponse,
         CancellationToken cancellationToken)
     {
-        var baseUrl = ReadSetting("AI:base_url", "AI:BaseUrl")?.Trim();
-        var apiKey = ReadSetting("AI:api_key", "AI:ApiKey")?.Trim();
+        var resolvedProvider = _aiProviderConfigService.ResolveForModel(ToolSelectionModel);
+        payload["model"] = resolvedProvider.Model;
 
-        if (string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(apiKey))
-        {
-            throw new InvalidOperationException("AI config is missing. Please set AI.base_url and AI.api_key in {Data.Path}/config.json.");
-        }
-
-        var endpoint = ResolveChatCompletionsEndpoint(baseUrl);
+        var endpoint = ResolveChatCompletionsEndpoint(resolvedProvider.BaseUrl);
         using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
         {
             Content = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json")
         };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", resolvedProvider.ApiKey);
 
         var client = _httpClientFactory.CreateClient("AiServerProxy");
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
@@ -508,11 +504,6 @@ Only call a tool when it is necessary to answer the user correctly. If no tool i
                 messages.RemoveAt(i);
             }
         }
-    }
-
-    private string? ReadSetting(string primaryKey, string fallbackKey)
-    {
-        return _configuration[primaryKey] ?? _configuration[fallbackKey];
     }
 
     private static string ResolveChatCompletionsEndpoint(string baseUrl)

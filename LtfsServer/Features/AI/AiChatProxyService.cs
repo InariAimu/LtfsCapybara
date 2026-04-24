@@ -14,20 +14,20 @@ public interface IAiChatProxyService
 public sealed class AiChatProxyService : IAiChatProxyService
 {
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly IConfiguration _configuration;
+    private readonly IAiProviderConfigService _aiProviderConfigService;
     private readonly IAiToolCallService _toolCallService;
     private readonly IAiToolSelectionService _toolSelectionService;
     private readonly ILogger<AiChatProxyService> _logger;
 
     public AiChatProxyService(
         IHttpClientFactory httpClientFactory,
-        IConfiguration configuration,
+        IAiProviderConfigService aiProviderConfigService,
         IAiToolCallService toolCallService,
         IAiToolSelectionService toolSelectionService,
         ILogger<AiChatProxyService> logger)
     {
         _httpClientFactory = httpClientFactory;
-        _configuration = configuration;
+        _aiProviderConfigService = aiProviderConfigService;
         _toolCallService = toolCallService;
         _toolSelectionService = toolSelectionService;
         _logger = logger;
@@ -54,7 +54,7 @@ public sealed class AiChatProxyService : IAiChatProxyService
         var model = requestNode["model"]?.GetValue<string>();
         if (string.IsNullOrWhiteSpace(model))
         {
-            model = ReadSetting("AI:model", "AI:Model") ?? "deepseek-chat";
+            model = _aiProviderConfigService.GetDefaultModel();
             requestNode["model"] = model;
         }
 
@@ -97,7 +97,7 @@ public sealed class AiChatProxyService : IAiChatProxyService
                 throw new InvalidOperationException("Request has no messages array.");
             }
 
-            messages.Add(assistantMessage.DeepClone());
+            messages.Add(BuildAssistantHistoryMessage(assistantMessage));
 
             foreach (var toolCallNode in toolCalls)
             {
@@ -144,20 +144,15 @@ public sealed class AiChatProxyService : IAiChatProxyService
 
     private async Task<UpstreamTurnResult> CallUpstreamAndRelayAsync(JsonObject payload, HttpResponse downstreamResponse, CancellationToken cancellationToken)
     {
-        var baseUrl = ReadSetting("AI:base_url", "AI:BaseUrl")?.Trim();
-        var apiKey = ReadSetting("AI:api_key", "AI:ApiKey")?.Trim();
+        var resolvedProvider = _aiProviderConfigService.ResolveForModel(payload["model"]?.GetValue<string>());
+        payload["model"] = resolvedProvider.Model;
 
-        if (string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(apiKey))
-        {
-            throw new InvalidOperationException("AI config is missing. Please set AI.base_url and AI.api_key in {Data.Path}/config.json.");
-        }
-
-        var endpoint = ResolveChatCompletionsEndpoint(baseUrl);
+        var endpoint = ResolveChatCompletionsEndpoint(resolvedProvider.BaseUrl);
         using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
         {
             Content = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json")
         };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", resolvedProvider.ApiKey);
 
         var client = _httpClientFactory.CreateClient("AiServerProxy");
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
@@ -182,6 +177,17 @@ public sealed class AiChatProxyService : IAiChatProxyService
 
         var model = responseNode["model"]?.GetValue<string>() ?? payload["model"]?.GetValue<string>() ?? "deepseek-chat";
         var assistantMessage = responseNode["choices"]?[0]?["message"] as JsonObject;
+        if (assistantMessage is not null)
+        {
+            var reasoningContent = ReadReasoningContent(responseNode["choices"]?[0]?["message"]?["reasoning_content"])
+                ?? ReadReasoningContent(responseNode["choices"]?[0]?["message"]?["reasoning"])
+                ?? ReadReasoningContent(responseNode["choices"]?[0]?["reasoning_content"])
+                ?? ReadReasoningContent(responseNode["choices"]?[0]?["reasoning"]);
+            if (!string.IsNullOrWhiteSpace(reasoningContent))
+            {
+                assistantMessage["reasoning_content"] = reasoningContent;
+            }
+        }
         var content = ReadContent(assistantMessage?["content"]);
 
         if (!string.IsNullOrEmpty(content))
@@ -216,6 +222,7 @@ public sealed class AiChatProxyService : IAiChatProxyService
         using var reader = new StreamReader(stream);
 
         var assistantContent = new StringBuilder();
+        var assistantReasoning = new StringBuilder();
         var role = "assistant";
         var model = "deepseek-chat";
         var toolCalls = new Dictionary<int, JsonObject>();
@@ -266,6 +273,13 @@ public sealed class AiChatProxyService : IAiChatProxyService
                 if (!string.IsNullOrEmpty(contentDelta))
                 {
                     assistantContent.Append(contentDelta);
+                }
+
+                var reasoningDelta = delta["reasoning_content"]?.GetValue<string>()
+                    ?? delta["reasoning"]?.GetValue<string>();
+                if (!string.IsNullOrEmpty(reasoningDelta))
+                {
+                    assistantReasoning.Append(reasoningDelta);
                 }
 
                 var toolCallsDelta = delta["tool_calls"] as JsonArray;
@@ -358,6 +372,11 @@ public sealed class AiChatProxyService : IAiChatProxyService
             ["content"] = assistantContent.ToString()
         };
 
+        if (assistantReasoning.Length > 0)
+        {
+            assistantMessage["reasoning_content"] = assistantReasoning.ToString();
+        }
+
         if (toolCallsArray.Count > 0)
         {
             assistantMessage["tool_calls"] = toolCallsArray;
@@ -400,9 +419,41 @@ public sealed class AiChatProxyService : IAiChatProxyService
         return contentNode.ToJsonString();
     }
 
-    private string? ReadSetting(string primaryKey, string fallbackKey)
+    private static string? ReadReasoningContent(JsonNode? reasoningNode)
     {
-        return _configuration[primaryKey] ?? _configuration[fallbackKey];
+        var reasoning = ReadContent(reasoningNode);
+        return string.IsNullOrWhiteSpace(reasoning) ? null : reasoning;
+    }
+
+    private static JsonObject BuildAssistantHistoryMessage(JsonObject assistantMessage)
+    {
+        var historyMessage = assistantMessage.DeepClone() as JsonObject ?? new JsonObject();
+        var reasoningContent = ReadReasoningContent(historyMessage["reasoning_content"])
+            ?? ReadReasoningContent(historyMessage["reasoning"]);
+        var toolCalls = historyMessage["tool_calls"] as JsonArray;
+
+        if (string.IsNullOrWhiteSpace(reasoningContent) && (toolCalls is null || toolCalls.Count == 0))
+        {
+            return historyMessage;
+        }
+
+        var packedContent = new JsonObject
+        {
+            ["content"] = ReadContent(historyMessage["content"])
+        };
+
+        if (!string.IsNullOrWhiteSpace(reasoningContent))
+        {
+            packedContent["reasoning_content"] = reasoningContent;
+        }
+
+        if (toolCalls is not null && toolCalls.Count > 0)
+        {
+            packedContent["tool_calls"] = toolCalls.DeepClone();
+        }
+
+        historyMessage["content"] = packedContent.ToJsonString();
+        return historyMessage;
     }
 
     private static string ResolveChatCompletionsEndpoint(string baseUrl)
